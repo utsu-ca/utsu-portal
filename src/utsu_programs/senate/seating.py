@@ -5,7 +5,7 @@ import random
 from collections import Counter
 from pathlib import Path
 
-from utsu_core.senate import PREF_PREFIX
+from utsu_programs.senate.program import PREF_PREFIX
 from utsu_std.csv_safe import open_csv, write_rows
 from utsu_std.parsing_utils import division_code
 from utsu_std.utils import absfile

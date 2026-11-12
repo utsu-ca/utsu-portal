@@ -8,27 +8,27 @@ accommodations list for the organizers.
 The verification can also be run on its own, which only reports (agm_verification.csv); it writes no voter lists
 and no database rows:
 
-    python -m utsu_core.agm --agm_file RSVP.csv --db path/to/db.sqlite [--output_dir DIR]
-    python -m utsu_core.agm --testing        # fake RSVPs from the last `main --testing` run, against its database
+    utsu-agm --verify_only --agm_file RSVP.csv --db path/to/db.sqlite [--output_dir DIR]
+    utsu-agm --verify_only --testing   # fake RSVPs from the last `utsu-agm --testing` run, against its database
 
 The RSVP form may have no student number, so a person is then matched on their ACORN-registered name alone. A name
 shared by more than one student cannot be decided and stays unverified until the form also supplies a "Student
 Number" or "Division" column, which is then used to tell them apart. A name is always needed.
 """
-import argparse
 import json
 import logging
 import re
 import sqlite3
 from pathlib import Path
 
-from utsu_core.selection import dedupe_by_uuid, select_current
-from utsu_core.pipeline import Run
-from utsu_core.verification import (MAX_CANDIDATES, METHOD_FUZZY_NAME, METHOD_NAME, Match, match_students,
-                                    setup_reader)
+from utsu_core.pipeline import Run, read_rows, verify_rows
+from utsu_core.selection import select_current
+from utsu_core.spec import ProgramSpec
+from utsu_core.verification import (MAX_CANDIDATES, METHOD_FUZZY_NAME, METHOD_NAME, Match, is_uoft_email,
+                                    truncated_numbers)
 from utsu_std.csv_safe import check_writable, write_rows
-from utsu_std.utils import (absfile, application_uuid_for, normalize_case, normalize_uoft_email, student_uuid_for,
-                            EMAIL_FLAGS)
+from utsu_std.utils import (UOFT_MAIL_DOMAIN, absfile, application_uuid_for, normalize_case, normalize_uoft_email,
+                            student_uuid_for, EMAIL_FLAGS)
 
 logger = logging.getLogger(__name__)
 
@@ -46,24 +46,10 @@ FUZZY_REVIEW_FIELDS = (["uuid", "status", "reason", "submission_ts", "full_name"
                        + ["reviewer_decision", "reviewer_notes"])
 # the form needs a name column; "Student Number" and "Division" are optional and only narrow a match
 IDENTITY_COLUMNS = ("first_name", "last_name")
-UOFT_EMAIL_DOMAIN = "mail.utoronto.ca"
-EMAIL_REASON = f"email is not a {UOFT_EMAIL_DOMAIN} address"
+EMAIL_REASON = f"email is not a {UOFT_MAIL_DOMAIN} address"
 # answers to the dietary and accessibility questions that say there is nothing to accommodate
 NO_NEED = {"", "none", "n/a", "na", "no", "nil", "nothing", "not applicable", "no restrictions", "no restriction",
            "none at this time", "no allergies", "no dietary restrictions", "no accessibility requirements"}
-
-
-def is_uoft_email(email: str) -> bool:
-    """
-    Whether an address is a UofT student email: only `@mail.utoronto.ca` counts (case and surrounding spaces are
-    ignored). A blank address, another domain (even `@utoronto.ca`) or text that is not an address does not.
-
-    >>> [is_uoft_email(v) for v in ("ann.lee@mail.utoronto.ca", " Ann@MAIL.UTORONTO.CA ", "ann@utoronto.ca",
-    ...                             "ann@gmail.com", "", None, "@mail.utoronto.ca", "a b@mail.utoronto.ca")]
-    [True, True, False, False, False, False, False, False]
-    """
-    local, _, domain = (email or "").strip().lower().rpartition("@")
-    return bool(local) and domain == UOFT_EMAIL_DOMAIN and not re.search(r"[\s@]", local)
 
 
 def real_need(answer: str) -> str:
@@ -120,27 +106,55 @@ def review_flags(rsvp: dict, match_method: str, reason: str, fuzzy_flag: str = "
     return ";".join(flags)
 
 
+def annotate(rsvp: dict, match: Match) -> None:
+    """What an RSVP records about how it was decided: the reason, review flags and the close roster names."""
+    rsvp.update(reason=match.reason, flags=review_flags(rsvp, match.method, match.reason, match.fuzzy_flag),
+                name_candidates=match.candidates, name_similarity=match.similarity)
+    if not match.verified:
+        logger.warning(f"UNVERIFIED AGM RSVP {rsvp['uuid']}: {match.reason}")
+        if is_ambiguous(match.reason):
+            logger.warning(f"AMBIGUOUS AGM RSVP {rsvp['uuid']}: more than one student matches ({match.reason}). "
+                           f"A person has to decide which student this is.")
+
+
+def require_uoft_email(rsvp: dict) -> Match | None:
+    """An RSVP whose email is not a `@mail.utoronto.ca` address (or is blank) is never verified."""
+    return None if is_uoft_email(rsvp.get("email")) else Match(None, None, "", EMAIL_REASON)
+
+
+def build_rsvp(row: dict[str, str]) -> dict | None:
+    rsvp = {k: (v or "").strip() for k, v in row.items() if isinstance(k, str)}
+    rsvp["full_name"] = normalize_case(f"{rsvp.get('first_name', '')} {rsvp.get('last_name', '')}")
+    rsvp["student_number"] = rsvp.get("Student Number", "")  # optional column, kept under its original header
+    rsvp["division"] = rsvp.get("Division", "")  # optional column too; it takes part in the match when given
+    rsvp["contact_ok"] = "yes" if is_yes(rsvp.get("contact_consent", "")) else "no"
+    rsvp["email"], rsvp["email_status"] = normalize_uoft_email(rsvp.get("email", ""))
+    rsvp["uuid"] = agm_uuid(rsvp)
+    rsvp["student_uuid"] = student_uuid_for(rsvp.get("email", ""), rsvp["student_number"], rsvp["full_name"])
+    return rsvp if rsvp["full_name"] or rsvp["student_number"] else None
+
+
+_INSERT = """
+INSERT INTO agm_rsvp (uuid, student_uuid, uoft_uuid, verification_level, status, reason, match_method,
+                      submission_ts, meeting_preference, contact_ok, flags)
+VALUES (:uuid, :student_uuid, :uoft_uuid, :verification_level, :status, :reason, :match_method, :submission_ts,
+        :meeting_preference, :contact_ok, :flags)
+"""
+
+SPEC = ProgramSpec(
+    slug="agm", label="AGM", table="agm_rsvp", package="utsu_programs.agm",
+    mapping="data/conversion_table_agm.csv", build_row=build_rsvp, optional=IDENTITY_COLUMNS,
+    identity=IDENTITY_COLUMNS, insert=_INSERT, id_key="student_number", sticky=False, veto=require_uoft_email,
+    annotate=annotate, log_outcomes=False)
+
+
 def verify_rsvps(rsvps: list[dict], cursor: sqlite3.Cursor) -> tuple[list[dict], list[dict]]:
     """
     Verify RSVPs (one per person) against uoft_data, by name, student number or both. Sets uoft_uuid,
     verification_level, match_method, reason, status and flags on each and returns (verified, unverified).
     An RSVP whose email is not a `@mail.utoronto.ca` address (or is blank) is never verified.
     """
-    verified, unverified = [], []
-    for rsvp, match in zip(rsvps, match_students(rsvps, cursor, id_key="student_number")):
-        if not is_uoft_email(rsvp.get("email")):
-            match = Match(None, None, "", EMAIL_REASON)
-        rsvp.update(uoft_uuid=match.uoft_uuid, verification_level=match.level, match_method=match.method,
-                    reason=match.reason, status="verified" if match.verified else "unverified",
-                    flags=review_flags(rsvp, match.method, match.reason, match.fuzzy_flag),
-                    name_candidates=match.candidates, name_similarity=match.similarity)
-        (verified if match.verified else unverified).append(rsvp)
-        if not match.verified:
-            logger.warning(f"UNVERIFIED AGM RSVP {rsvp['uuid']}: {match.reason}")
-            if is_ambiguous(match.reason):
-                logger.warning(f"AMBIGUOUS AGM RSVP {rsvp['uuid']}: more than one student matches ({match.reason}). "
-                               f"A person has to decide which student this is.")
-    return verified, unverified
+    return verify_rows(SPEC, rsvps, cursor)
 
 
 def is_in_person(meeting_preference: str) -> bool:
@@ -171,23 +185,8 @@ def attendance(meeting_preference: str) -> str:
     return "In-person" if is_in_person(meeting_preference) else "Virtual"
 
 
-def build_rsvp(row: dict[str, str]) -> dict:
-    rsvp = {k: (v or "").strip() for k, v in row.items() if isinstance(k, str)}
-    rsvp["full_name"] = normalize_case(f"{rsvp.get('first_name', '')} {rsvp.get('last_name', '')}")
-    rsvp["student_number"] = rsvp.get("Student Number", "")  # optional column, kept under its original header
-    rsvp["division"] = rsvp.get("Division", "")  # optional column too; it takes part in the match when given
-    rsvp["contact_ok"] = "yes" if is_yes(rsvp.get("contact_consent", "")) else "no"
-    rsvp["email"], rsvp["email_status"] = normalize_uoft_email(rsvp.get("email", ""))
-    rsvp["uuid"] = agm_uuid(rsvp)
-    rsvp["student_uuid"] = student_uuid_for(rsvp.get("email", ""), rsvp["student_number"], rsvp["full_name"])
-    return rsvp
-
-
 def read_rsvps(csv_file: Path) -> list[dict]:
-    mapping = absfile("data/conversion_table_agm.csv")
-    reader = setup_reader(csv_file, mapping, optional=IDENTITY_COLUMNS, identity=IDENTITY_COLUMNS)
-    rsvps = [build_rsvp(row) for row in reader]
-    return dedupe_by_uuid([r for r in rsvps if r["full_name"] or r["student_number"]])
+    return read_rows(SPEC, csv_file)
 
 
 def verify_file(csv_file: Path | str, cursor: sqlite3.Cursor, output_dir: Path | str) -> list[dict]:
@@ -216,32 +215,10 @@ def attendee_list(verified: list[dict], in_person_only: bool = False) -> list[di
     return sorted(rows, key=lambda r: (r.get("last_name", "").lower(), r.get("first_name", "").lower(), r["uuid"]))
 
 
-def truncated_numbers(cursor: sqlite3.Cursor, uoft_uuids) -> dict[str, str]:
-    """
-    The roster's truncated student number (`xxxxx3971x`) for each uoft_data uuid, read from the database. A uuid
-    that is not there, or has no number, is left out.
-    """
-    wanted = sorted({u for u in uoft_uuids if u})
-    found: dict[str, str] = {}
-    for start in range(0, len(wanted), 500):  # stay under SQLite's limit on query parameters
-        chunk = wanted[start:start + 500]
-        cursor.execute(f"SELECT uuid, trunc_id FROM uoft_data WHERE uuid IN ({','.join('?' * len(chunk))})", chunk)
-        found.update({u: f"xxxxx{t:04d}x" for u, t in cursor.fetchall() if t is not None})
-    return found
-
-
 def with_roster_numbers(rows: list[dict], cursor: sqlite3.Cursor) -> list[dict]:
     """Copies of verified RSVPs whose student_number is the roster's truncated number, not what the form gave."""
     numbers = truncated_numbers(cursor, (r.get("uoft_uuid") for r in rows))
     return [{**r, "student_number": numbers.get(r.get("uoft_uuid"), "")} for r in rows]
-
-
-_INSERT = """
-INSERT INTO agm_rsvp (uuid, student_uuid, uoft_uuid, verification_level, status, reason, match_method,
-                      submission_ts, meeting_preference, contact_ok, flags)
-VALUES (:uuid, :student_uuid, :uoft_uuid, :verification_level, :status, :reason, :match_method, :submission_ts,
-        :meeting_preference, :contact_ok, :flags)
-"""
 
 
 def write_csv(rows: list[dict], fields: list[str], path: Path):
@@ -312,13 +289,12 @@ def process_agm(csv_file: Path | str, conn: sqlite3.Connection, output_dir: Path
                                             "agm_run.json")}
     check_writable(*files.values())  # before anything changes: a file open in Excel stops the run here
 
-    rsvps = read_rsvps(Path(csv_file))
-    run = Run(conn, "agm_rsvp", "AGM", "agm", rsvps, sticky=False)
-    verify_rsvps(rsvps, conn.cursor())
+    run = Run.start(SPEC, conn, csv_file)
+    run.verify(conn.cursor())
     run.select()
     unverified = [r for r in run.current if r["status"] == "unverified"]
 
-    run.replace_all(_INSERT, "src/schema/agm.sql")
+    run.replace_all()
     run.settle()
     verified = [r for r in run.current if r["status"] == "verified"]
     everyone, in_person = attendee_list(verified), attendee_list(verified, in_person_only=True)
@@ -351,32 +327,3 @@ def process_agm(csv_file: Path | str, conn: sqlite3.Connection, output_dir: Path
     logger.info(f"AGM: {len(verified)} verified ({len(in_person)} in person), {len(unverified)} unverified")
     return {"verified": verified, "in_person": in_person, "unverified": unverified, "alerts": alerts,
             "ambiguous": ambiguous, "summary": summary}
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Verify AGM voter RSVPs against the UofT student data")
-    parser.add_argument("--agm_file", default="", help="AGM voter RSVP export (CSV)")
-    parser.add_argument("--db", default="", help="Database holding the uoft_data table")
-    parser.add_argument("--output_dir", default="secrets/output", help="Where agm_verification.csv is written")
-    parser.add_argument("--testing", action="store_true",
-                        help="Use testing/output/fake_agm.csv and the database from the last `main --testing` run")
-    args = parser.parse_args()
-    if args.testing:
-        args.agm_file = args.agm_file or "testing/output/fake_agm.csv"
-        args.db = args.db or "testing/output/test.sqlite"
-        args.output_dir = "testing/output" if args.output_dir == "secrets/output" else args.output_dir
-    if not args.agm_file or not args.db:
-        parser.error("--agm_file and --db are required (or use --testing)")
-
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
-    conn = sqlite3.connect(absfile(args.db))
-    try:
-        rows = verify_file(absfile(args.agm_file), conn.cursor(), args.output_dir)
-    finally:
-        conn.close()
-    verified = sum(r["status"] == "verified" for r in rows)
-    print(f"{verified} verified, {len(rows) - verified} unverified of {len(rows)} RSVPs")
-
-
-if __name__ == "__main__":
-    main()

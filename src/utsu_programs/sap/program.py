@@ -11,13 +11,15 @@ import logging
 import math
 import re
 import sqlite3
+import zipfile
+from xml.etree import ElementTree
 from datetime import datetime
 from pathlib import Path
 
-from utsu_core.selection import add_flag, dedupe_by_uuid, parse_submission_ts
+from utsu_core.selection import parse_submission_ts
 from utsu_core.pipeline import Run, ensure_table
-from utsu_core.verification import match_students, setup_reader
-from utsu_core.wfni import compute_wfni, current_weights
+from utsu_core.spec import ProgramSpec
+from utsu_programs.sap.wfni import compute_wfni, current_weights
 from utsu_std.csv_safe import SafeDictWriter, open_csv, write_rows
 from utsu_std.utils import absfile, application_uuid_for, clean_text, normalize_case, normalize_uoft_email, student_uuid_for, EMAIL_FLAGS
 from utsu_std.parsing_utils import get_trunc_id, split_multi
@@ -39,7 +41,7 @@ MASTER_FIELDS = ["uuid", "status", "student_uuid", "uoft_uuid", "verification_le
 REVIEW_FIELDS = ["record_id", "uuid", "stream", "subsidies", "requested_amount", "wfni", "emergency",
                  "general_statement", "need_level", "notes"]
 
-# The WFNI answer weights live in data/wfni_weights.csv; see utsu_core/wfni.py.
+# The WFNI answer weights live in data/wfni_weights.csv; see wfni.py.
 
 
 def parse_amount(value: str, allow_zero: bool = False) -> float | None:
@@ -129,23 +131,10 @@ def build_application(row: dict[str, str]) -> dict:
     return app
 
 
-def read_applications(csv_file: Path) -> list[dict]:
-    mapping = absfile("data/conversion_table_sap.csv")
-    reader = setup_reader(csv_file, mapping, optional=OPTIONAL_FIELDS, identity=IDENTITY_FIELDS)
-    applications = [build_application(row) for row in reader]
-    return dedupe_by_uuid([a for a in applications if a.get("id") or a["full_name"]])
-
-
-def verify_applications(applications: list[dict], cursor: sqlite3.Cursor) -> None:
-    """
-    Check applications against uoft_data by name, student number or both (whatever each one gives) and set
-    status, uoft_uuid, verification_level and match_method on each.
-    """
-    for app, match in zip(applications, match_students(applications, cursor)):
-        app.update(uoft_uuid=match.uoft_uuid, verification_level=match.level, match_method=match.method,
-                   status="verified" if match.verified else "unverified")
-        if match.fuzzy_flag:
-            add_flag(app, match.fuzzy_flag)
+def build_row(row: dict[str, str]) -> dict | None:
+    """One mapped form row -> an application, or None when it names nobody (no student number and no name)."""
+    app = build_application(row)
+    return app if app.get("id") or app["full_name"] else None
 
 
 def assign_batches(verified: list[dict], batch_size: int = 50, placed: dict[str, tuple[int, int]] | None = None,
@@ -209,6 +198,68 @@ RATING_LEVELS = range(6)
 RUBRIC_AMOUNT = {0: 0, 1: 125, 2: 300, 3: 650, 4: 900, 5: 1500}
 # Two reviewers whose levels are this far apart (or more) must discuss the application.
 DISCUSS_SPREAD = 2
+
+
+def fit_exponential(amounts: dict[int, float]) -> tuple[float, float]:
+    """
+    Least-squares a, k of amount = a * (exp(k * level) - 1): exponential growth through the origin (a need level of
+    0 is worth $0). For a given k the best a is a linear fit; k is found by a ternary search on the squared error.
+
+    >>> a, k = fit_exponential({x: math.exp(x) - 1 for x in range(5)})
+    >>> round(a, 6), round(k, 6)
+    (1.0, 1.0)
+    """
+    def best(k: float) -> tuple[float, float]:
+        basis = {x: math.expm1(k * x) for x in amounts}
+        a = sum(basis[x] * y for x, y in amounts.items()) / sum(f * f for f in basis.values())
+        return a, sum((a * basis[x] - y) ** 2 for x, y in amounts.items())
+
+    low, high = 1e-6, 5.0
+    for _ in range(200):
+        third = (high - low) / 3
+        if best(low + third)[1] < best(high - third)[1]:
+            high -= third
+        else:
+            low += third
+    k = (low + high) / 2
+    return best(k)[0], k
+
+
+# The rubric maximums as a smooth curve, so a level between two rubric levels (the mean of two reviewers, or a
+# score like 2.5) has an amount too. Fitted once, here, from RUBRIC_AMOUNT; it is within about $70 of each maximum.
+RUBRIC_CURVE = fit_exponential(RUBRIC_AMOUNT)
+
+
+def curve_amount(level: float) -> float:
+    """
+    The amount for a need level (0-5, fractions allowed) on the exponential curve fitted to the rubric.
+
+    >>> [round(curve_amount(x)) for x in (0, 2.5, 5)]
+    [0, 440, 1485]
+    """
+    level = min(max(level, RATING_LEVELS[0]), RATING_LEVELS[-1])
+    a, k = RUBRIC_CURVE
+    return a * math.expm1(k * level)
+
+
+def rubric_amount(level: float) -> int:
+    """
+    The rubric maximum of the highest whole need level at or below `level` (the least a score of `level` is worth).
+
+    >>> [rubric_amount(x) for x in (0, 2.5, 3, 4.9, 5)]
+    [0, 300, 650, 900, 1500]
+    """
+    return RUBRIC_AMOUNT[int(min(max(level, RATING_LEVELS[0]), RATING_LEVELS[-1]))]
+
+
+def suggested_amount(level: float) -> int:
+    """
+    The curve's amount rounded to the nearest $10, but never less than the rubric amount of the level.
+
+    >>> [suggested_amount(x) for x in (0, 1, 2, 2.5, 3, 4, 5)]
+    [0, 130, 320, 440, 650, 960, 1500]
+    """
+    return max(int(curve_amount(level) / 10 + 0.5) * 10, rubric_amount(level))
 MERGED_FIELDS = ["uuid", "record_id", "stream", "requested_amount", "wfni", "emergency", "reviewers", "ratings",
                  "n_ratings", "mean_level", "spread", "suggested_amount", "status", "notes"]
 
@@ -244,7 +295,7 @@ COMPLETE_STAGE = "decided"
 
 
 def ensure_schema(conn: sqlite3.Connection):
-    ensure_table(conn, "src/schema/student_aid.sql")
+    ensure_table(conn, SPEC)
     if "stage" not in {row[1] for row in conn.execute("PRAGMA table_info(student_aid)")}:
         # a database from before stage tracking: work out where each application already is
         conn.execute("ALTER TABLE student_aid ADD COLUMN stage TEXT")
@@ -378,6 +429,60 @@ def _write_sheet(rows: list[dict], number: int, directory: Path, reviewer: str |
     (directory / f"batch_{number:03d}.txt").write_text("\n".join(lines), encoding="utf-8")
 
 
+def _docx_lines(path: Path) -> list[str]:
+    """Paragraph texts of a .docx (e.g. batch_NNN.txt opened and saved by Google Docs), without extra packages."""
+    ns = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    with zipfile.ZipFile(path) as z:
+        root = ElementTree.fromstring(z.read("word/document.xml"))
+    lines = []
+    for para in root.iter(f"{ns}p"):
+        parts = []
+        for el in para.iter():
+            if el.tag == f"{ns}t":
+                parts.append(el.text or "")
+            elif el.tag == f"{ns}tab":
+                parts.append(" ")
+            elif el.tag in (f"{ns}br", f"{ns}cr"):
+                parts.append("\n")
+        lines.extend("".join(parts).split("\n"))
+    return lines
+
+
+def _read_text_sheet(path: Path) -> list[dict]:
+    """Ratings from a read-only batch sheet (.txt or .docx): rows of record_id, need_level, notes."""
+    lines = _docx_lines(path) if path.suffix.lower() == ".docx" else path.read_text(encoding="utf-8-sig").splitlines()
+    rows, current, in_notes = [], None, False
+    for line in lines:
+        text = line.strip()
+        if m := re.match(r"\[(B\d+-\d+)\]", text):
+            current, in_notes = {"record_id": m.group(1), "need_level": "", "notes": ""}, False
+            rows.append(current)
+        elif current is None:
+            continue
+        elif m := re.match(r"Need level\s*\(0-5\)\s*:(.*?)(?:Notes\s*:(.*))?$", text, re.I):
+            current["need_level"] = m.group(1).replace("_", "").strip()
+            current["notes"] = (m.group(2) or "").replace("_", " ").strip()
+            in_notes = True
+        elif re.fullmatch(r"-{5,}", text):
+            in_notes = False
+        elif in_notes and text:
+            current["notes"] = f"{current['notes']} {text}".strip()
+    return rows
+
+
+def _sheet_rows(csv_sheet: Path, uuid_of: dict[str, str]) -> list[dict]:
+    """
+    Rows of one reviewer's batch sheet. The reviewer may have filled in the csv, or the .txt, or a .docx saved
+    from it (Google Docs opens .txt files as documents); the most recently saved of them is used.
+    """
+    candidates = [p for p in (csv_sheet, csv_sheet.with_suffix(".docx"), csv_sheet.with_suffix(".txt")) if p.exists()]
+    sheet = max(candidates, key=lambda p: p.stat().st_mtime)
+    if sheet == csv_sheet:
+        with open_csv(sheet) as f:
+            return list(csv.DictReader(f))
+    return [{"uuid": uuid_of.get(r["record_id"], r["record_id"]), **r} for r in _read_text_sheet(sheet)]
+
+
 def _sheet_uuids(path: Path) -> set[str]:
     with open_csv(path) as f:
         return {row.get("uuid", "") for row in csv.DictReader(f)}
@@ -422,6 +527,7 @@ def merge_reviews(conn: sqlite3.Connection, output_dir: Path | str = "secrets/ou
     batch_dir = out / "sap_batches"
     with open_csv(out / "sap_verified.csv") as f:
         applications = {row["uuid"]: row for row in csv.DictReader(f)}
+    uuid_of = {f"B{int(a['batch']):03d}-{int(a['record']):02d}": u for u, a in applications.items()}
     ensure_schema(conn)
     assigned: dict[int, list[str]] = {}
     for batch, reviewer in conn.execute("SELECT batch, reviewer FROM sap_batch_reviewer"):
@@ -432,26 +538,25 @@ def merge_reviews(conn: sqlite3.Connection, output_dir: Path | str = "secrets/ou
     problems: list[str] = []
     for sheet in sorted(batch_dir.glob("by_reviewer/*/batch_*.csv")):
         reviewer = sheet.parent.name
-        with open_csv(sheet) as f:
-            for row in csv.DictReader(f):
-                uuid, raw = row.get("uuid", ""), (row.get("need_level") or "").strip()
-                if uuid not in applications:
-                    problems.append(f"{reviewer}: {sheet.name} has an unknown application {uuid!r}")
-                elif reviewer not in assigned.get(int(applications[uuid]["batch"]), ()):
-                    problems.append(f"{reviewer}: {sheet.name} is not a sheet assigned to this reviewer; its ratings "
-                                    f"are ignored")
-                    break
-                elif raw:
-                    try:
-                        level = int(float(raw))
-                        if level not in RATING_LEVELS or level != float(raw):
-                            raise ValueError
-                    except (ValueError, OverflowError):
-                        problems.append(f"{reviewer}: {row.get('record_id')} has an invalid need level {raw!r}")
-                        continue
-                    ratings.setdefault(uuid, {})[reviewer] = (level, (row.get("notes") or "").strip())
-                else:
-                    cleared.append((uuid, reviewer))
+        for row in _sheet_rows(sheet, uuid_of):
+            uuid, raw = row.get("uuid", ""), (row.get("need_level") or "").strip()
+            if uuid not in applications:
+                problems.append(f"{reviewer}: {sheet.name} has an unknown application {uuid!r}")
+            elif reviewer not in assigned.get(int(applications[uuid]["batch"]), ()):
+                problems.append(f"{reviewer}: {sheet.name} is not a sheet assigned to this reviewer; its ratings "
+                                f"are ignored")
+                break
+            elif raw:
+                try:
+                    level = int(float(raw))
+                    if level not in RATING_LEVELS or level != float(raw):
+                        raise ValueError
+                except (ValueError, OverflowError):
+                    problems.append(f"{reviewer}: {row.get('record_id')} has an invalid need level {raw!r}")
+                    continue
+                ratings.setdefault(uuid, {})[reviewer] = (level, (row.get("notes") or "").strip())
+            else:
+                cleared.append((uuid, reviewer))
 
     rows = []
     for uuid, app in sorted(applications.items(), key=lambda kv: (int(kv[1]["batch"]), int(kv[1]["record"]))):
@@ -587,6 +692,21 @@ def overlapping_terms(applications: list[dict]) -> list[dict]:
     return alerts
 
 
+def prepare(conn: sqlite3.Connection, applications: list[dict]) -> list[dict]:
+    """Before verifying: mark the applications already complete as final; return the stored ones not in the export."""
+    ensure_schema(conn)
+    stages = dict(conn.execute("SELECT uuid, stage FROM student_aid"))
+    for app in applications:
+        app["final"] = stages.get(app["uuid"]) == COMPLETE_STAGE
+    return stored_applications(conn, {a["uuid"] for a in applications})
+
+
+SPEC = ProgramSpec(
+    slug="sap", label="SABP", table="student_aid", package="utsu_programs.sap",
+    mapping="data/conversion_table_sap.csv", build_row=build_row, optional=OPTIONAL_FIELDS, identity=IDENTITY_FIELDS,
+    key=application_key, prepare=prepare)
+
+
 def process_sap(csv_file: Path | str, conn: sqlite3.Connection, output_dir: Path | str = "secrets/output",
                 batch_size: int = 50, reviewers=()) -> dict:
     """
@@ -606,23 +726,12 @@ def process_sap(csv_file: Path | str, conn: sqlite3.Connection, output_dir: Path
     still verified; if the student has a newer application it is superseded.
     """
     reviewers = parse_reviewers(reviewers)
-    csv_file = Path(csv_file)
     out = Path(absfile(output_dir))
     out.mkdir(parents=True, exist_ok=True)
 
-    applications = read_applications(csv_file)
-    ensure_schema(conn)
-    stages = dict(conn.execute("SELECT uuid, stage FROM student_aid"))
-    for app in applications:
-        app["final"] = stages.get(app["uuid"]) == COMPLETE_STAGE
-    absent = stored_applications(conn, {a["uuid"] for a in applications})
-    run = Run(conn, "student_aid", "SABP", "sap", applications, key=application_key, absent=absent)
-
-    verify_applications(applications, conn.cursor())
-    run.keep_verified()
-    for app in applications:
-        if app["status"] == "unverified":
-            logger.warning(f"UNVERIFIED SABP application {app['uuid']}")
+    run = Run.start(SPEC, conn, csv_file)
+    applications, absent = run.rows, run.absent
+    run.verify(conn.cursor())
     run.select()
     verified = [a for a in run.current if a["status"] == "verified"]
     unverified = [a for a in run.current if a["status"] == "unverified"]

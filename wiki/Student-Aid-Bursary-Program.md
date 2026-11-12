@@ -1,11 +1,11 @@
 # Student Aid Bursary Program
 
-`src/utsu_core/sap.py` processes the SABP form export (Stages 1-3 of SAS-002). The financial-need scoring is in
-`src/utsu_core/wfni.py`. The program verifies applicants, scores them, cuts anonymized review batches for the
+`src/utsu_programs/sap/program.py` processes the SABP form export (Stages 1-3 of SAS-002). The financial-need scoring is in
+`src/utsu_programs/sap/wfni.py`. The program verifies applicants, scores them, cuts anonymized review batches for the
 committee, merges reviewer ratings, and records final decisions. **Disbursement is not tracked.**
 
 ```powershell
-python -m utsu_core.main --program sap --sap_file secrets/sabp.csv [--batch_size 50] [--reviewers "Ann,Bo,Cy"]
+utsu-sap --sap_file secrets/sabp.csv [--batch_size 50] [--reviewers "Ann,Bo,Cy"]
 ```
 
 ## Form export
@@ -103,7 +103,7 @@ If sheets are handed out without `--reviewers`, record that with `--issue_batche
 ## Merging reviews
 
 ```powershell
-python -m utsu_core.main --program sap --merge_reviews
+utsu-sap --merge_reviews
 ```
 
 Writes `sap_merged_ratings.csv` and fills the `sap_review` table. Per application: reviewers, each rating, the mean, the
@@ -139,9 +139,9 @@ forward; reprocessing never moves it back.
 | `decided` | `--record_decisions decisions.csv` |
 
 ```powershell
-python -m utsu_core.main --program sap --issue_batches all      # sheets were handed out without --reviewers
-python -m utsu_core.main --program sap --merge_reviews
-python -m utsu_core.main --program sap --record_decisions decisions.csv
+utsu-sap --issue_batches all      # sheets were handed out without --reviewers
+utsu-sap --merge_reviews
+utsu-sap --record_decisions decisions.csv
 ```
 
 `decisions.csv` needs `uuid` and `decision`; `awarded_amount` is optional (`0` is allowed). Other columns (for example
@@ -149,6 +149,103 @@ those of `sap_merged_ratings.csv`) are ignored, so the merged file can be filled
 recorded are listed and skipped: unknown application, unverified, missing decision, bad amount. A
 decision recorded before reconciliation is accepted with a warning (for example instant approvals). Recording an
 application again replaces its decision, with a warning; the same decision again with no amount keeps the stored amount.
+
+Sheets that come back as `.docx` in one folder per reviewer, possibly from batches that no longer match the database,
+can be merged on their own (no database; the folder name is the reviewer, `[B012-01]` tags identify records, and a score
+such as `2-3` becomes `2.5`). `suggested_amount` is the mean score on an exponential curve,
+`a * (exp(k * score) - 1)`, fitted (least squares, through $0 at level 0) to the rubric maximums so that fractional
+scores get an amount, rounded to the nearest $10 and never below `rubric_amount`, the rubric maximum of the mean
+score's whole level (for example a mean of 3 is at least $650, even though the curve gives $583):
+
+```powershell
+python -m utsu_programs.sap.merge_docx path\to\reviewers -o secrets\merged_reviews.csv
+```
+
+### Private banking export
+
+Join the merged reviews with the **same database used to assign their batches** and the original full SABP form
+export:
+
+```powershell
+python -m utsu_programs.sap.export_banking secrets\merged_reviews.csv secrets\sabp.csv secrets\data.sqlite -o secrets\reviews_banking.csv
+```
+
+The export preserves the review columns and adds the application UUID, first and last names, email, original email,
+institution name, institution number, transit number, account number and `export_flags`. The record ID resolves to
+one database application, whose UUID is recomputed from the original form row using the normal SABP rules. A missing
+database record or original form row remains in the output with blank identity and banking details and
+`manual_reconciliation` plus `missing_database_record` or `missing_application` in `export_flags`. The application UUID
+is retained when known. Each missing record is also reported as a warning. Reconcile these records manually against the
+correct original data; the program does not infer a match. Ambiguous matches, duplicate records and missing required
+columns still stop the export without replacing the output. The database is read-only. Verify that the database really
+corresponds to the review sheets: the same record ID can be assigned to a different person in a different database.
+Applications absent from the form export cannot be recovered from the database alone.
+
+Valid emails are converted to `@mail.utoronto.ca`, including addresses on other domains; `email_changed` flags any
+change and `original_email` retains the source. **Confirm changed addresses before use:** converting a personal or
+other U of T address does not establish that the resulting mailbox exists or belongs to the student. The
+`email_domain_similarity` score (0 to 1) compares the original domain to `utoronto.ca` and `mail.utoronto.ca`, taking
+the higher score; for example `toronto.ca` is treated as a likely typo. A score below 0.8 is additionally flagged
+`email_low_domain_similarity`. The score is a heuristic, not evidence that the address belongs to the student.
+Invalid or blank emails are left blank and marked `invalid_email`. `missing_bank_information` flags blank banking
+fields; the script does not validate account numbers. Bank numbers remain strings in the CSV, but spreadsheet
+programs can remove leading zeroes when opening it: import these columns as text.
+
+This file contains highly sensitive banking and identifying information. Store it in `secrets`, restrict access, and
+never distribute it with anonymized reviewer sheets.
+
+### Standard 005 EFT export
+
+The banking export can also create a credit-only Payments Canada Standard 005 file using pure Python. This is a
+generic 1464-byte-record implementation informed by [Payments Canada Standard 005](https://www.payments.ca/sites/default/files/standard005eng.pdf)
+and [moov-io/cadeft](https://github.com/moov-io/cadeft). **BMO compatibility is not certified**: confirm the required
+settings, record separator, encoding, and transaction code with BMO and submit a test file before making payments.
+
+Add an `approved_amount` column to the merged reviews and enter an explicitly approved positive dollar amount for
+**every** row. `suggested_amount` is not approval and is never used as a payment amount. Blank, zero, negative,
+non-numeric, and more-than-two-decimal amounts stop the entire EFT export. Exclude non-payments from the reviewed
+CSV before running it.
+
+Create a private JSON file under `secrets` with settings supplied by BMO. All fields are required; these values are
+fictional placeholders, not BMO defaults:
+
+```json
+{
+  "originator_id": "1234567890",
+  "file_creation_number": 23,
+  "creation_date": "2026-11-08",
+  "payment_date": "2026-11-10",
+  "destination_data_center": "00610",
+  "originating_data_center": "12345",
+  "transaction_code": "450",
+  "originator_short_name": "UTSU",
+  "originator_long_name": "Student Union",
+  "return_institution_id": "000100023",
+  "return_account_number": "123456",
+  "record_separator": "lf"
+}
+```
+
+`originator_id` is exactly 10 printable ASCII characters; `file_creation_number` is an integer from 1 to 9999.
+Use the destination and originating data centre numbers assigned by the bank as five-digit strings; they form part of
+each item trace number. `return_institution_id` is the nine-digit return routing number (`0` + three-digit
+institution + five-digit transit). Dates are `YYYY-MM-DD`; the payment date must not precede the creation date.
+`record_separator` is `none`, `lf`, or `crlf`, as required by BMO. The file is ASCII and contains no trailing record
+separator. Payee names must fit 30 printable ASCII characters; account numbers must be 1–12 digits, institution
+numbers exactly three digits and transit numbers exactly five digits. Invalid inputs stop the export rather than being
+silently truncated or altered.
+
+```powershell
+python -m utsu_programs.sap.export_banking secrets\approved_reviews.csv secrets\sabp.csv secrets\data.sqlite -o secrets\reviews_banking.csv --eft-config secrets\eft_config.json --eft-output secrets\payments_0023.eft
+```
+
+Both files contain sensitive information. The EFT is created only after all rows validate and is never overwritten.
+If any application requires manual reconciliation, the CSV is written with the flagged rows, the command exits with an
+error, and no EFT is created; no matched rows are paid in a partial EFT.
+The program does **not** submit payments, track submissions, prevent duplicate payments, or manage file creation
+numbers. Maintain unique file creation numbers and a submission ledger according to BMO's rules; independently review
+the recipient details, amounts, dates and total before each upload. Email and missing-bank flags in the CSV still
+require review. A generated EFT file is not proof of approval, acceptance, or payment.
 
 `decided` is the last stage: the application is **complete**, which makes it final for that term (any other
 application of the student for that term becomes `not_considered`). `sap_run.json` counts verified applications per

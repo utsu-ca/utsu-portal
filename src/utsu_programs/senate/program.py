@@ -1,12 +1,15 @@
-import csv
+"""
+Senate applications: read the form export, verify every applicant against uoft_data and write verified.csv /
+unverified.csv for the seating. The steps are the shared pipeline's (see utsu_core.pipeline); this module is the
+Senate form's `ProgramSpec` and what is written afterwards.
+"""
 import logging
 import re
 import sqlite3
 from pathlib import Path
 
-from utsu_core.selection import add_flag, dedupe_by_uuid
 from utsu_core.pipeline import Run, ensure_table
-from utsu_core.verification import match_students, setup_reader
+from utsu_core.spec import ProgramSpec
 from utsu_std.csv_safe import write_rows
 from utsu_std.utils import absfile, application_uuid_for, normalize_uoft_email, student_uuid_for, EMAIL_FLAGS
 
@@ -60,8 +63,28 @@ VALUES (:uuid, :student_uuid, :uoft_uuid, :verification_level, :match_method, :s
 """
 
 
+def build_row(row: dict[str, str]) -> dict | None:
+    """One mapped form row -> an application, or None when it names nobody (no name and no student number)."""
+    app = {k: (row.get(k) or "").strip() for k in OUTPUT_FIELDS if k != "uuid"}
+    app["delegated"] = "yes" if app["delegated"].lower().startswith("yes") else "no"
+    app.update(read_preferences(row))
+    if not app["id"] and not app["full_name"]:
+        return None
+    app["email"], email_status = normalize_uoft_email(app["email"])
+    app["uuid"] = application_uuid(app)
+    app["student_uuid"] = student_uuid_for(app["email"], app["id"], app["full_name"])
+    app["flags"] = EMAIL_FLAGS.get(email_status, "")
+    return app
+
+
+SPEC = ProgramSpec(
+    slug="senate", label="Senate", table="senate_application", package="utsu_programs.senate",
+    mapping="data/conversion_table_senate.csv", build_row=build_row, optional=OPTIONAL_FIELDS,
+    identity=IDENTITY_FIELDS, insert=_INSERT)
+
+
 def ensure_schema(conn: sqlite3.Connection):
-    ensure_table(conn, "src/schema/senate.sql")
+    ensure_table(conn, SPEC)
 
 
 def verify_senators(csv_file: Path, cursor: sqlite3.Cursor, output_dir: Path | str = "secrets/output"):
@@ -75,41 +98,10 @@ def verify_senators(csv_file: Path, cursor: sqlite3.Cursor, output_dir: Path | s
     Writes verified.csv and unverified.csv (the whole export's result) to output_dir (relative paths resolve
     from the project root), and alerts_senate.csv.
     """
-    if isinstance(csv_file, str):
-        csv_file = Path(csv_file)
-    mapping = absfile("data/conversion_table_senate.csv")
-    senators: csv.DictReader = setup_reader(csv_file, mapping, optional=OPTIONAL_FIELDS, identity=IDENTITY_FIELDS)
-
-    rows = []
-    for row in senators:
-        app = {k: (row.get(k) or "").strip() for k in OUTPUT_FIELDS if k != "uuid"}
-        app["delegated"] = "yes" if app["delegated"].lower().startswith("yes") else "no"
-        app.update(read_preferences(row))
-        if not app["id"] and not app["full_name"]:
-            continue
-        app["email"], email_status = normalize_uoft_email(app["email"])
-        app["uuid"] = application_uuid(app)
-        app["student_uuid"] = student_uuid_for(app["email"], app["id"], app["full_name"])
-        app["flags"] = EMAIL_FLAGS.get(email_status, "")
-        rows.append(app)
-    applications = dedupe_by_uuid(rows)
-
-    conn = cursor.connection
-    ensure_schema(conn)
-    run = Run(conn, "senate_application", "Senate", "senate", applications)
-
-    for app, match in zip(applications, match_students(applications, cursor)):
-        app.update(uoft_uuid=match.uoft_uuid, verification_level=match.level, match_method=match.method,
-                   status="verified" if match.verified else "unverified")
-        if match.fuzzy_flag:
-            add_flag(app, match.fuzzy_flag)
-    run.keep_verified()
-    for app in applications:
-        logger.log(logging.INFO if app["status"] == "verified" else logging.WARNING,
-                   f"{app['status'].upper()} application {app['uuid']}")
-
+    run = Run.start(SPEC, cursor.connection, csv_file)
+    run.verify(cursor)
     run.select()
-    run.replace_all(_INSERT, "src/schema/senate.sql")
+    run.replace_all()
     run.settle()
 
     verified = [a for a in run.current if a["status"] == "verified"]
