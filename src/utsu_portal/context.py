@@ -12,6 +12,7 @@ from fastapi import Depends, Header, HTTPException, Query
 from . import security
 from .events import EventBus
 from .mailer import Mailer
+from .services.account_check import is_rostered
 from .settings import Settings
 from .store import Conflict, Store
 
@@ -126,6 +127,17 @@ class Context:
             a = self._account(authorization, None)
             if a["status"] != "verified":
                 raise HTTPException(403, "account not verified")
+            return a
+        return Depends(dep)
+
+    def require_rostered(self) -> Callable:
+        """Verified account that the central roster check found on the roster (the gate for program pages)."""
+        def dep(authorization: str | None = Header(None)) -> dict:
+            a = self._account(authorization, None)
+            if a["status"] != "verified":
+                raise HTTPException(403, "account not verified")
+            if not is_rostered(self.store, a["uuid"]):
+                raise HTTPException(403, "not on the student roster")
             return a
         return Depends(dep)
 

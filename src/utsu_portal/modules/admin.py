@@ -5,6 +5,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from ..context import Context
+from ..services.account_check import check_one
+from ..services.roster import import_roster
 
 name = "admin"
 
@@ -14,6 +16,11 @@ class Decision(BaseModel):
     note: str = ""
 
 
+class RosterIn(BaseModel):
+    csv: str
+    replace: bool = True
+
+
 class AdminModule:
     name = name
 
@@ -21,6 +28,15 @@ class AdminModule:
         r = APIRouter(prefix="/api/admin")
         S = ctx.store
         admin = ctx.require_role("verifier")
+
+        @r.post("/roster")
+        def upload_roster(b: RosterIn, a: dict = ctx.require_admin()):
+            try:
+                out = import_roster(S, b.csv, b.replace, ctx.now())
+            except ValueError as e:
+                raise HTTPException(422, str(e))
+            ctx.audit.record(a["uuid"], "roster.uploaded", "roster", None, out)
+            return out
 
         @r.get("/verifications")
         def pending(_: dict = admin):
@@ -62,6 +78,8 @@ class AdminModule:
                 if user_ch:
                     user = S.update("users", uid, lambda u: {**u, **user_ch})
                 acct = S.update("accounts", uid, lambda ac: {**ac, **acct_ch})
+                if b.approve:
+                    check_one(S, uid, ctx.now())
             except HTTPException:
                 S.update("verifications", vid, lambda x: {**x, "status": "pending"})
                 raise

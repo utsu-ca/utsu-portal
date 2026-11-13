@@ -29,7 +29,16 @@ def env():
         h[u] = login(c, mail, u)
         r = c.post("/api/verification", json={**scan(c, h[u]), "first_name": u.title(), "last_name": "Test"}, headers=h[u])
         c.post(f"/api/admin/verifications/{r.json()['id']}/decision", json={"approve": True}, headers=h["boss"])
+    roster = "First Name,Last Name,Truncated Student Number,Faculty,Division\nAda,Test,xxxxx7890x,ARTSC,UC\nBob,Test,xxxxx7890x,ARTSC,UC\n"
+    assert c.post("/api/admin/roster", json={"csv": roster}, headers=h["boss"]).json()["rostered"] == 2
     return c, h
+
+
+def test_unrostered_account_cannot_reach_the_agm(env):
+    c, h = env
+    c.post("/api/admin/roster", json={"csv": "First Name,Last Name,Truncated Student Number,Faculty,Division\nAda,Test,xxxxx7890x,ARTSC,UC\n"}, headers=h["boss"])
+    assert c.get("/api/agm/invitation", headers=h["ada"]).status_code == 200
+    assert c.get("/api/agm/invitation", headers=h["bob"]).status_code == 403
 
 
 def rsvp(c, h, who, mode, **extra):
