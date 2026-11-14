@@ -1,5 +1,8 @@
 # Operations Runbook
 
+> Historical reference only. Do not follow this runbook for the web application: the batch commands have been removed.
+> See [README](../README.md) for current capabilities and limitations.
+
 A checklist for running a real cycle. Replace paths as needed; all commands run from any directory once the package is
 [installed editable](Getting-Started#install).
 
@@ -76,8 +79,8 @@ If the roster itself changed: add `--reimport_uoft_data`. A student who was veri
 Always `--dry_run` first, then send. See [Emailing](Emailing#safety-workflow).
 
 ```powershell
-python -m utsu_mail.notices agm more_info
-python -m utsu_mail agm_more_info --recipients secrets/output/notices_agm_more_info.csv --dry_run
+python -m utsu_core.mail.notices agm more_info
+python -m utsu_core.mail agm_more_info --recipients secrets/output/notices_agm_more_info.csv --dry_run
 ```
 
 ## 8. After the cycle

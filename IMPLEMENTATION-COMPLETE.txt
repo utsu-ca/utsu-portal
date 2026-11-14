@@ -10,7 +10,7 @@
 ✅ TASK 1: Email Microservice
    Status: COMPLETE ✓
    
-   Location: src/utsu_portal/mailsvc/__init__.py (12 KB)
+   Location: src/utsu_core/mailsvc/__init__.py (12 KB)
    
    Features Implemented:
    • Email queuing (asynchronous)
@@ -27,8 +27,8 @@
 ✅ TASK 2: RBAC Extension to AuthSvc
    Status: COMPLETE ✓
    
-   Location: src/utsu_portal/authsvc/rbac.py (8.4 KB)
-   Modified: src/utsu_portal/authsvc/__init__.py
+   Location: src/utsu_core/authsvc/rbac.py (8.4 KB)
+   Modified: src/utsu_core/authsvc/__init__.py
    
    Features Implemented:
    • 4 predefined roles: student, admin, moderator, staff
@@ -114,13 +114,13 @@
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 SOURCE CODE (3 files)
-├── src/utsu_portal/mailsvc/__init__.py (12 KB)
+├── src/utsu_core/mailsvc/__init__.py (12 KB)
 │   Email microservice implementation with FastAPI, SQLAlchemy, asyncio
 │
-├── src/utsu_portal/authsvc/rbac.py (8.4 KB)
+├── src/utsu_core/authsvc/rbac.py (8.4 KB)
 │   RBAC module with roles, permissions, and audit logging
 │
-└── src/utsu_portal/authsvc/__init__.py (modified, 3.2 KB)
+└── src/utsu_core/authsvc/__init__.py (modified, 3.2 KB)
     Integration of RBAC module into auth service
 
 DEPLOYMENT & CONFIGURATION (7 files)
@@ -451,8 +451,8 @@ For Quick Understanding (30 minutes):
 For In-Depth Knowledge (2 hours):
 1. wiki/Microservice-Architecture.md (architecture deep-dive)
 2. wiki/Implementation-Summary.md (complete reference)
-3. Source code: src/utsu_portal/mailsvc/__init__.py
-4. Source code: src/utsu_portal/authsvc/rbac.py
+3. Source code: src/utsu_core/mailsvc/__init__.py
+4. Source code: src/utsu_core/authsvc/rbac.py
 
 For Deployment (1-2 hours):
 1. Choose platform (local, Azure, GCP, or Kubernetes)

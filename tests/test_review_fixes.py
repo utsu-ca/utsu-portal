@@ -13,13 +13,13 @@ from test_agm import students_db
 from test_mail import SETTINGS
 from test_sap import LC_ROW, fill_sheet, form_csv as sap_form, students_db as sap_students
 from utsu_core import importing_data
-from utsu_programs.agm import program as agm
-from utsu_programs.sap import program as sap, wfni
-from utsu_mail.campaign import Prepared, send_all
-from utsu_mail.notices import DIVISION_FIELD, NUMBER_FIELD, diagnose
-from utsu_mail.templates import RenderedMessage
-from utsu_mail.transport import SmtpSender
-from utsu_std.utils import absfile, explicit_flags, load_and_merge_config, setup_logging
+from utsu_core.programs.agm import program as agm
+from utsu_core.programs.sap import program as sap, wfni
+from utsu_core.mail.campaign import Prepared, send_all
+from utsu_core.mail.notices import DIVISION_FIELD, NUMBER_FIELD, diagnose
+from utsu_core.mail.templates import RenderedMessage
+from utsu_core.mail.transport import SmtpSender
+from utsu_core.std.utils import absfile, explicit_flags, load_and_merge_config, setup_logging
 from utsu_core.resources import package_text
 from utsu_core.verification import construct_lookup_tables
 
@@ -67,40 +67,6 @@ def test_identical_roster_rows_are_kept_once(tmp_path, caplog):
     with caplog.at_level(logging.WARNING):
         importing_data.import_uoft_data(conn, roster)
     assert conn.execute("SELECT COUNT(*) FROM uoft_data").fetchone() == (1,) and "duplicate" in caplog.text
-
-
-def test_agm_command_imports_again_when_the_student_table_is_empty(tmp_path):
-    from utsu_core.cli import execute
-    from utsu_programs.agm.cli import PROGRAM
-
-    roster = tmp_path / "roster.csv"
-    roster.write_text(ROSTER_HEADER + "Ann,Lee,xxxxx3971x,ARTSC,UC\n", encoding="utf-8")
-    db = tmp_path / "db.sqlite"
-    cfg = {"db": str(db), "no_backup": True, "import_uoft_data": str(roster),
-           "agm_file": "", "output_dir": str(tmp_path / "out")}
-    with pytest.raises(ValueError, match="AGM"):  # the roster is imported first, then the missing export is refused
-        execute(cfg, [PROGRAM])
-    conn = sqlite3.connect(db)
-    assert conn.execute("SELECT COUNT(*) FROM uoft_data").fetchone() == (1,)
-    conn.execute("DELETE FROM uoft_data")
-    conn.commit()
-    conn.close()
-
-    with pytest.raises(ValueError, match="AGM"):  # the table is empty: it is imported again
-        execute(cfg, [PROGRAM])
-    conn = sqlite3.connect(db)
-    assert conn.execute("SELECT COUNT(*) FROM uoft_data").fetchone() == (1,)
-    conn.close()
-
-
-def test_a_missing_roster_file_is_an_error_exit(tmp_path):
-    from utsu_core.cli import execute
-    from utsu_programs.agm.cli import PROGRAM
-
-    cfg = {"db": str(tmp_path / "db.sqlite"), "no_backup": True, "import_uoft_data": str(tmp_path / "none.csv"),
-           "output_dir": str(tmp_path / "out")}
-    with pytest.raises(FileNotFoundError):
-        execute(cfg, [PROGRAM])
 
 
 # ---- SABP ------------------------------------------------------------------------------------------------------
@@ -257,22 +223,6 @@ def test_a_flag_equal_to_its_default_still_overrides_the_config(tmp_path):
     assert load_and_merge_config(parser.parse_args([]), parser, explicit=set())["seed"] == 7  # not given: the config's
 
 
-def test_utsu_all_skips_a_missing_senate_export(tmp_path, caplog):
-    from utsu_core.cli import execute
-    from utsu_programs.runner import run
-    from utsu_programs.senate.cli import PROGRAM as SENATE
-
-    roster = tmp_path / "roster.csv"
-    roster.write_text(ROSTER_HEADER + "Ann,Lee,xxxxx3971x,ARTSC,UC\n", encoding="utf-8")
-    cfg = {"db": str(tmp_path / "db.sqlite"), "no_backup": True, "import_uoft_data": str(roster),
-           "verify_student": str(tmp_path / "none.csv"), "output_dir": str(tmp_path / "out")}
-    with caplog.at_level(logging.WARNING):
-        run(cfg)  # no Senate export: Senate and seating are skipped, and nothing else is asked for
-    assert "skipping Senate verification" in caplog.text
-    with pytest.raises(FileNotFoundError):
-        execute(cfg, [SENATE])
-
-
 def test_program_is_never_saved_to_the_config(tmp_path):
     path = tmp_path / "config.json"
     parser = argparse.ArgumentParser()
@@ -308,7 +258,7 @@ def test_send_survives_a_failed_reconnect(tmp_path):
         def _connect(self):
             raise OSError("network down")
 
-    import utsu_mail.campaign as campaign
+    import utsu_core.mail.campaign as campaign
     original, campaign.SmtpSender = campaign.SmtpSender, Sender
     try:
         items = [Prepared(f"x{i}@b.ca", RenderedMessage("s", "t")) for i in range(3)]

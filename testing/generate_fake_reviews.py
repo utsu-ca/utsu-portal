@@ -1,5 +1,5 @@
 """
-Fake reviewed batch sheets (.docx) for testing `python -m utsu_programs.sap.merge_docx`.
+Fake reviewed batch sheets (.docx) for testing `python -m utsu_core.programs.sap.merge_docx`.
 
     python testing/generate_fake_reviews.py [--out testing/output/reviewer_docx] [--seed 1] [--batches 6]
     python testing/generate_fake_reviews.py --from-sheets testing/output/sap_batches/by_reviewer
@@ -28,7 +28,7 @@ RANGE_DASHES = ["-", "\u2013", " - "]
 
 
 def sheet_lines(batch: int, size: int, reviewer: str) -> list[str]:
-    """A blank sheet laid out like batch_NNN.txt (see utsu_programs.sap.program._write_sheet)."""
+    """A blank sheet laid out like batch_NNN.txt (see utsu_core.programs.sap.program._write_sheet)."""
     rng = random.Random(f"sheet-{batch}")
     lines = [f"BATCH {batch:03d}  |  reviewer: {reviewer}  |  {size} applications  |  score each 0-5 against the "
              f"General Statement Rubric", ""]
@@ -134,7 +134,7 @@ def main(argv=None) -> None:
     result = generate(args.out, args.seed, args.batches, args.size, args.reviewers.split(","), args.from_sheets)
     for batch, reviewers in sorted(result["assignments"].items()):
         print(f"batch {batch}: {', '.join(reviewers)}")
-    print(f"Wrote {args.out}; merge with: python -m utsu_programs.sap.merge_docx {args.out} "
+    print(f"Wrote {args.out}; merge with: python -m utsu_core.programs.sap.merge_docx {args.out} "
           f"-o {Path(args.out).parent / 'merged_reviews.csv'}")
 
 

@@ -584,7 +584,7 @@ WORKDIR /app
 
 # Run proxy + app
 CMD /cloud_sql_proxy -instances=utsu:us-central1:authdb & \
-    uvicorn utsu_portal.authsvc:create_auth_app --host 0.0.0.0
+    uvicorn utsu_core.authsvc:create_auth_app --host 0.0.0.0
 ```
 
 ---

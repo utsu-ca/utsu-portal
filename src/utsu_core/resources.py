@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 def package_text(package: str, name: str) -> str:
-    """The text of a data file in a package, e.g. `package_text("utsu_programs.agm", "schema.sql")`."""
+    """The text of a data file in a package, e.g. `package_text("utsu_core.programs.agm", "schema.sql")`."""
     return resources.files(package).joinpath(name).read_text(encoding="utf-8-sig")
 
 

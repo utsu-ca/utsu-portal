@@ -1,7 +1,7 @@
-/* Source for src/utsu_portal/static/app.css. Build: web/build-css.sh (Tailwind standalone CLI, no Node). */
+/* Source for src/utsu_core/static/app.css. Build: web/build-css.sh (Tailwind standalone CLI, no Node). */
 @import "tailwindcss";
-@source "../src/utsu_portal/static/*.html";
-@source "../src/utsu_portal/static/*.js";
+@source "../src/utsu_core/static/*.html";
+@source "../src/utsu_core/static/*.js";
 /* classes assembled at run time by the form renderer */
 @source inline("{card,primary,secondary,danger,err,ok,badge,help,opt,row,shot,yaml,status}");
 

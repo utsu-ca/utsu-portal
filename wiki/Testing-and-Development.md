@@ -1,5 +1,8 @@
 # Testing and Development
 
+> Historical batch development reference. See [README](../README.md) for current setup, testing and retained
+> synthetic data generators. Program commands referenced below have been removed.
+
 ## Tests
 
 ```powershell

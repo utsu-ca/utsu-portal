@@ -1,14 +1,12 @@
 import csv
 import sqlite3
-import subprocess
-import sys
 
 import pytest
 
 from utsu_core.verification import construct_lookup_tables, setup_reader
-from utsu_programs.sap.export_banking import BANK_FIELDS, export_banking, export_email
-from utsu_programs.sap.program import SPEC, build_row
-from utsu_std.utils import absfile
+from utsu_core.programs.sap.export_banking import BANK_FIELDS, export_banking, export_email
+from utsu_core.programs.sap.program import SPEC, build_row
+from utsu_core.std.utils import absfile
 
 
 def write_csv(path, fields, rows):
@@ -66,12 +64,9 @@ def test_email(value, expected, flags):
             assert float(score) >= 0.8
 
 
-def test_export_cli_joins_and_preserves_bank_numbers(inputs):
+def test_export_joins_and_preserves_bank_numbers(inputs):
     reviews, applications, database, output, _, _ = inputs
-    result = subprocess.run(
-        [sys.executable, "-m", "utsu_programs.sap.export_banking", str(reviews), str(applications),
-         str(database), "-o", str(output)], capture_output=True, text=True)
-    assert result.returncode == 0, result.stderr
+    assert export_banking(reviews, applications, database, output) == 1
     with output.open(encoding="utf-8-sig", newline="") as f:
         row = next(csv.DictReader(f))
     assert row["record_id"] == "B001-02"

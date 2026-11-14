@@ -1,5 +1,8 @@
 # Getting Started
 
+> Historical batch documentation: the commands and setup below no longer describe the web application. See
+> [README](../README.md) for current setup and [Applicant Portal](Applicant-Portal.md) for its workflows.
+
 ## Requirements
 
 - Python **3.12 or newer**. There are no runtime dependencies. `pytest` is the only optional (dev) dependency.
@@ -17,8 +20,8 @@ pip install -e ".[dev]"
 
 With [uv](https://docs.astral.sh/uv/) instead: `uv run --extra dev python -m pytest` creates the environment on demand.
 
-The editable install puts `utsu_core`, `utsu_programs`, `utsu_std` and `utsu_mail` on the import path and installs the
-commands `utsu-senate`, `utsu-sap`, `utsu-agm` and `utsu-all` (also `python -m utsu_programs.<program>`), so every
+The editable install puts `utsu_core`, `utsu_core.programs`, `utsu_core.std` and `utsu_core.mail` on the import path and installs the
+commands `utsu-senate`, `utsu-sap`, `utsu-agm` and `utsu-all` (also `python -m utsu_core.programs.<program>`), so every
 command works from **any** directory. Relative paths in flags and in `config.json` are always resolved from the
 project root, never from the current directory.
 

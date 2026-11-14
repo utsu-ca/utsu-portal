@@ -1,8 +1,36 @@
-# 03 Student Aid Bursary (SAP/SABP) module (`utsu_portal/programs/sap`)
+# 03 Student Aid Bursary (SAP/SABP) module (`utsu_core/programs/sap`)
 
-Ports `utsu_programs/sap` (`wfni.py`, `merge_docx.py`, `export_banking.py`, `eft.py`, the scoring and decision logic
+Ports `utsu_core/programs/sap` (`wfni.py`, `merge_docx.py`, `export_banking.py`, `eft.py`, the scoring and decision logic
 of `program.py`). **Re-architected from batches to a review queue.** See also [00](00-overview.md) section 3
 (stateless compute) for the rules this module follows.
+
+Status: applicant and `sap_admin` views, configurable WFNI scoring, and an initial review and decision flow
+are implemented. The client proposes a redacted hardship statement with static rules, and the server rejects
+recognizable names, student numbers and contact details that remain. An administrator must review and confirm the
+statement before it is shown to a reviewer holding a claim; the system cannot guarantee the text is anonymous. The workflow is not yet a complete
+replacement for the committee process and is disabled by default (`PORTAL_SAP_REVIEW_ENABLED=1` enables evaluation).
+Applicants can submit encrypted banking details in the web client. `sap_admin` can request a single-use, 48-hour
+re-verification link, compare encrypted pending details against the active version, accept them, or remove the data
+from the active store. This removal does not erase backups or database history. Administrators can increase the required number of
+reviews, or resolve a persistent disagreement with a recorded reason. Resolution locks ratings and must be performed
+by an administrator who was not a reviewer or the applicant. Administrators can assign a verified
+reviewer, and reviewers can declare conflicts before submitting a rating. EFT export,
+historical migration and a complete client remain proposed. Basic administrator and reviewer screens are available
+for the experimental review API. Scores are unavailable for older or
+incomplete applications and until weights are explicitly configured; they are not committee decisions.
+Form version 3 collects the historical subsidy choices. A selected living-costs emergency bursary is shown to
+reviewers and prioritized in the queue. Applications without a living-costs subsidy selection have unknown emergency
+status and are not automatically prioritized; administrators should check these submissions separately.
+The resolution endpoint is `POST /api/admin/sap/applications/{uid}/resolve-review`; it requires the application
+revision and a non-empty reason, and rejects stale revisions. Decision recording remains a separate action.
+Decided portal applications are encrypted and retained when an applicant starts a new application for disjoint
+terms. Overlapping decided terms are rejected. Only one application can be active at a time, and banking remains
+account-scoped; simultaneous overlapping applications and bulk legacy batch-record import are not implemented.
+Administrators can manually import a completed historical decision and its ratings for an existing portal application
+after independently confirming the account and source. Existing terms and duplicate source references are rejected;
+imported history is encrypted, and no payment or full application data is inferred.
+Administrators can download an audited private CSV of current applications and decisions. It excludes hardship,
+reviewer identities and banking details, and is not a payment export or a historical application export.
 
 ## 1. Purpose
 

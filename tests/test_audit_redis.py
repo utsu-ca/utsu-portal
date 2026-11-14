@@ -15,13 +15,13 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).parent))
 from test_portal import IMG, activate, login, register, setup_admin_and_user  # noqa: E402
 
-from utsu_portal import audit as A, create_app
-from utsu_portal.crypto import Crypter, EncryptingStore
-from utsu_portal.events import RedisEventBus
-from utsu_portal.mailer import OutboxMailer
-from utsu_portal.ratelimit import RateLimiter
-from utsu_portal.settings import Settings
-from utsu_portal.store import MemoryStore
+from utsu_core import audit as A, create_app
+from utsu_core.crypto import Crypter, EncryptingStore
+from utsu_core.events import RedisEventBus
+from utsu_core.mailer import OutboxMailer
+from utsu_core.ratelimit import RateLimiter
+from utsu_core.settings import Settings
+from utsu_core.store import MemoryStore
 
 
 def boot(**kw):

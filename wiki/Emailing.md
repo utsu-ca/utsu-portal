@@ -1,11 +1,14 @@
 # Emailing
 
-`utsu_mail` sends mail-merge emails directly over SMTP, with a safe preview-and-confirm workflow.
+> Historical reference only. The mail-merge command below has been removed; portal sign-in mail configuration is
+> described in [README](../README.md). Historical bulk notices are not yet a portal workflow.
+
+`utsu_core.mail` sends mail-merge emails directly over SMTP, with a safe preview-and-confirm workflow.
 
 ```powershell
-python -m utsu_mail --list_fields                 # templates + columns from the programs' schema.sql files
-python -m utsu_mail senate_verified --dry_run     # render a preview, never connects to SMTP
-python -m utsu_mail senate_verified               # preview, confirm, send
+python -m utsu_core.mail --list_fields                 # templates + columns from the programs' schema.sql files
+python -m utsu_core.mail senate_verified --dry_run     # render a preview, never connects to SMTP
+python -m utsu_core.mail senate_verified               # preview, confirm, send
 ```
 
 ## Templates
@@ -80,15 +83,15 @@ Subjects carry `[Ref <application uuid>]` and every body lists the application u
 submission timestamp. These are internal database keys, kept in the email only as a reference for replies; a reply is
 matched back by the student's email, student number or name, **not** by the id.
 
-`utsu_mail.notices` builds the recipient file. Each row keeps its columns and gains `application_uuid`, `student_uuid`
+`utsu_core.mail.notices` builds the recipient file. Each row keeps its columns and gains `application_uuid`, `student_uuid`
 and, for `more_info`, `unverified_fields` (which details could not be verified, judged from what the application actually
 gave) or, for `rejection`, `rejection_reason`:
 
 ```powershell
-python -m utsu_mail.notices senate more_info                              # reads <output_dir>/unverified.csv
-python -m utsu_mail.notices sabp more_info                                # reads <output_dir>/sap_unverified.csv
-python -m utsu_mail.notices agm rejection --reason "Not a UTSU member"    # reads <output_dir>/agm_unverified.csv
-python -m utsu_mail senate_more_info --recipients <output_dir>/notices_senate_more_info.csv
+python -m utsu_core.mail.notices senate more_info                              # reads <output_dir>/unverified.csv
+python -m utsu_core.mail.notices sabp more_info                                # reads <output_dir>/sap_unverified.csv
+python -m utsu_core.mail.notices agm rejection --reason "Not a UTSU member"    # reads <output_dir>/agm_unverified.csv
+python -m utsu_core.mail senate_more_info --recipients <output_dir>/notices_senate_more_info.csv
 ```
 
 `--input` and `--output` override the files; `--db` the database holding `uoft_data`. For `more_info`, applications that
@@ -96,7 +99,7 @@ now match the roster are skipped (nothing to ask for). A rejection needs `--reas
 
 ## Command reference
 
-`python -m utsu_mail [template]`
+`python -m utsu_core.mail [template]`
 
 | Flag | Default | Meaning |
 |---|---|---|
@@ -113,4 +116,4 @@ now match the roster are skipped (nothing to ask for). A rejection needs `--reas
 | `--dry_run` | off | preview only, never connects |
 | `--list_fields` | off | list templates, schema columns and template fields |
 
-`python -m utsu_mail.notices <senate|sabp|agm> <more_info|rejection> [--input F] [--output F] [--db F] [--config F] [--reason TEXT]`
+`python -m utsu_core.mail.notices <senate|sabp|agm> <more_info|rejection> [--input F] [--output F] [--db F] [--config F] [--reason TEXT]`

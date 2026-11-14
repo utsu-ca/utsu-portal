@@ -18,7 +18,7 @@ This implementation extends the UTSU Portal with:
 ### Source Code (3 files)
 
 #### 1. Email Microservice
-**File:** `src/utsu_portal/mailsvc/__init__.py` (11.5 KB)
+**File:** `src/utsu_core/mailsvc/__init__.py` (11.5 KB)
 
 Standalone email service with:
 - Email queueing API
@@ -30,11 +30,11 @@ Standalone email service with:
 
 **Start Command:**
 ```bash
-uvicorn utsu_portal.mailsvc:create_mail_app --host 0.0.0.0 --port 8080
+uvicorn utsu_core.mailsvc:create_mail_app --host 0.0.0.0 --port 8080
 ```
 
 #### 2. RBAC Module
-**File:** `src/utsu_portal/authsvc/rbac.py` (8.4 KB)
+**File:** `src/utsu_core/authsvc/rbac.py` (8.4 KB)
 
 Role-Based Access Control with:
 - 4 predefined roles (student, admin, moderator, staff)
@@ -45,7 +45,7 @@ Role-Based Access Control with:
 
 **Integration:**
 ```python
-from utsu_portal.authsvc.rbac import Permission, require_permission
+from utsu_core.authsvc.rbac import Permission, require_permission
 
 @app.get("/api/admin/audit")
 def view_audit(uid: str = Depends(require_permission(Permission.ADMIN_VIEW_AUDIT))):
@@ -53,7 +53,7 @@ def view_audit(uid: str = Depends(require_permission(Permission.ADMIN_VIEW_AUDIT
 ```
 
 #### 3. Updated AuthSvc
-**File:** `src/utsu_portal/authsvc/__init__.py` (modified)
+**File:** `src/utsu_core/authsvc/__init__.py` (modified)
 
 Now includes RBAC module in the application.
 

@@ -1,15 +1,16 @@
 # UTSU Portal: conversion overview and plan
 
-Status: proposed. Audience: maintainers. Companion documents: [01 Shared services](01-shared-services.md),
+Status: proposed; namespace consolidation is complete, but the live program workflows and retirement of the batch
+tools described below are not complete. Audience: maintainers. Companion documents: [01 Shared services](01-shared-services.md),
 [02 Senate](02-senate.md), [03 SAP](03-sap.md), [04 AGM](04-agm.md), [05 Migration and removal](05-migration.md).
 
 ## 1. Goal
 
-The repository today is two systems:
+The repository currently contains two workflows in the same `utsu_core` package:
 
-1. **Batch tools** (`utsu_core`, `utsu_programs/{senate,sap,agm}`, `utsu_mail`, `utsu_std`): CSV-export-in, CSV/DOCX-out
+1. **Batch tools** (`utsu_core`, `utsu_core/programs/{senate,sap,agm}`, `utsu_core.mail`, `utsu_core.std`): CSV-export-in, CSV/DOCX-out
    programs driven by a CLI and a SQLite file (`utsu-senate`, `utsu-sap`, `utsu-agm`, `utsu-all`).
-2. **The portal** (`utsu_portal`): a FastAPI application with accounts, ID verification, forms, clubs, SSO, audit,
+2. **The portal** (`utsu_core`): a FastAPI application with accounts, ID verification, forms, clubs, SSO, audit,
    and a module system (`Module.router(ctx)`).
 
 The goal is a repository that is **only the UTSU Portal**. Each program (Senate, SAP, AGM) becomes a **portal
@@ -28,7 +29,7 @@ core, adding a front-end framework (same-origin vanilla JS and the CSP model sta
 | Typed uuids, one binding application per person | `selection.py`, `pipeline.Run` | Per-account submissions only | Selection service (01) |
 | Integrity alerts (duplicates, mismatches, non-binding) | `integrity.py` | None | Alerts service (01) |
 | Form definitions | Google Form exports + lookup tables | YAML forms for all three programs (`forms/*.yaml`) | Program-specific fields (WFNI, banking, seat preferences) must be checked against the CSV mapping |
-| Mail-merge, templates | `utsu_mail` | `Mailer` (OTP only), `SMTPMailer` | Notice service (01) |
+| Mail-merge, templates | `utsu_core.mail` | `Mailer` (OTP only), `SMTPMailer` | Notice service (01) |
 | Senate verification + seating | `senate/program.py`, `seating.py` | Form only | Senate module (02) |
 | SAP batches, WFNI, review, decisions, EFT | `sap/*` | Form only | SAP module (03) |
 | AGM verification, QR, check-in, Zoom SSO | `agm/program.py` | `agm.py`, `agm_verify.py`, `sso.py` done | Eligibility from roster, reporting (04) |
@@ -43,19 +44,19 @@ Modules are plain portal modules (`name`, `router(ctx)`), one Python package per
 another program** (same rule the batch code has).
 
 ```
-src/utsu_portal/
+src/utsu_core/
   app.py, context.py, store.py, ...         existing core (unchanged)
   services/                                  shared, program-neutral (see 01)
     roster.py        student roster import + matching (port of utsu_core.verification/importing_data)
     selection.py     binding-application selection, typed uuids
     alerts.py        integrity alerts
-    notices.py       templated notices via Mailer (port of utsu_mail)
-    exports.py       CSV/DOCX/EFT export helpers, spreadsheet-injection-safe (port of utsu_std.csv_safe)
-    text.py          cleaning and parsing helpers (port of utsu_std.utils/parsing_utils)
+    notices.py       templated notices via Mailer (port of utsu_core.mail)
+    exports.py       CSV/DOCX/EFT export helpers, spreadsheet-injection-safe (port of utsu_core.std.csv_safe)
+    text.py          cleaning and parsing helpers (port of utsu_core.std.utils/parsing_utils)
   programs/
     senate/          module.py, seating.py, models.py
     sap/             module.py, wfni.py, queue.py, review.py, decisions.py, banking.py, eft.py, models.py
-    agm/             module.py (moves modules/agm.py, agm_verify.py), eligibility.py
+    agm/             module.py, verify.py, eligibility.py (proposed)
   modules/                                   existing non-program modules (auth, forms, admin, clubs, ...)
   forms/                                     bundled YAML definitions
 ```
@@ -98,7 +99,7 @@ deployments that run only some programs can pass a subset (the microservice `REM
 | P3 | `programs/senate` (verification, seating, results) | P1 | Senate and seating tests pass |
 | P4 | `programs/sap` (intake, WFNI, batches, review, decisions, banking, EFT) | P1 | `test_sap`, `test_wfni`, `test_eft`, `test_export_banking`, `test_merge_docx`, `test_completed`, `test_stages` pass |
 | P5 | Admin UI pages per program (`static/`) | P2-P4 | Role-gated pages for each program |
-| P6 | Removal of batch tools and docs rewrite (05) | P2-P5 | `utsu_core`, `utsu_programs`, `utsu_mail`, `utsu_std`, CLI scripts gone; wiki rewritten |
+| P6 | Removal of batch tools and docs rewrite (05) | P2-P5 | `utsu_core`, `utsu_core.programs`, `utsu_core.mail`, `utsu_core.std`, CLI scripts gone; wiki rewritten |
 
 P2, P3 and P4 are independent after P1 and can proceed in parallel.
 

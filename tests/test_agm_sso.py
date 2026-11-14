@@ -1,5 +1,7 @@
 import base64
+import csv
 import hashlib
+import io
 import json
 import os
 import sys
@@ -10,9 +12,9 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, os.path.dirname(__file__))
 from test_portal import IMG, activate, login, register, scan  # noqa: E402
-from utsu_portal import create_app  # noqa: E402
-from utsu_portal.mailer import OutboxMailer  # noqa: E402
-from utsu_portal.settings import Settings  # noqa: E402
+from utsu_core import create_app  # noqa: E402
+from utsu_core.mailer import OutboxMailer  # noqa: E402
+from utsu_core.settings import Settings  # noqa: E402
 
 REDIR = "https://zoom.example/sso/cb"
 
@@ -29,16 +31,65 @@ def env():
         h[u] = login(c, mail, u)
         r = c.post("/api/verification", json={**scan(c, h[u]), "first_name": u.title(), "last_name": "Test"}, headers=h[u])
         c.post(f"/api/admin/verifications/{r.json()['id']}/decision", json={"approve": True}, headers=h["boss"])
-    roster = "First Name,Last Name,Truncated Student Number,Faculty,Division\nAda,Test,xxxxx7890x,ARTSC,UC\nBob,Test,xxxxx7890x,ARTSC,UC\n"
+    roster = "First Name,Last Name,Truncated Student Number,Faculty,Division\nAda,Test,xxxxx6789x,ARTSC,UC\nBob,Test,xxxxx6789x,ARTSC,UC\n"
     assert c.post("/api/admin/roster", json={"csv": roster}, headers=h["boss"]).json()["rostered"] == 2
     return c, h
 
 
 def test_unrostered_account_cannot_reach_the_agm(env):
     c, h = env
-    c.post("/api/admin/roster", json={"csv": "First Name,Last Name,Truncated Student Number,Faculty,Division\nAda,Test,xxxxx7890x,ARTSC,UC\n"}, headers=h["boss"])
+    c.post("/api/admin/roster", json={"csv": "First Name,Last Name,Truncated Student Number,Faculty,Division\nAda,Test,xxxxx6789x,ARTSC,UC\n"}, headers=h["boss"])
     assert c.get("/api/agm/invitation", headers=h["ada"]).status_code == 200
     assert c.get("/api/agm/invitation", headers=h["bob"]).status_code == 403
+
+
+def test_roster_removal_blocks_checkin_and_zoom_sso(env):
+    c, h = env
+    rsvp(c, h, "bob", "Online")
+    bob = uid(c, h, "bob")
+    c.app.state.ctx.store.put("agm_grants", bob, {"uuid": bob, "exp": c.app.state.ctx.now() + 600})
+    roster = "First Name,Last Name,Truncated Student Number,Faculty,Division\nAda,Test,xxxxx6789x,ARTSC,UC\n"
+    assert c.post("/api/admin/roster", json={"csv": roster}, headers=h["boss"]).status_code == 200
+    alerts = c.get("/api/admin/agm/alerts", headers=h["boss"]).json()["items"]
+    assert len(alerts) == 1 and alerts[0]["kind"] == "ineligible"
+    assert c.post("/api/admin/agm/checkin", json={"uuid": bob}, headers=h["boss"]).status_code == 403
+    assert c.app.state.ctx.store.get("agm_attendance", bob) is None
+    body = {"client_id": "zoom", "redirect_uri": REDIR}
+    assert c.post("/api/sso/authorize", json=body, headers=h["bob"]).status_code == 403
+
+
+def test_admin_registration_report_and_standalone_verification(env):
+    c, h = env
+    rsvp(c, h, "ada", "In person", accessibility="=Needs a quiet space", proxy=True, proxy_name="Proxy Person")
+    rsvp(c, h, "bob", "Online")
+    assert c.get("/api/admin/agm/rsvps", headers=h["ada"]).status_code == 403
+    assert c.get("/api/admin/agm/rsvps.csv", headers=h["ada"]).status_code == 403
+    export = c.get("/api/admin/agm/rsvps.csv", headers=h["boss"])
+    rows = list(csv.DictReader(io.StringIO(export.content.decode("utf-8-sig"))))
+    assert {row["name"] for row in rows} == {"Ada Test", "Bob Test"}
+    ada = next(row for row in rows if row["name"] == "Ada Test")
+    assert ada["accessibility"] == "'=Needs a quiet space" and ada["proxy_name"] == "Proxy Person"
+    assert export.headers["cache-control"] == "no-store"
+    assert "agm.rsvps_exported" in {e["action"] for e in c.get("/api/admin/audit?limit=200", headers=h["boss"]).json()["entries"]}
+    assert c.get("/api/admin/agm/alerts", headers=h["ada"]).status_code == 403
+    alerts = c.get("/api/admin/agm/alerts", headers=h["boss"]).json()
+    assert [(a["name"], a["kind"]) for a in alerts["items"]] == [("Bob Test", "online_identity_required")]
+    bob = uid(c, h, "bob")
+    c.app.state.ctx.store.put("agm_grants", bob, {"uuid": bob, "exp": c.app.state.ctx.now() + 600})
+    assert c.get("/api/admin/agm/alerts", headers=h["boss"]).json()["items"] == []
+    first = c.get("/api/admin/agm/rsvps?limit=1", headers=h["boss"]).json()
+    assert len(first["items"]) == 1 and first["items"][0]["eligible"]
+    second = c.get("/api/admin/agm/rsvps", params={"cursor": first["next_cursor"], "limit": 1},
+                   headers=h["boss"]).json()
+    assert len(second["items"]) == 1 and second["next_cursor"] is None
+    assert first["items"][0]["uuid"] != second["items"][0]["uuid"]
+    ada_entry = next(item for item in first["items"] + second["items"] if item["name"] == "Ada Test")
+    assert ada_entry["accessibility"] == "=Needs a quiet space" and ada_entry["proxy_name"] == "Proxy Person"
+    assert c.get("/api/admin/agm/rsvps?limit=0", headers=h["boss"]).status_code == 422
+    match = c.post("/api/admin/agm/verify", json={"full_name": "Ada Test", "student_number": "6789"},
+                   headers=h["boss"])
+    assert match.status_code == 200 and match.json()["verified"]
+    assert c.post("/api/admin/agm/verify", json={"full_name": "Unknown Person"}, headers=h["ada"]).status_code == 403
 
 
 def rsvp(c, h, who, mode, **extra):

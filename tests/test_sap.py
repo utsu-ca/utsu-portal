@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from utsu_programs.sap import program as sap
+from utsu_core.programs.sap import program as sap
 from utsu_core.resources import package_text
 from utsu_core.verification import construct_lookup_tables
-from utsu_std.utils import absfile
+from utsu_core.std.utils import absfile
 
 LC_ROW = {
     "Timestamp": "2026/09/30 10:39:14 a.m. AST", "Application Semester": "Fall 2026",
@@ -63,6 +63,17 @@ def test_wfni_follows_the_policy_table():
 def test_redact_removes_identifying_details():
     text = sap.redact("Ann here: ann@x.ca, 1001231617, M5S 1A1, https://drive.google.com/x", ["Ann", "Lee"])
     assert text == "[name] here: [email], [student number], [postal code], [link]"
+
+
+def test_redaction_handles_seven_digit_student_numbers_and_existing_placeholders():
+    text = sap.redact("Name uses ID 1234567 and email name@example.ca.", ["Name", "Student"])
+    assert text == "[name] uses ID [student number] and email [email]."
+    assert sap.redact(text, ["Name", "Student"]) == text
+
+
+def test_redaction_handles_unicode_names_and_decomposed_accents():
+    assert sap.redact("José and Jose\u0301, 李 and 王.", ["Jose", "李 王"]) == \
+        "[name] and [name], [name] and [name]."
 
 
 def test_process_sap_verifies_batches_and_saves_rows(tmp_path):

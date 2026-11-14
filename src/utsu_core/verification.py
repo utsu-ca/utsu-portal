@@ -6,9 +6,9 @@ from dataclasses import dataclass, replace
 from difflib import SequenceMatcher
 from pathlib import Path
 
-from utsu_std.csv_safe import open_csv
-from utsu_std.parsing_utils import division_code, get_trunc_id
-from utsu_std.utils import UOFT_MAIL_DOMAIN, clean_text, normalize_case
+from utsu_core.std.csv_safe import open_csv
+from utsu_core.std.parsing_utils import division_code, get_trunc_id
+from utsu_core.std.utils import UOFT_MAIL_DOMAIN, clean_text, normalize_case
 
 logger = logging.getLogger(__name__)
 

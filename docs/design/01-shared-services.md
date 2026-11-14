@@ -1,6 +1,7 @@
-# 01 Shared services (`utsu_portal/services`)
+# 01 Shared services (`utsu_core/services`)
 
-Program-neutral code used by Senate, SAP and AGM. Ported from `utsu_core`, `utsu_std` and `utsu_mail`.
+Program-neutral code used by Senate, SAP and AGM. Ported from `utsu_core`, `utsu_core.std` and `utsu_core.mail`.
+Sections below include proposed behavior; see [README](../../README.md) for what is currently implemented.
 
 ## 1. Module map
 
@@ -9,9 +10,9 @@ Program-neutral code used by Senate, SAP and AGM. Ported from `utsu_core`, `utsu
 | `services/roster.py` | `utsu_core/importing_data.py`, `verification.py`, `schema/uoft_data.sql` | `import_roster(rows, replace=False) -> ImportReport`; `match(person) -> Match` |
 | `services/selection.py` | `utsu_core/selection.py` | `person_key`, `submission_rank`, `select_current(rows, key, rank)` |
 | `services/alerts.py` | `utsu_core/integrity.py` | `duplicate_verified(rows, cols)`, `raise_alert(kind, severity, refs)`, `list_alerts(program)` |
-| `services/notices.py` | `utsu_mail/{templates,notices,campaign,recipients,transport}.py` | `render(template, ctx)`, `send_notice(program, kind, record)` |
-| `services/exports.py` | `utsu_std/csv_safe.py`, DOCX helpers in `sap/program.py` | `csv_response(rows, columns)`, `docx_sheet(...)` |
-| `services/text.py` | `utsu_std/utils.py`, `parsing_utils.py` | `clean`, `normalize_email`, `parse_student_number`, `parse_amount` |
+| `services/notices.py` | `utsu_core/mail/{templates,notices,campaign,recipients,transport}.py` | `render(template, ctx)`, `send_notice(program, kind, record)` |
+| `services/exports.py` | `utsu_core/std/csv_safe.py`, DOCX helpers in `sap/program.py` | `csv_response(rows, columns)`, `docx_sheet(...)` |
+| `services/text.py` | `utsu_core/std/utils.py`, `parsing_utils.py` | `clean`, `normalize_email`, `parse_student_number`, `parse_amount` |
 | `services/spec.py` | `utsu_core/spec.py`, `pipeline.py` | `ProgramSpec` + `reconcile(spec, submissions)` used by every program |
 
 `ProgramSpec` survives as the declarative contract (slug, form id, identity columns, key/rank, veto, annotate,
@@ -25,11 +26,12 @@ SQLite, no CSV and no writes.
   roster). `replace` defaults to true.
 - **Central account check** (`services/account_check.py`): every upload runs a whole-DB pass over all accounts and
   stores `roster_checks/{uuid}` = {rostered, reason, checked_at}. Accounts activated later are checked on approval.
-  Matching is exact name (narrowed by the account's last-4 student number); fuzzy matches do not count because the
-  account already carries its legal name.
+  Matching is exact name narrowed by the four roster-masked digits before the final student-number digit; these are
+  distinct from the last four digits used for recovery. Fuzzy matches do not count because the account already
+  carries its legal name. In split deployments the auth service owns the roster and computes checks for the portal.
 - Program pages (AGM first) require `ctx.require_rostered()`: a `verified` account that is `rostered`. Programs read
-  this result; they do not match names or check email domains (accounts cannot exist without an OTP-proven
-  utoronto.ca address).
+  this result; they do not match names or check email domains. Accounts use an OTP-proven email address, which is not
+  restricted to a particular domain.
 - Matching for non-account people (SAP applicants, Senate) stays the pure `match_people` function; verification is
   sticky only for SAP.
 - Matching stays a pure function, so tests port unchanged (`test_lookup`, `test_identity`, `test_fuzzy`,
@@ -54,6 +56,13 @@ Computed on request, not stored: `GET /api/admin/{program}/alerts` runs `select`
 Acknowledgements (who saw what) are the only stored part, as audit events. Replaces `alerts_<slug>.csv`.
 
 ## 4. Notices
+
+Implemented: program administrators can preview and explicitly send one generic status notice at a time through the
+web client. A keyed preview binds the recipient and application revision; a successful or uncertain attempt cannot
+be automatically repeated for that same preview. An SMTP error or process interruption requires manual delivery
+investigation. Recipient and submission data are not transactionally frozen across email delivery.
+
+The following bulk-campaign workflow remains proposed:
 
 Templates under `templates/email/` stay (`*_verified`, `*_unverified`, `*_more_info`, `*_rejection`). The campaign
 safety workflow (dry run, then confirm, sent-log to prevent repeats) is kept: `POST .../notices/preview` returns

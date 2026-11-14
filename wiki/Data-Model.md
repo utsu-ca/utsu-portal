@@ -1,7 +1,9 @@
 # Data Model
 
+> Historical batch database reference, not the web application's data model. See [Applicant Portal](Applicant-Portal.md).
+
 All data is in one SQLite file (`--db`, default `secrets/db.sqlite`). Table definitions are in the `schema.sql` of each
-program (`src/utsu_programs/<program>/`) and `src/utsu_core/schema/uoft_data.sql`; tables
+program (`src/utsu_core/programs/<program>/`) and `src/utsu_core/schema/uoft_data.sql`; tables
 are created on demand. Treat the database as **private**: it holds the roster and, for SABP, the last four digits of student numbers.
 
 ```mermaid

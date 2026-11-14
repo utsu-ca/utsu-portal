@@ -7,12 +7,13 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).parent))
 from test_portal import activate, login, register  # noqa: E402
 
-from utsu_portal import create_app, security
-from utsu_portal.authsvc import create_auth_app
-from utsu_portal.identity import RemoteIdentity
-from utsu_portal.mailer import OutboxMailer
-from utsu_portal.settings import Settings
-from utsu_portal.store import MemoryStore
+from utsu_core import create_app, security
+from utsu_core.authsvc import create_auth_app
+from utsu_core.identity import RemoteIdentity
+from utsu_core.mailer import OutboxMailer
+from utsu_core.programs.senate.module import PREFERENCES
+from utsu_core.settings import Settings
+from utsu_core.store import MemoryStore
 
 SVC = "svc-" + "t" * 40
 
@@ -28,7 +29,10 @@ def make(auth_pem=None):
 
     def fetch(path, body=None):
         r = ac.post(path, json=body, headers={"Authorization": "Bearer " + SVC}) if body is not None else ac.get(path, headers={"Authorization": "Bearer " + SVC})
-        return None if r.status_code == 404 else r.json()
+        if r.status_code == 404:
+            return None
+        r.raise_for_status()
+        return r.json()
 
     portal = create_app(Settings(secret="p" * 40), pstore, mail, identity=RemoteIdentity(pub, fetch))
     return ac, TestClient(portal), mail, astore, pstore
@@ -66,7 +70,10 @@ def test_portal_cannot_mint_or_replay_tokens():
     old = security.sign_token("p" * 40, uid, 600)  # legacy HMAC format
     assert pc.get("/api/me/submissions", headers={"Authorization": "Bearer " + old}).status_code == 401
     tok = login(ac, mail, "ada")["Authorization"][7:]
-    assert pc.get("/api/me/submissions", headers={"Authorization": "Bearer " + tok[:-2] + "AA"}).status_code == 401
+    body, signature = tok.split(".")
+    replacement = "A" if signature[0] != "A" else "B"
+    tampered = ".".join((body, replacement + signature[1:]))
+    assert pc.get("/api/me/submissions", headers={"Authorization": "Bearer " + tampered}).status_code == 401
 
 
 def test_internal_api_requires_service_token():
@@ -94,3 +101,56 @@ def test_portal_fails_closed_when_auth_down():
 def test_remote_config_requires_keys():
     with pytest.raises(RuntimeError):
         create_app(Settings(secret="p" * 40, auth_url="https://auth.internal"), MemoryStore())
+
+
+def test_split_roster_drives_program_eligibility_and_seating():
+    ac, pc, mail, astore, pstore = make()
+    register(ac, mail, "boss", "boss@x.ca", sn="9999999999", first="Bo", last="Ss")
+    admin = login(ac, mail, "boss")
+    register(ac, mail, "ada", "ada@x.ca")
+    user = login(ac, mail, "ada")
+    activate(ac, admin, user)
+    assert pc.get("/api/agm/invitation", headers=user).status_code == 403
+    roster = "First Name,Last Name,Truncated Student Number,Faculty,Division\nAda,Lovelace,xxxxx6789x,ARTSC,UC\n"
+    assert ac.post("/api/admin/roster", json={"csv": roster}, headers=admin).status_code == 200
+    assert pc.get("/api/agm/invitation", headers=user).status_code == 200
+    assert pc.post("/api/admin/agm/verify", json={"full_name": "Ada Lovelace", "student_number": "6789"},
+                   headers=admin).json()["verified"]
+    form = pc.get("/api/forms/senate_application/static").json()
+    data = {"division": "UTSG", "college": "LAW", "year_of_study": "2", "seat_type": "Undergraduate",
+            "statement": "A" * 50, "consent": True, **{field: "Not interested" for field in PREFERENCES},
+            "pref_faculty": "First-choice"}
+    assert pc.put("/api/forms/senate_application/submission",
+                  json={"version": form["version"], "hash": form["hash"], "data": data}, headers=user).status_code == 200
+    assert pc.get("/api/me/senate", headers=user).json()["eligible"]
+    uid = ac.get("/api/me", headers=user).json()["user"]["uuid"]
+    preview = pc.post("/api/admin/notices/senate/preview", json={"uid": uid}, headers=admin)
+    assert preview.status_code == 200 and preview.json()["to"] == "ada@x.ca"
+    assert pc.post("/api/admin/notices/senate/send",
+                   json={"uid": uid, "preview_hash": preview.json()["preview_hash"], "confirm": True},
+                   headers=admin).status_code == 200
+    assert pc.put("/api/admin/senate/seats",
+                  json={"seats": [{"constituency": "Faculty/College", "division": "UC", "seats": 1}]},
+                  headers=admin).status_code == 200
+    assert pc.post("/api/admin/senate/seating", json={"seed": 1}, headers=admin).json()["result"]["seated"][0]["division"] == "UC"
+    assert not pstore.list("roster_checks") and not pstore.list("roster_name")
+    astore.delete("roster_identifiers", uid)
+    assert pc.get("/api/agm/invitation", headers=user).status_code == 403
+    assert ac.post("/api/me/roster-number", json={"student_number": "1234567890"}, headers=user).status_code == 200
+    assert pc.get("/api/agm/invitation", headers=user).status_code == 200
+    assert ac.get("/internal/roster/accounts/x").status_code == 404
+    assert ac.post("/internal/roster/match", json={"full_name": "Ada Lovelace"}).status_code == 404
+    other_roster = roster.replace("Ada,Lovelace", "Other,Person")
+    assert ac.post("/api/admin/roster", json={"csv": other_roster}, headers=admin).status_code == 200
+    assert pc.get("/api/agm/invitation", headers=user).status_code == 403
+    assert not pc.get("/api/me/senate", headers=user).json()["eligible"]
+
+    identity = pc.app.state.ctx.identity
+    original_fetch = identity.fetch
+    def failed_roster(path, body=None):
+        if path.startswith("/internal/roster/"):
+            raise ConnectionError("roster unavailable")
+        return original_fetch(path, body)
+    identity.fetch = failed_roster
+    assert pc.get("/api/agm/invitation", headers=user).status_code == 503
+    assert pc.post("/api/admin/agm/verify", json={"full_name": "Ada Lovelace"}, headers=admin).status_code == 503

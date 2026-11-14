@@ -1,0 +1,38 @@
+id: student_aid_bursary
+version: 3
+title: Student Aid Bursary Program (SABP)
+description: Request emergency financial assistance.
+fields:
+  - {id: terms, type: multiselect, label: "Terms applying for", required: true, options: ["Fall 2026", "Winter 2027", "Summer 2027"]}
+  - {id: enrolment, type: radio, label: Enrolment, required: true, options: [Full-time, Part-time]}
+  - {id: monthly_income, type: number, label: Monthly income (CAD), required: true, min: 0, max: 100000}
+  - {id: monthly_expenses, type: number, label: Monthly expenses (CAD), required: true, min: 0, max: 100000}
+  - {id: amount_requested, type: number, label: Amount requested (CAD), required: true, min: 1, max: 5000}
+  - {id: bursary_type, type: select, label: Bursary stream, options: [Living-costs Bursary, Academic Pursuits Bursary]}
+  - id: lc_subsidies
+    type: multiselect
+    label: Living-costs subsidies
+    show_if: {field: bursary_type, equals: Living-costs Bursary}
+    options: ["Transit Mobility Subsidy (up-to $500/term)", "Healthy Living Subsidy (up-to $150/term)", "Emergency Bursary (expedited processing)"]
+  - id: ap_subsidies
+    type: multiselect
+    label: Academic pursuits subsidies
+    show_if: {field: bursary_type, equals: Academic Pursuits Bursary}
+    options: ["Mandatory Placement Stipend (~$500/term)", "Conference Reimbursement (~$350/term)", "Exam Deferral Subsidy (~$150/term)", "Professional Faculties Summer Gym Access Subsidy (TBD)"]
+  - {id: disability_mobility, type: radio, label: Mobility disability, options: ["Yes", "No"]}
+  - {id: disability_invisible, type: radio, label: Invisible disability, options: ["Yes", "No"]}
+  - {id: living_situation, type: select, label: Living situation, options: [Stably Housed, Precariously Housed, Imminent risk of losing housing, Emergency sheltered, Unsheltered]}
+  - {id: disposable_income, type: select, label: Disposable income, options: [A negative amount, Less than $100, "$100-200", "$200-500", "$500-1000", "$1000+"]}
+  - {id: liquidity, type: select, label: Available funds, options: ["$0 to $500", "$500 to $1000", "$1000 to $2500", "$2500 to $5000", "$5000 to $7500", "$7500 to $10,000", "$10,000+"]}
+  - {id: dependents, type: select, label: Dependents, options: ["0", "1", "2", "3", "4+"]}
+  - {id: external_supports, type: radio, label: External supports, options: ["Yes", "No"]}
+  - {id: circumstances, type: text, label: Additional circumstances (semicolon-separated), max: 1000}
+  - {id: hardship, type: textarea, label: Describe your financial hardship, required: true, min: 50, max: 3000}
+  - {id: has_other_aid, type: checkbox, label: I receive other financial aid (e.g. OSAP)}
+  - id: other_aid_detail
+    type: text
+    label: Other aid sources
+    max: 300
+    show_if: {field: has_other_aid, equals: true}
+  - {id: contact_email, type: email, label: Contact email for the committee, required: true}
+  - {id: consent, type: checkbox, label: I consent to my information being reviewed by the SABP committee, required: true}

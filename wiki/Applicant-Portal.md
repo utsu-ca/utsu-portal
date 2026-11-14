@@ -1,19 +1,22 @@
-# Applicant portal (`utsu_portal`)
+# Applicant portal (`utsu_core`)
 
-FastAPI, database-agnostic form application. Install with `pip install -e ".[portal]"` and run:
+FastAPI, database-agnostic form application. Install with `pip install -e .` and run:
 
 ```
-PORTAL_SECRET=<long random, stable> PORTAL_ADMIN_EMAILS=alice@example.com uvicorn --factory utsu_portal:create_app
+PORTAL_SECRET=<long random, stable> PORTAL_ADMIN_EMAILS=alice@example.com uvicorn --factory utsu_core:create_app
 ```
 
 `PORTAL_STORE` selects the backend: `memory` (default), `sqlite:<path>` or `firestore` (`.[firestore]`). Add a backend by
-implementing `utsu_portal.store.Store` (get/put/delete/list/create). `PORTAL_SECRET` peppers the username and student-id
+implementing `utsu_core.store.Store` (get/put/delete/list/create). `PORTAL_SECRET` peppers the username and student-id
 hashes, so it must stay stable.
 
 ## Identity and accounts
 - `uuid` = HMAC(secret, username) (v5-style); the full student number becomes a secondary uuid, stored only as a
   uniqueness index (`student_ids`). The **user record** holds only `uuid, email, preferred_name, first_name, last_name,
-  student_number` (last 4 digits). Account status/role live in a separate `accounts` collection.
+  student_number` (last 4 digits). Account status/role live in a separate `accounts` collection. The four digits
+  before the final digit used by the masked roster are stored separately and encrypted. Existing accounts must
+  confirm the original number on the Account screen; matching is denied until they do so. Numbers shorter than
+  nine digits cannot be matched to this roster format and require administrator assistance.
 - Passwordless: username, then an emailed 6-digit OTP (hashed, expiring, attempt-limited) gives a signed bearer token.
 - Activation: email OTP, then a live face + ID capture (browser camera, server-issued challenge phrase), current
   division codes and legal names, then **manual admin approval**. Only `verified` accounts can submit forms. Images are
@@ -22,9 +25,15 @@ hashes, so it must stay stable.
   emails a sign-in code to the address on file; email or legal-name changes need the new-email OTP plus a full
   face + ID request approved by an admin.
 - Note: a camera capture plus challenge phrase is not cryptographic proof of liveness; admins make the final decision.
+- In a split deployment the authentication service owns the roster. Program eligibility and standalone AGM roster
+  checks query its service-token-protected internal API; roster details are not copied into the portal store.
+  The ingress routes roster upload and student-number confirmation to the authentication service. If the service
+  cannot be reached, roster-dependent operations fail closed. Roster imports and individual reads are not a
+  cross-document transaction, so administrators should avoid running seating or reviews during roster replacement.
+- Administrators upload roster CSVs in **Admin: roster**. Replacement is opt-in and requires confirmation.
 
 ## Forms
-YAML definitions (see `src/utsu_portal/forms/` for the Senate, SABP and AGM examples) are validated strictly (unknown
+YAML definitions (see `src/utsu_core/forms/` for the Senate, SABP and AGM examples) are validated strictly (unknown
 keys rejected, `show_if` conditionals, types `text textarea email number date select radio multiselect checkbox info`).
 Each definition has an integer `version` and a content hash. Published versions are immutable: saving or publishing a
 changed definition under an already-published version is a `409` ("bump the version"). Bundled forms are checked the
@@ -41,7 +50,7 @@ same way at startup. Submissions record the version and hash and are rejected if
 
 ## Extending
 A module is an object with `name` and `router(ctx)`; pass it via `create_app(extra_modules=(...))`. `ctx` provides
-the store, settings, mailer (`utsu_portal.mailer.Mailer`, override `send` for real mail), event bus and auth
+the store, settings, mailer (`utsu_core.mailer.Mailer`, override `send` for real mail), event bus and auth
 dependencies (`require_user`, `require_verified`, `require_admin`).
 
 ## Clubs (`modules/clubs.py`)
@@ -64,10 +73,10 @@ dependencies (`require_user`, `require_verified`, `require_admin`).
   single-use 60 s codes, exact redirect-URI matching and pairwise subjects. Only name and email are released. Modules
   register relying parties via `ctx.services["sso"].register_client(...)` with an eligibility callback. Set
   `PORTAL_SSO_KEY` (PEM) so keys survive restarts, and `PORTAL_BASE_URL` as the issuer.
-- **Online ID verifier** (`modules/agm_verify.py`, separate from account activation): an `agm_rsvp` registrant who chose
+- **Online ID verifier** (`programs/agm/verify.py`, separate from account activation): an `agm_rsvp` registrant who chose
   *Online* submits a fresh live face + ID scan; an admin approves it (or `PORTAL_AGM_VERIFY_MODE=auto`), the images are
   purged, and a 12 h grant is recorded. Zoom SSO is refused without that grant.
-- **Invitation panel** (`modules/agm.py`, "AGM" in the portal): in-person registrants see a QR code of their
+- **Invitation panel** (`programs/agm/module.py`, "AGM" in the portal): in-person registrants see a QR code of their
   registration UUID; online registrants verify, then "Log in to Zoom" returns the Zoom link and SSO start URL
   (`PORTAL_ZOOM_URL`, `PORTAL_ZOOM_SSO_URL`, `PORTAL_ZOOM_CLIENT_SECRET`, `PORTAL_ZOOM_REDIRECT_URIS`).
 - **Check-in screen** (`/static/checkin.html`, admins only): scan the QR (camera where `BarcodeDetector` exists, or a

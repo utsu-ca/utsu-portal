@@ -1,7 +1,10 @@
 # Command-Line Reference
 
-There is one command per program, and `utsu-all` for the three together (`python -m utsu_programs.<senate|sap|agm>` and
-`python -m utsu_programs` are the same commands). They share the common and infrastructure flags below and each
+> Historical reference only. The program and mail commands described here have been removed; see
+> [README](../README.md) for the web application.
+
+There is one command per program, and `utsu-all` for the three together (`python -m utsu_core.programs.<senate|sap|agm>` and
+`python -m utsu_core.programs` are the same commands). They share the common and infrastructure flags below and each
 takes only the flags of its own program(s):
 
 | Command | Program | Its own flags |
@@ -107,7 +110,7 @@ Verify an AGM RSVP export against a database that already holds `uoft_data`, wit
 (it writes `agm_verification.csv`). It uses `--agm_file`, `--db` and `--output_dir` as above; with `--testing` it uses
 `testing/output/fake_agm.csv` and `testing/output/test.sqlite` (left by the last `--testing` run).
 
-## `python -m utsu_mail`
+## `python -m utsu_core.mail`
 
 See [Emailing](Emailing#command-reference).
 

@@ -5,10 +5,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, os.path.dirname(__file__))
-from utsu_portal import create_app  # noqa: E402
-from utsu_portal.mailer import OutboxMailer, SMTPMailer  # noqa: E402
-from utsu_portal.settings import Settings  # noqa: E402
-from utsu_portal.store import ChunkingStore, MemoryStore, SQLiteStore, SQLStore, open_store  # noqa: E402
+from utsu_core import create_app  # noqa: E402
+from utsu_core.mailer import OutboxMailer, SMTPMailer  # noqa: E402
+from utsu_core.settings import Settings  # noqa: E402
+from utsu_core.store import ChunkingStore, MemoryStore, SQLiteStore, SQLStore, open_store  # noqa: E402
 
 
 class Capped(MemoryStore):

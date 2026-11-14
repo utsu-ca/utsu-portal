@@ -48,7 +48,7 @@ Cloud logging (ELK, Datadog, Cloud Logging)
 Every request is assigned a unique `trace_id` that propagates across all services:
 
 ```python
-from utsu_portal.observability import get_tracer, get_logger
+from utsu_core.observability import get_tracer, get_logger
 
 tracer = get_tracer(__name__)
 logger = get_logger(__name__)
@@ -88,7 +88,7 @@ All logs are JSON for easy ingestion by centralized logging systems:
 {
   "timestamp": "2024-11-09T23:25:00.123Z",
   "level": "INFO",
-  "logger": "utsu_portal.mailsvc",
+  "logger": "utsu_core.mailsvc",
   "message": "Email sent",
   "trace_id": "abc123def456...",
   "span_id": "def456ghi789...",
@@ -126,7 +126,7 @@ export OTEL_SERVICE_NAMESPACE=utsu-portal
 
 **In authsvc:**
 ```python
-from utsu_portal.observability import setup_observability, instrument_fastapi
+from utsu_core.observability import setup_observability, instrument_fastapi
 
 app = FastAPI()
 setup_observability(service_name="authsvc")
@@ -135,7 +135,7 @@ instrument_fastapi(app)
 
 **In mailsvc:**
 ```python
-from utsu_portal.observability import setup_observability
+from utsu_core.observability import setup_observability
 
 setup_observability(service_name="mailsvc")
 tracer = get_tracer(__name__)
@@ -189,7 +189,7 @@ FileHandler (abstraction layer)
 ### Usage
 
 ```python
-from utsu_portal.filesvc import FileHandler
+from utsu_core.filesvc import FileHandler
 
 # Automatic detection from environment
 handler = FileHandler.from_env()
@@ -349,7 +349,7 @@ export SERVICE_REGISTRY_JSON='[
 #### 2. Service Gets a Token
 
 ```python
-from utsu_portal.authsvc.service_auth import ServiceAuthModule
+from utsu_core.authsvc.service_auth import ServiceAuthModule
 
 auth = ServiceAuthModule()
 token = auth.issue_token("mailsvc")
@@ -374,7 +374,7 @@ response = httpx.get(
 
 ```python
 # In filesvc
-from utsu_portal.authsvc.service_auth import ServiceAuthModule
+from utsu_core.authsvc.service_auth import ServiceAuthModule
 
 auth = ServiceAuthModule()
 
@@ -567,7 +567,7 @@ Results:
 **Example: Log a user data read**
 
 ```python
-from utsu_portal.authsvc.audit_compliance import (
+from utsu_core.authsvc.audit_compliance import (
     build_audit_entry_read,
     store_audit_log
 )
@@ -597,7 +597,7 @@ if not permission_granted:
 **Example: Log a data modification**
 
 ```python
-from utsu_portal.authsvc.audit_compliance import (
+from utsu_core.authsvc.audit_compliance import (
     build_audit_entry_write,
     AuditAction
 )
@@ -804,8 +804,8 @@ Why separate tables for audit, access control, and lineage?
 
 | File | Purpose |
 |------|---------|
-| `src/utsu_portal/observability/__init__.py` | Unified observability stack (Jaeger, Prometheus, JSON logging) |
-| `src/utsu_portal/filesvc/__init__.py` | Cloud-agnostic file handler (S3, GCS, Azure, FTP, local) |
-| `src/utsu_portal/authsvc/service_auth.py` | Service-to-service authentication (JWT tokens, rate limiting) |
-| `src/utsu_portal/authsvc/audit_compliance.py` | Audit logging schema and compliance query builders |
+| `src/utsu_core/observability/__init__.py` | Unified observability stack (Jaeger, Prometheus, JSON logging) |
+| `src/utsu_core/filesvc/__init__.py` | Cloud-agnostic file handler (S3, GCS, Azure, FTP, local) |
+| `src/utsu_core/authsvc/service_auth.py` | Service-to-service authentication (JWT tokens, rate limiting) |
+| `src/utsu_core/authsvc/audit_compliance.py` | Audit logging schema and compliance query builders |
 

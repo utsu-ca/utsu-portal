@@ -8,12 +8,12 @@ from test_agm import students_db
 from test_sap import LC_ROW, form_csv as sap_form
 from test_identity import run_senate, senate_file, write_rows
 from utsu_core import verification
-from utsu_programs.sap import program as sap
+from utsu_core.programs.sap import program as sap
 from utsu_core.importing_data import ascii_digits
-from utsu_mail.recipients import read_csv, valid_email
-from utsu_std.csv_safe import open_csv, read_text
-from utsu_std.parsing_utils import get_trunc_id
-from utsu_std.utils import clean_text, identity_key, normalize_case, student_uuid_for
+from utsu_core.mail.recipients import read_csv, valid_email
+from utsu_core.std.csv_safe import open_csv, read_text
+from utsu_core.std.parsing_utils import get_trunc_id
+from utsu_core.std.utils import clean_text, identity_key, normalize_case, student_uuid_for
 
 # (what was typed, what it should become): everything is folded to plain ASCII
 NAMES = [

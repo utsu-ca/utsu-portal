@@ -1,10 +1,13 @@
 # Complete Implementation Summary
 
+> Historical implementation summary, not a claim that the current web migration is complete. See
+> [README](../README.md) for current capabilities and limitations.
+
 ## What Was Built
 
 ### 1. Email Microservice (`mailsvc`)
 
-**Location:** `/src/utsu_portal/mailsvc/__init__.py`
+**Location:** `/src/utsu_core/mailsvc/__init__.py`
 
 **Features:**
 - ✅ Queue emails asynchronously
@@ -41,7 +44,7 @@ response = httpx.post(
 
 ### 2. RBAC Module for AuthSvc
 
-**Location:** `/src/utsu_portal/authsvc/rbac.py`
+**Location:** `/src/utsu_core/authsvc/rbac.py`
 
 **Features:**
 - ✅ Predefined roles (student, admin, moderator, staff)
@@ -62,7 +65,7 @@ DELETE /rbac/users/{uid}/roles/{role_name}   - Revoke role
 
 **Usage Example:**
 ```python
-from src.utsu_portal.authsvc.rbac import Permission, require_permission
+from src.utsu_core.authsvc.rbac import Permission, require_permission
 
 @app.get("/api/admin/audit")
 def view_audit(
@@ -312,9 +315,9 @@ kubectl apply -f deploy/k8s/
 
 | File | Purpose |
 |------|---------|
-| `src/utsu_portal/mailsvc/__init__.py` | Email microservice implementation |
-| `src/utsu_portal/authsvc/rbac.py` | RBAC module for auth service |
-| `src/utsu_portal/authsvc/__init__.py` | (Updated to include RBAC) |
+| `src/utsu_core/mailsvc/__init__.py` | Email microservice implementation |
+| `src/utsu_core/authsvc/rbac.py` | RBAC module for auth service |
+| `src/utsu_core/authsvc/__init__.py` | (Updated to include RBAC) |
 
 ### Configuration & Deployment
 

@@ -6,10 +6,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from test_portal import activate, code, login, register  # noqa: F401
-from utsu_portal import create_app
-from utsu_portal.mailer import OutboxMailer
-from utsu_portal.modules.clubs import split_tax
-from utsu_portal.settings import Settings
+from utsu_core import create_app
+from utsu_core.mailer import OutboxMailer
+from utsu_core.modules.clubs import split_tax
+from utsu_core.settings import Settings
 
 PDF = lambda b: "data:application/pdf;base64," + base64.b64encode(b).decode()
 

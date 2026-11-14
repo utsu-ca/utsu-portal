@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds src/utsu_portal/static/app.css with the Tailwind standalone CLI (no Node/npm). The output is committed so that
+# Builds src/utsu_core/static/app.css with the Tailwind standalone CLI (no Node/npm). The output is committed so that
 # `pip install` works offline; rebuild after changing web/app.src.css or any class used in static/*.js|html.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -16,4 +16,4 @@ if [ -z "$BIN" ]; then
         chmod +x "$BIN"
     fi
 fi
-exec "$BIN" --input web/app.src.css --output src/utsu_portal/static/app.css --minify
+exec "$BIN" --input web/app.src.css --output src/utsu_core/static/app.css --minify

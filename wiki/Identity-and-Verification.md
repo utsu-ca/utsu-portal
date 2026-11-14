@@ -1,5 +1,7 @@
 # Identity and Verification
 
+> Historical batch reference only. For portal identity and roster behavior, see [Applicant Portal](Applicant-Portal.md).
+
 ## Typed ids
 
 Every id the program stores is a **typed id**: `<kind>:<uuid>`. The kind says what the id identifies, and each kind has
@@ -85,7 +87,7 @@ Physical (in-person) verification was removed; the division level replaces it.
 ## Text cleaning (ASCII only)
 
 The program works in plain ASCII. Everything compared or derived from a name, email or student number is first made
-ASCII by `clean_text` / `normalize_case` (`src/utsu_std/utils.py`):
+ASCII by `clean_text` / `normalize_case` (`src/utsu_core/std/utils.py`):
 
 - accents are removed (`José García` → `Jose Garcia`), including on the roster itself, which is stored this way;
 - look-alike forms become plain ones (fullwidth letters, ligatures, superscript digits, non-breaking spaces);

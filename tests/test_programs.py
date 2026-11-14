@@ -4,15 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from utsu_core.cli import build_parser
 from utsu_core.spec import ProgramSpec
-from utsu_programs.agm.cli import PROGRAM as AGM
-from utsu_programs.agm.program import SPEC as AGM_SPEC
-from utsu_programs.runner import PROGRAMS
-from utsu_programs.sap.cli import PROGRAM as SAP
-from utsu_programs.sap.program import SPEC as SAP_SPEC
-from utsu_programs.senate.cli import PROGRAM as SENATE
-from utsu_programs.senate.program import SPEC as SENATE_SPEC
+from utsu_core.programs.agm.program import SPEC as AGM_SPEC
+from utsu_core.programs.sap.program import SPEC as SAP_SPEC
+from utsu_core.programs.senate.program import SPEC as SENATE_SPEC
 
 SRC = Path(__file__).resolve().parents[1] / "src"
 SPECS = [SENATE_SPEC, SAP_SPEC, AGM_SPEC]
@@ -29,18 +24,10 @@ def test_a_spec_describes_its_table(spec: ProgramSpec):
         conn.execute(spec.insert, {**row, "status": "unverified"})
 
 
-def test_each_program_has_its_own_flags_and_all_programs_have_them_together():
-    flags = lambda programs: {a.dest for a in build_parser(programs)._actions}
-    assert {"verify_student", "seats_file", "seed"} <= flags([SENATE]) and "sap_file" not in flags([SENATE])
-    assert {"sap_file", "merge_reviews"} <= flags([SAP]) and "agm_file" not in flags([SAP])
-    assert {"agm_file", "verify_only"} <= flags([AGM]) and "verify_student" not in flags([AGM])
-    assert flags(PROGRAMS) >= flags([SENATE]) | flags([SAP]) | flags([AGM])
-    assert {"db", "output_dir", "config", "testing"} <= flags([AGM])  # the common flags come from the core
-
-
-def imported_packages(package: str) -> set[str]:
+def imported_packages(package: str, recursive: bool = True) -> set[str]:
     found = set()
-    for path in (SRC / package).rglob("*.py"):
+    paths = (SRC / package).rglob("*.py") if recursive else (SRC / package).glob("*.py")
+    for path in paths:
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if isinstance(node, ast.ImportFrom) and node.module:
                 found.add(node.module)
@@ -52,11 +39,11 @@ def imported_packages(package: str) -> set[str]:
 @pytest.mark.parametrize("program", ["senate", "sap", "agm"])
 def test_a_program_depends_on_the_core_and_not_on_the_other_programs(program):
     others = {"senate", "sap", "agm"} - {program}
-    for module in imported_packages(f"utsu_programs/{program}"):
-        assert not any(module.startswith(f"utsu_programs.{other}") for other in others), module
-        assert not module.startswith("utsu_mail"), module
+    for module in imported_packages(f"utsu_core/programs/{program}"):
+        assert not any(module.startswith(f"utsu_core.programs.{other}") for other in others), module
+        assert not module.startswith("utsu_core.mail"), module
 
 
-def test_the_core_does_not_know_the_programs():
-    for module in imported_packages("utsu_core"):
-        assert not module.startswith(("utsu_programs", "utsu_mail")), module
+def test_shared_processing_engine_does_not_import_programs():
+    for module in imported_packages("utsu_core", recursive=False):
+        assert not module.startswith(("utsu_core.programs", "utsu_core.mail")), module

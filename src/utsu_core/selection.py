@@ -11,7 +11,7 @@ import sqlite3
 from datetime import datetime
 from typing import Callable
 
-from utsu_std.utils import identity_key
+from utsu_core.std.utils import identity_key
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +87,7 @@ def submission_rank(row: dict) -> datetime:
 def person_key(row: dict) -> str:
     """
     Whose submission a row is: their email, else student number (`id` or `student_number`), else name, so
-    all of a person's submissions are grouped together (see utsu_std.utils.identity_key).
+    all of a person's submissions are grouped together (see utsu_core.std.utils.identity_key).
 
     >>> person_key({"email": "A@x.ca", "id": "1"}) == person_key({"email": "a@x.ca", "student_number": "2"})
     True

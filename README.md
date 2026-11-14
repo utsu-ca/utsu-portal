@@ -1,345 +1,106 @@
-# student-matching
+# UTSU core
 
-Full documentation (getting started, runbook, command-line reference, per-program guides, data model, architecture and
-a code review) is in the [`wiki/`](wiki/Home.md) folder, which is written to be published as the GitHub Wiki. This
-README is the detailed reference for how the processing behaves.
+`utsu_core` is the backend and web client for UTSU applications, including AGM registration, Senate applications and
+the Student Aid Bursary Program (SABP). The former `utsu_portal`, `utsu_programs`, `utsu_std` and `utsu_mail`
+packages have moved under `utsu_core`. Update external imports accordingly.
 
-## Setup
+**Migration is in progress.** The web workflows do not yet replace all historical processing. In particular,
+SABP committee review is experimental and disabled by default; bulk historical application migration and payment
+reconciliation/EFT export are not implemented. Do not rely on the current system for a production aid cycle.
+The old program and mail command-line interfaces have been removed. The [wiki](wiki/Home.md) contains historical
+batch documentation and may describe commands and workflows that no longer exist.
 
-From the project root (any Python 3.12+; there are no runtime dependencies):
+## Local setup
 
-```
+Python 3.12 or newer is required. From the project root:
+
+```sh
 python -m venv .venv
-.venv\Scripts\activate
+source .venv/bin/activate
 pip install -e ".[dev]"
+export PORTAL_SECRET="$(openssl rand -hex 32)"
+export PORTAL_STORE="sqlite:portal.sqlite"
+export PORTAL_ADMIN_EMAILS="admin@example.com"
+export PORTAL_HSTS=0
+uvicorn utsu_core:create_app --factory --host 127.0.0.1 --port 8000
 ```
 
-The editable install puts `utsu_core`, `utsu_programs`, `utsu_std` and `utsu_mail` on the import path and installs one command
-per program: `utsu-senate`, `utsu-sap`, `utsu-agm` (each takes only its own flags, plus the common ones) and `utsu-all`
-(the three in one run). `python -m utsu_programs.<senate|sap|agm>` and `python -m utsu_programs` do the same, so every
-command below works from any directory. Relative paths in flags and `config.json` (`data/`, `secrets/`, `testing/`,
-`templates/`) are always taken from the project root, never from the working directory.
+Open `http://127.0.0.1:8000`. Keep `PORTAL_SECRET` stable across restarts: it is used for identity hashes and,
+unless `PORTAL_DATA_KEY` is configured, derives the encryption key. The default store is in-memory and loses data
+when the process stops. The example disables HSTS only for local HTTP; production requires HTTPS and appropriate
+secrets, backups, database and deployment configuration.
 
-### Code layout
+Registration and sign-in use email codes. Configure `PORTAL_SMTP_URL` as an `smtp://` or `smtps://` URL and
+`PORTAL_MAIL_FROM` as the sender to deliver mail; without SMTP, the default mailer logs only recipient and subject,
+not the code. An administrator account is created only after the email listed in `PORTAL_ADMIN_EMAILS` is verified.
+Secrets can also be supplied via the corresponding `_FILE` environment variable.
 
-- `utsu_core`: what every program shares and nothing program-specific: the student data import, verification
-  (matching), choosing the binding application per person, integrity alerts, the CLI plumbing, and the **`ProgramSpec`**
-  (`spec.py`): a program is *declared* (its form's lookup table, its table and schema, identity columns, how a person
-  is keyed and ranked, how a row is annotated) and the shared engine (`pipeline.Run`) runs it.
-- `utsu_programs/{senate,sap,agm}`: one package per program with only what is its own (its `ProgramSpec`, its schema,
-  its outputs, and its own command in `cli.py`). A program imports `utsu_core`, never another program, so each can be
-  packaged on its own.
-- `utsu_std`: text, id, database and CSV helpers. `utsu_mail`: the mail-merge tool.
+## Current workflows
 
-## Updating with new data
+- **AGM:** verified, rostered accounts can RSVP, access invitations and check in; online participation requires
+  separate identity verification. AGM administrators can view registrations, eligibility and online-verification
+  alerts, download a private registration CSV including accessibility and proxy details, and check a person against
+  the roster. Historical batch alerts are not implemented.
+- **Senate:** administrators configure seats, inspect applications, run seeded previews and publish the reviewed
+  result. Applicants must provide all seating preferences, including explicit "Not interested" choices. Public
+  results show names only when the applicant consented. Administrators can see eligibility and preference alerts
+  and download the latest published results (including non-public names) as a private CSV.
+  Seat configuration is not populated automatically; historical batch alerts are not implemented.
+- **SABP:** applicants can submit applications and encrypted banking details. Administrators can configure WFNI
+  weights, view and export current applications, and manage banking details, including re-verification. The private
+  CSV excludes hardship statements and banking details; it is not a payment export. The review queue requires
+  `PORTAL_SAP_REVIEW_ENABLED=1`; it is experimental and not a complete committee process. Administrators must
+  review and confirm redacted hardship statements. Client-side static redaction and server identifier checks cannot
+  guarantee anonymity. Selected living-costs emergency subsidies are prioritized; missing subsidy selections have
+  unknown emergency status and need manual follow-up. Disagreements can be resolved with a recorded reason by an
+  administrator who is neither the applicant nor a reviewer; this locks the ratings. New review records are encrypted
+  at rest; existing plaintext review records are encrypted on their next update. Destroying active banking data does
+  not erase backups or database history. A decided application is retained when a new application for disjoint terms
+  is submitted; terms covered by a decision cannot be reused. Administrators can manually import a verified
+  completed historical decision, terms and ratings into an existing portal application after checking the account
+  and source. Overlaps are refused and source references are deduplicated within that account only. Dates are stored
+  at midnight UTC because the historical time is unknown; this is not a bulk database import or payment record. Only one application can
+  be in progress at a time, and banking information is shared by the account rather than versioned per application.
 
-The student data (`--import_uoft_data`) is a one-shot: it is imported only when the database has no (or an empty)
-`uoft_data` table. Pass `--reimport_uoft_data` to replace it. The file is checked first, so a bad file leaves the
-previous student data in place. Without `--testing`, settings come from `config.json` (flags override it, even when
-equal to the default); the one-off flags (`--merge_reviews`, `--issue_batches`, `--record_decisions`, `--verify_only`,
-`--reimport_uoft_data` and `--no_backup`) are never saved there.
+Roster matching uses the four digits immediately before the final digit, as in the historical masked roster.
+The account's last four digits remain separate for recovery. Existing accounts must confirm their registered
+student number on the Account screen before they can be roster-matched; the matching digits are encrypted at rest.
+Accounts whose numbers are shorter than nine digits cannot currently be matched to this roster format and need
+administrator assistance. Historical records still cannot be imported automatically.
 
-The Senate, SABP and AGM form exports are meant to be re-run as they grow: give the **full export** each time. Every run
-reads the whole export and verifies every application in it. Google Forms stamps an edited or re-submitted response
-with a **new timestamp**, so an edit is simply a newer application. Every application has an internal typed `uuid` (see
-[Identity and verification levels](#identity-and-verification-levels)), recorded in `senate_application`, `student_aid`
-or `agm_rsvp`:
+In the split-auth deployment, roster upload and student-number confirmation are handled by the authentication service;
+the portal queries it for current roster checks and fails closed if it is unavailable. Administrators can upload a
+roster from **Admin: roster**. Avoid roster replacement while running seating or reviews: roster updates and program
+decisions are not cross-service transactions.
 
-- the **Senate and AGM tables are rebuilt** from the export on every run (a row that is no longer in the export is
-  gone);
-- the **SABP table is kept**, because it holds the committee's work (batches, ratings, decisions);
-- a **verified application is never downgraded** (Senate and SABP): if the student data changes and a verified student no
-  longer matches, it stays verified and a `roster_mismatch` alert is raised. Only unverified applications can become
-  verified. **AGM is not sticky**: its status follows the student data on every run.
+Program administrators can preview and explicitly send a generic status notice to an applicant's verified email.
+The notice does not identify the program or contain decision or financial details. A reviewed notice is sent at most once for the same
+application revision; failed or interrupted delivery remains unresolved and must be investigated before any new
+notice. SMTP must be configured. This is individual messaging, not the historical bulk campaign workflow.
 
-**One binding application per student** (the same email; for SABP, per term): the newest *verified* one. A newer
-unverified submission never replaces a verified one: it is stored as `non_binding` and raised as a warning (someone may
-be using the student's details). With no verified application the newest one is used. Older submissions that lose are
-`superseded`. SABP applications of one student with different but overlapping term selections (`Fall 2026` and
-`Fall 2026;Winter 2027`) do not replace each other: an `overlapping_terms` alert asks a person to decide.
+## Code and development
 
-**Completed applications are final (SABP).** An application is complete once the committee's decision is recorded (the
-`decided` stage: it passed verification, the reviewers' need levels, the reconciliation and the decision, and is ready
-for disbursement, which this program does not track). Once a student has a complete application for a term, any other
-application of theirs for **that term**, new or still in progress, is `not_considered`: it is raised as a warning. Other
-terms are unaffected. (`COMPLETE_STAGE` in `utsu_programs/sap/program.py` is the one place that says what complete means.)
+- `src/utsu_core/programs/` contains the AGM, Senate and SABP modules and retained processing logic.
+- `src/utsu_core/modules/` and `src/utsu_core/services/` contain shared web modules and services.
+- `src/utsu_core/forms/` contains bundled form definitions; `src/utsu_core/static/` contains the web client.
+- `testing/generate_fake_*.py` generates synthetic historical-form and roster data for testing. Run
+  `python testing/generate_fake_data.py` or use `--help` for generator options. Generated exports are not direct
+  portal-import files; some required portal fields have no historical equivalent.
+- [Design documents](docs/design/00-overview.md) describe the target architecture and outstanding work; proposed
+  functionality should not be read as implemented.
 
-**SABP applications that leave the export.** A stored SABP application that is no longer in the export (the student
-edited or re-submitted it, or the row was deleted) is kept as it is, with its batch, ratings and decision. If the student
-has a newer application for the term it is `superseded` by it; if it is still verified it is raised as a
-`missing_from_export` alert.
+Run tests with `python -m pytest` (the `pythonpath` and test folder are set in `pyproject.toml`). Some integration
+tests additionally require Node.js. Install only the extras needed for the deployment; see `pyproject.toml` for
+database, authentication and observability extras.
 
-Every run writes `alerts_senate.csv`, `alerts_sap.csv` and `alerts_agm.csv` (header only when there is nothing) listing
-what a person has to look at: duplicates (`duplicate_verified`, ERROR), roster mismatches, missing-from-export and
-overlapping-term applications, and this run's non-binding and not-considered applications (WARNING).
+The generated-user integration test creates synthetic accounts in an isolated in-memory app, verifies them, and
+exercises AGM registration, pagination, check-in and export. It uses 24 users by default; for a larger repeatable run:
 
-For SABP, every application keeps its batch and record. New applications start a new batch once the last one is full
-or has been assigned to reviewers, and otherwise top it up; slots of superseded applications are never reused. Reviewer
-sheets, decisions and awarded amounts are never touched.
-
-A partial export (only the new responses) is not supported: the Senate and AGM outputs would lose the earlier ones.
-
-**Handling a student's reply** to a "more information" email: the student edits or re-submits the form. Export the full
-form again and re-run.
-
-## Identity and verification levels
-
-**IDs are internal database keys that say what they are.** Every id is written `<kind>:<uuid>`, for example
-`application:sap:9c1d...`, `student:email:3f2a...` or `roster:77b0...` (the rows of `uoft_data`), so its type travels with
-it (in SQLite, `uuid LIKE 'student:%'` selects a kind). Each kind has its own UUID namespace, so the same text hashed as
-two kinds never gives the same uuid. `student_uuid` is derived from the student's **email** (kind `student:email`); an
-application's `uuid` from its submission timestamp and the same email, per program (`application:senate|sap|agm`).
-When a row has no email the student number is used (`student:student_number`), and when it has neither the name
-(`student:name`), so the program still works with whatever the form collects, and the kind shows which one was used.
-Case, spacing and look-alike text are ignored (the text is made ASCII, see below). Because the key is the email, editing a name or student
-number in a row does not change its ids; but a row that gains, loses or changes its email gets new ids, so do not rely
-on them outside the database.
-
-The email is typed by the applicant and not checked, so someone could submit using another student's email. That cannot
-replace a verified application: a new submission with the student's email only becomes binding if it is itself verified.
-Someone who also knows the student's name and number would still pass; the warnings in the log are the way to notice.
-
-**Verification needs a name; the student number and the division only narrow it down.** The roster keeps just the last
-four digits of a student number, which many students share, so a number (or a division) alone never identifies anyone.
-Each application is matched against `uoft_data` on its name, plus its student number and division when it gives them (a
-form must have a name column; the number and division columns are optional). Every factor given must agree with the
-same student, and a wrong value never falls back to another factor. The `verification_level` is the number of factors
-that matched:
-
-| factors that matched | `verification_level` | `match_method` |
-|---|---|---|
-| name | 1 | `name only` |
-| name + student number, or name + division | 2 | `name + student number`, `name + division` |
-| name + student number + division | 3 | `name + student number + division` |
-
-The roster's division is its `division`, or its `faculty` when the division is blank
-(the Senate form's divisional codes are colleges and faculties), compared as a code (`UC - University College` is `UC`).
-The SABP form has no division, so its highest level is 2. A row that has a student number but no name is kept, left
-`unverified` (`no name given`) and asked for its name.
-
-The matching `uoft_data.uuid` is stored in `uoft_uuid` and the level in `verification_level`, on each application row
-(`senate_application`, `student_aid`, `agm_rsvp`), next to the email-based `student_uuid`. An application that cannot
-be decided stays `unverified` with a reason (`name not found`, `no name given`, `student number does not match`,
-`division does not match`, `name shared by N students; a student number is needed`, ...).
-
-**Backups.** Every run that uses a database first copies it to `<database folder>/backups/<name>_<YYYYmmdd-HHMMSS>.sqlite`
-(SQLite's backup, so the copy is consistent). `--backup_dir DIR` changes the folder, `--keep_backups N` keeps only the
-newest N (0 keeps all), and `--no_backup` skips it for one run. Backups hold the same private data as the database.
-
-**Spreadsheet safety.** Anything an applicant typed can start with `=`, `+`, `-` or `@`, which Excel and Google Sheets run
-as a formula. In every CSV this program writes, such a text cell gets a leading apostrophe (`'=HYPERLINK(...)`), so it
-shows as text; plain numbers are untouched. The program removes the apostrophe again when it reads its own files back.
-
-**ASCII only.** The program works in plain ASCII and does not support other scripts. Everything it compares or
-derives from a name, email or student number is made ASCII first (`clean_text` / `normalize_case` in
-`utsu_std/utils.py`): accents are removed (`José García` becomes `Jose Garcia`, so it matches a roster that has no
-accents, and the roster itself is stored this way), look-alike forms become the plain ones (fullwidth letters,
-ligatures, superscript digits, non-breaking spaces), curly apostrophes and every kind of dash are written the plain way
-(`O’Neil` matches `O'Neil`), runs of spaces collapse, and anything else that is not ASCII (other scripts, emoji,
-zero-width and control characters) is dropped. `ß` becomes `ss`, `Æ` becomes `AE`, `Ø` becomes `O`, and so on. So a
-name written only in another script has nothing left: it cannot be verified (the reason says so and the "more
-information" email asks for the name again), but it still gets its own ids, so two such students are never mistaken for
-one. Student numbers typed with fullwidth or superscript digits, or with a stray invisible character, give the same
-4 digits; nonsense numbers are simply not a match, never a crash. An email address with an invisible character is not
-valid for sending.
-
-Free text the applicant writes (for example the SABP general statement) is not changed, so reviewers read what was
-written; it is written to the output files as UTF-8 with a BOM, so Excel shows accents correctly. Files that people re-save from a spreadsheet are read whether they
-are UTF-8, UTF-16 or Excel's plain "CSV" (Windows-1252, with a warning); bytes that are not text become `\ufffd` instead
-of stopping the run.
-
-Student names and emails are not written to the log (the old `--log_sample` and `--dry_run` flags are gone).
-
-## Testing mode
-
-```
-utsu-all --testing          # or utsu-senate / utsu-sap / utsu-agm --testing for one program
+```sh
+UTSU_FAKE_USER_COUNT=210 python -m pytest tests/test_generated_user_load.py -q --durations=1
 ```
 
-This first generates the fake data (the generators are in `testing/`), then runs the pipeline on it. The fake
-roster and form exports (`fake_uoft_data.csv`, `fake_senator.csv`, `fake_sabp.csv`, `fake_agm.csv`) are written to
-`testing/output/` along with a fresh database, the log, and the results (`verified.csv`, `unverified.csv`,
-`seats.csv`, `unseated.csv`, `seating_run.json`). That folder is gitignored and rebuilt every run; the generators are
-seeded, so the data is the same each time. The pipeline uses the seats in `data/seats_senate.csv`. `config.json` is
-not read or changed, and flags such as `--seed` or `--seats_file` still override the defaults.
-
-`python testing/generate_fake_data.py` regenerates just the fake data, with other settings if you want: the student
-roster (from the seats file) first, then the Senate, SABP and AGM form exports, each drawing its applicants from the
-roster. Use `--only` to pick some, `--students` to set the roster size (it must be at least `--sabp-rows`), and
-`--help` for the seed and row counts. The shared code lives in that file; the per-form logic is in
-`testing/generate_fake_*.py`.
-
-## Student Aid Bursary Program (SABP)
-
-`utsu_programs/sap/program.py` processes the SABP form export (Stages 1-3 of SAS-002). From the project root:
-
-```
-utsu-sap --sap_file path/to/export.csv [--batch_size 50]
-```
-
-(`--testing` supplies `testing/output/fake_sabp.csv`.) Column names come from `data/conversion_table_sap.csv`; columns not
-listed there are ignored. For each student (by email) one application is binding (the newest verified one, see above), then it:
-
-- **verifies** against `uoft_data` by name, student number or both (a form may omit either column; see
-  [Identity and verification levels](#identity-and-verification-levels)), and records one `student_aid` row per
-  application (internal `uuid`, `student_uuid`, `uoft_uuid`, `verification_level`, stream, requested amount, WFNI, flags,
-  batch/record). Reprocessing updates those rows but never overwrites `awarded_amount` or `decision`;
-- **scores** the Weighted Financial Need Index for living-costs applications from the weights in
-  `data/wfni_weights.csv` (`field,answer,points`; edit it and re-run, no code change), and adds review
-  flags (`membership_not_confirmed`, `amount_over_max`, `instant_approval_eligible`, `high_wfni`, `no_statement`, ...).
-  The file is re-read whenever it changes and its hash is saved in `sap_run.json`. Answers are matched to the form's own
-  option text (case, spacing and "to" vs "-" ignored); a reworded or mistyped option is not scored and flags the
-  application `wfni_incomplete`. The maximum score and the `high_wfni` threshold (over half the maximum) follow from the
-  weights. A re-run recomputes `wfni` for every application, but review sheets already handed out keep the old score;
-- **writes** to `<output_dir>`: `sap_verified.csv` / `sap_unverified.csv` (private: names, ID, email),
-  `sap_run.json`, and `sap_batches/batch_NNN.csv` + `.txt`: anonymized batches of at most 50 applications, oldest
-  first, with the general statement, requested amount, WFNI and blank `need_level` / `notes` columns for reviewers.
-  Names, emails, phone numbers, student numbers, postal codes and links are redacted from statements; the
-  committee-facing files carry only the application `uuid` and a record id like `B001-07`. Faculty is left out.
-
-**Two reviewers per batch.** Pass `--reviewers "Ann,Bo,Cy"` (two or more names; testing mode uses `Reviewer_A,B,C`).
-Each batch is assigned to two of them, the least loaded first, and saved in `sap_batch_reviewer`, so existing batches
-keep their reviewers when more are added. Each reviewer gets their own copy in
-`sap_batches/by_reviewer/<name>/batch_NNN.csv` (and `.txt` to read): they fill in `need_level` (0-5) and `notes` and
-return the file to the same place. Reprocessing never overwrites a reviewer's sheet; if a batch has changed since it was
-issued (e.g. the last, partial batch grew) a warning says so and merging reports the missing ratings.
-
-Once the sheets are filled in, merge them:
-
-```
-utsu-sap --merge_reviews
-```
-
-This writes `sap_merged_ratings.csv` (and the `sap_review` table): per application the reviewers, each rating, the mean,
-the spread, a `suggested_amount` (the mean of the rubric maximums, capped at the amount requested) and a `status`:
-`agreed`, `discuss` (levels differ by 2 or more), `incomplete` (one rating) or `unrated`. Invalid levels and unknown
-applications are logged as warnings. Only the reviewers assigned to a batch count.
-
-## SABP stages and decisions
-
-Every verified application has a `stage` in `student_aid` (empty for unverified ones), moved forward by the program and
-never backwards by reprocessing:
-
-| stage | set when |
-|---|---|
-| `scored` | verified against `uoft_data` and scored (WFNI, flags), in a batch not yet handed out |
-| `in_review` | its batch is handed to reviewers: `--reviewers` assigns it, or `--issue_batches all` (or `1,2`) records a hand-out |
-| `discuss` / `reconciled` | `--merge_reviews` finds the two levels 2 or more apart / in agreement (one rating stays `in_review`) |
-| `decided` | `--record_decisions decisions.csv` (columns `uuid`, `decision`, optional `awarded_amount`; other columns, such as those of `sap_merged_ratings.csv`, are ignored) |
-
-A batch that has left `scored` is closed: new applications start a new batch, and its blank sheets in `sap_batches/` are
-no longer rewritten. Rows that cannot be recorded (unknown or unverified application, missing
-decision, bad amount) are listed and skipped; a decision recorded before reconciliation is accepted with a warning (e.g.
-instant approvals). `decided` is the last stage: the application is complete and ready for disbursement, which this
-program does not track (see "Completed applications are final" above). `sap_run.json` counts the verified applications
-per stage. Databases from before this column get it filled in on the next run (`decided` if there is a decision,
-`in_review` if the batch has reviewers, else `scored`).
-
-```
-utsu-sap --issue_batches all          # sheets were handed out without --reviewers
-utsu-sap --merge_reviews
-utsu-sap --record_decisions decisions.csv
-```
-
-## AGM voter RSVPs
-
-`utsu_programs/agm/program.py` processes the AGM voter RSVP export. From the project root:
-
-```
-utsu-agm --agm_file "path/to/RSVP.csv"
-```
-
-(`--testing` supplies `testing/output/fake_agm.csv`; `python testing/generate_fake_data.py --only agm` regenerates it.) Columns come from
-`data/conversion_table_agm.csv`. For each person (by email) one RSVP is binding (the newest verified one, see above), verified against `uoft_data`:
-
-- **Only a `@mail.utoronto.ca` email counts.** An RSVP with a blank email or another domain (even `@utoronto.ca`) is
-  unverified (`email is not a mail.utoronto.ca address`);
-- the form may have **no student number**, so people are then matched on their ACORN-registered name alone
-  (`name_only_match` flag, level 1). A name shared by several students stays unverified (`name shared by N students`)
-  until the form adds a `Student Number` or `Division` column, which is then used automatically (level 2 or 3).
-  The form must have the name columns; a student number alone never matches anyone;
-- **ambiguous cases are warned about.** An RSVP that fits more than one student is logged
-  (`AMBIGUOUS AGM RSVP ... more than one student matches`), flagged `ambiguous_name`,
-  counted as `ambiguous_matches` in `agm_run.json` and listed in `alerts_agm.csv` (kind `ambiguous_match`, severity
-  WARNING) on every run until it is resolved, e.g. by correcting the row with a student number or division. It is
-  never put on the door list;
-- every RSVP gets an `agm_rsvp` row (uuid, `student_uuid`, `uoft_uuid`, `verification_level`, status, reason, flags; no
-  names or emails);
-- `<output_dir>` gets these files (all but `agm_accommodations.csv` carry names and emails: keep them private):
-
-  | file | what is in it |
-  |---|---|
-  | `agm_list_all.csv` | the **door list**: every verified attendee, sorted by last name. Columns `last_name, first_name, student_number, preferred_name, pronouns, email, meeting_preference, contact_ok, flags, verification_level, checked_in`. `student_number` is the truncated roster number (`xxxxx3971x`), read from `uoft_data` for the verified student (not from the form). No other ids. `meeting_preference` is just **`In-person`** or **`Virtual`**: anything that is not clearly in person, including a blank answer, is Virtual. `checked_in` is a blank column for the door |
-  | `agm_list_in_person.csv` | the same columns, only the people who are `In-person` |
-  | `agm_unverified.csv` | RSVPs that could not be verified, with the `reason`; keeps the ids (`uuid`, `student_uuid`) the "more information" emails use |
-  | `agm_accommodations.csv` | dietary and accessibility needs of verified attendees, by `uuid` only, no names; answers such as `None` or `N/A` are not needs and are left out |
-  | `alerts_agm.csv` | what a person has to look at: duplicate, ambiguous-match and non-binding RSVPs |
-  | `agm_run.json` | counts (below) |
-
-  The `meeting_preference`
-  column in every AGM file uses the same two values; the database keeps the answer as it was given.
-
-  `agm_run.json` keys: `submissions_in_export` (rows read), `binding_rsvps` (one per person, which the lists are built
-  from), `verified_rsvps`, `verified_in_person`, `unverified_rsvps`, `attendance` (In-person / Virtual counts),
-  `match_method`, `unverified_reasons`, `dietary_requests`, `accessibility_requests`, `flags`, `non_binding`,
-  `integrity_duplicates` and `alerts`. `sap_run.json` uses the same names (`binding_applications`,
-  `verified_applications`, ...).
-
-**Verification on its own.** `--verify_only` runs the same verification without producing any
-lists or database rows, to check an RSVP export against a database that already holds `uoft_data`:
-
-```
-utsu-agm --verify_only --agm_file "path/to/RSVP.csv" --db path/to/db.sqlite [--output_dir DIR]
-utsu-agm --verify_only --testing     # testing/output/fake_agm.csv against the last `utsu-agm --testing` database
-```
-
-It writes `agm_verification.csv` (status, reason, match method and flags per person).
-
-## Emailing (`utsu_mail`)
-
-Mail-merge emails sent directly over SMTP:
-
-```
-python -m utsu_mail --list_fields                 # templates + columns from the programs' schema.sql files
-python -m utsu_mail senate_verified --dry_run     # render a preview, never connects to SMTP
-python -m utsu_mail senate_verified               # preview, confirm, send
-```
-
-**Templates** live in `templates/email/`. `<name>.txt` starts with a `Subject: ...` line, a blank line, then the
-plain-text body; an optional `<name>.html` is added as the HTML version (values are HTML-escaped). Placeholders are
-`{{ field }}`. To change an email, edit the file; to add one, drop in a new `.txt`.
-
-**Recipients** come from a CSV (default `<output_dir>/verified.csv`, or `--recipients`) or a read-only
-`--query "SELECT ... FROM uoft_data ..."` against `--db`; each column is a field, so alias columns to match a template.
-Templates are checked against the recipient columns before anything is sent, and the error points at the schema table
-that has a missing field. Rows with a bad/duplicate address or a blank field a template needs are skipped and listed.
-
-**SMTP** settings go in the `smtp` section of `config.json` (`host`, `from_addr`, and optionally `port`, `security`
-= `starttls`|`ssl`|`none`, `username`, `from_name`, `reply_to`, `delay`). The password is never read from config: set
-`UTSU_SMTP_PASSWORD` or you will be prompted.
-
-**Safety:** a sample is shown first; type `send` to confirm (`t` mails the sample to the sender address only, `r` shows
-another sample). Every outcome is appended to `<output_dir>/mail_log_<template>.csv` (with the `application_uuid` and
-`student_uuid` when the recipient file has them), and addresses already sent are
-skipped on rerun unless `--resend` is given.
-
-**Rejections and requests for more information** (AGM, SABP, Senate): templates `agm_more_info`, `agm_rejection`,
-`sabp_more_info`, `sabp_rejection`, `senate_more_info` and `senate_rejection`. Every subject carries
-`[Ref <application uuid>]` and every body lists the application uuid, the student uuid and the submission timestamp.
-Both ids are internal database keys, kept in the email only as a reference for replies (a reply is matched back by the
-student's email, student number or name, not by the id). The application uuid is the `uuid` of the application row
-(program + submission timestamp + the student's email); the student uuid is derived from the student's email, so it is
-the same before and after verification (the link to `uoft_data` is stored in `uoft_uuid`). `notices` builds the
-recipient file, which also lists which details could not be verified (name, student number) for `more_info`, judged
-from what the application actually gave:
-
-```
-python -m utsu_mail.notices senate more_info                          # reads <output_dir>/unverified.csv
-python -m utsu_mail.notices sabp more_info                            # reads <output_dir>/sap_unverified.csv
-python -m utsu_mail.notices agm rejection --reason "Not a UTSU member"  # reads <output_dir>/agm_unverified.csv
-python -m utsu_mail senate_more_info --recipients <output_dir>/notices_senate_more_info.csv
-```
-
-`--input` and `--output` override the files, and `--db` the database holding `uoft_data`.
-
-Tests: `python -m pytest` (the `pythonpath` and test folder are set in `pyproject.toml`).
+The count can be set from 1 to 2000. This sequential, in-process correctness test disables authentication
+rate-limiting and uses an in-memory mailer; it is not a concurrency, network, production-database, or capacity
+benchmark. It never writes users to a deployment or sends email. Other generated historical-form tests cover
+selected Senate and SABP processing; the generated CSVs are not general-purpose portal imports.

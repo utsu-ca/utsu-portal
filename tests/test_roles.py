@@ -5,7 +5,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from test_authsvc import make  # noqa: E402
 from test_portal import activate, login, register  # noqa: E402
 
-from utsu_portal.context import ROLES
+from utsu_core.context import ROLES
 
 
 def setup():
@@ -72,10 +72,10 @@ def test_sole_remaining_admin_cannot_demote_self():
 def test_service_token_rotation_accepts_old_and_new():
     from fastapi.testclient import TestClient
 
-    from utsu_portal.authsvc import create_auth_app
-    from utsu_portal.mailer import OutboxMailer
-    from utsu_portal.settings import Settings
-    from utsu_portal.store import MemoryStore
+    from utsu_core.authsvc import create_auth_app
+    from utsu_core.mailer import OutboxMailer
+    from utsu_core.settings import Settings
+    from utsu_core.store import MemoryStore
 
     old, new = "o" * 40, "n" * 40
     c = TestClient(create_auth_app(Settings(secret="a" * 40, service_token=f"{old},{new}"), MemoryStore(), OutboxMailer()))

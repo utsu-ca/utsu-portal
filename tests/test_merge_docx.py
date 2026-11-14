@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from utsu_programs.sap import merge_docx
-from utsu_programs.sap import program as sap
+from utsu_core.programs.sap import merge_docx
+from utsu_core.programs.sap import program as sap
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "testing"))
 import generate_fake_reviews as fake  # noqa: E402

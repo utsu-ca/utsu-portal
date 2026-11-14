@@ -3,17 +3,17 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "utsu-student-matching"
+name = "utsu-core"
 version = "0.1.0"
-description = "UTSU student verification: Senate applications, Student Aid Bursary (SABP), AGM voter RSVPs, and mail-merge."
+description = "UTSU web application backend for Senate, student aid, and AGM workflows."
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.12"
-dependencies = []
+dependencies = ["fastapi>=0.110", "pydantic>=2", "uvicorn", "pyyaml", "cryptography>=50", "segno>=1.6.6", "redis>=5", "google-re2>=1.1"]
 
 [project.optional-dependencies]
 dev = ["pytest", "httpx", "fakeredis"]
-portal = ["fastapi>=0.110", "uvicorn", "pyyaml", "cryptography>=50", "segno>=1.6.6", "redis>=5", "google-re2>=1.1"]
+portal = []  # retained for existing deployment configurations
 firestore = ["google-cloud-firestore"]
 sql = ["sqlalchemy>=2"]  # + a driver: psycopg (PostgreSQL/Supabase), pyodbc (Azure SQL), pymysql
 observability = [
@@ -39,22 +39,15 @@ authsvc = [
     "bcrypt>=4.1",  # Password hashing
 ]
 
-[project.scripts]
-utsu-all = "utsu_programs.runner:main"
-utsu-senate = "utsu_programs.senate.cli:main"
-utsu-sap = "utsu_programs.sap.cli:main"
-utsu-agm = "utsu_programs.agm.cli:main"
-
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["utsu_core*", "utsu_programs*", "utsu_std*", "utsu_mail*", "utsu_portal*"]
+include = ["utsu_core", "utsu_core.*"]
 
 [tool.setuptools.package-data]
-utsu_core = ["schema/*.sql"]
-"utsu_programs.senate" = ["*.sql"]
-"utsu_programs.sap" = ["*.sql"]
-"utsu_programs.agm" = ["*.sql"]
-utsu_portal = ["static/*", "forms/*.yaml"]
+utsu_core = ["schema/*.sql", "static/*", "forms/*.yaml"]
+"utsu_core.programs.senate" = ["*.sql"]
+"utsu_core.programs.sap" = ["*.sql"]
+"utsu_core.programs.agm" = ["*.sql"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

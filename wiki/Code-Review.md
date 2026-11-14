@@ -1,6 +1,8 @@
 # Code Review
 
-**Scope:** all of `src/` (`utsu_core`, `utsu_std`, `utsu_mail`, schema), `data/`, `templates/`, and the tests.
+> Historical review of the batch implementation, not a review of the current web application.
+
+**Scope:** all of `src/` (`utsu_core`, `utsu_core.std`, `utsu_core.mail`, schema), `data/`, `templates/`, and the tests.
 **Method:** read the code, ran the test suite and doctests, ran the `--testing` pipeline end to end, and wrote small
 scripts to reproduce suspected defects before fixing them.
 
@@ -107,6 +109,6 @@ Decisions that came with it:
 ## Test gaps
 
 - The argparse wiring of the commands (`utsu_core.cli`; the pieces are tested, the wiring is not).
-- `utsu_programs/senate/seating.py`: add property tests (each applicant at most once, no constituency over capacity, nobody seated where
+- `utsu_core/programs/senate/seating.py`: add property tests (each applicant at most once, no constituency over capacity, nobody seated where
   they marked none, same seed gives the same result, delegates take division seats).
 - The real `SmtpSender` connect and login rules, perhaps with a fake `smtplib`.

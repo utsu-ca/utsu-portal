@@ -3,9 +3,9 @@ import base64
 import pytest
 from fastapi.testclient import TestClient
 
-from utsu_portal import create_app, formdef
-from utsu_portal.mailer import OutboxMailer
-from utsu_portal.settings import Settings
+from utsu_core import create_app, formdef
+from utsu_core.mailer import OutboxMailer
+from utsu_core.settings import Settings
 
 IMG = "data:image/png;base64," + base64.b64encode(b"\x89PNG fake").decode()
 

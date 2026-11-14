@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from utsu_std.utils import ConfigError, load_and_merge_config, load_config_file
+from utsu_core.std.utils import ConfigError, load_and_merge_config, load_config_file
 
 
 def parser_for(path):

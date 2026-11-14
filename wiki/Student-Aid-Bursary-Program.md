@@ -1,7 +1,10 @@
 # Student Aid Bursary Program
 
-`src/utsu_programs/sap/program.py` processes the SABP form export (Stages 1-3 of SAS-002). The financial-need scoring is in
-`src/utsu_programs/sap/wfni.py`. The program verifies applicants, scores them, cuts anonymized review batches for the
+> Historical batch reference only; the commands below have been removed. The portal review workflow is experimental;
+> see [README](../README.md) for current capabilities and limitations.
+
+`src/utsu_core/programs/sap/program.py` processes the SABP form export (Stages 1-3 of SAS-002). The financial-need scoring is in
+`src/utsu_core/programs/sap/wfni.py`. The program verifies applicants, scores them, cuts anonymized review batches for the
 committee, merges reviewer ratings, and records final decisions. **Disbursement is not tracked.**
 
 ```powershell
@@ -158,7 +161,7 @@ scores get an amount, rounded to the nearest $10 and never below `rubric_amount`
 score's whole level (for example a mean of 3 is at least $650, even though the curve gives $583):
 
 ```powershell
-python -m utsu_programs.sap.merge_docx path\to\reviewers -o secrets\merged_reviews.csv
+python -m utsu_core.programs.sap.merge_docx path\to\reviewers -o secrets\merged_reviews.csv
 ```
 
 ### Private banking export
@@ -167,7 +170,7 @@ Join the merged reviews with the **same database used to assign their batches** 
 export:
 
 ```powershell
-python -m utsu_programs.sap.export_banking secrets\merged_reviews.csv secrets\sabp.csv secrets\data.sqlite -o secrets\reviews_banking.csv
+python -m utsu_core.programs.sap.export_banking secrets\merged_reviews.csv secrets\sabp.csv secrets\data.sqlite -o secrets\reviews_banking.csv
 ```
 
 The export preserves the review columns and adds the application UUID, first and last names, email, original email,
@@ -236,7 +239,7 @@ numbers exactly three digits and transit numbers exactly five digits. Invalid in
 silently truncated or altered.
 
 ```powershell
-python -m utsu_programs.sap.export_banking secrets\approved_reviews.csv secrets\sabp.csv secrets\data.sqlite -o secrets\reviews_banking.csv --eft-config secrets\eft_config.json --eft-output secrets\payments_0023.eft
+python -m utsu_core.programs.sap.export_banking secrets\approved_reviews.csv secrets\sabp.csv secrets\data.sqlite -o secrets\reviews_banking.csv --eft-config secrets\eft_config.json --eft-output secrets\payments_0023.eft
 ```
 
 Both files contain sensitive information. The EFT is created only after all rows validate and is never overwritten.

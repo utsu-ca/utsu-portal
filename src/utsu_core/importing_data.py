@@ -4,9 +4,9 @@ import sqlite3
 from pathlib import Path
 
 from utsu_core.resources import package_text
-from utsu_std.csv_safe import open_csv
-from utsu_std.database import split_statements
-from utsu_std.utils import clean_text, normalize_case, typed_uuid
+from utsu_core.std.csv_safe import open_csv
+from utsu_core.std.database import split_statements
+from utsu_core.std.utils import clean_text, normalize_case, typed_uuid
 
 logger = logging.getLogger(__name__)
 

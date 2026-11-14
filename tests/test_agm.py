@@ -3,10 +3,10 @@ import logging
 import sqlite3
 from pathlib import Path
 
-from utsu_programs.agm import program as agm
+from utsu_core.programs.agm import program as agm
 from utsu_core.resources import package_text
 from utsu_core.verification import construct_lookup_tables
-from utsu_std.utils import absfile
+from utsu_core.std.utils import absfile
 
 HEADERS = ["Timestamp", "Username", "Preferred Name", "Preferred Pronouns", "ACORN-registered First Name",
            "ACORN-registered Last Name ", "UofT Email Address", "Meeting Preference",

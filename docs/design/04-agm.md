@@ -1,7 +1,7 @@
-# 04 AGM module (`utsu_portal/programs/agm`)
+# 04 AGM module (`utsu_core/programs/agm`)
 
-Ports `utsu_programs/agm/program.py` and consolidates the portal's existing AGM code (`modules/agm.py`,
-`modules/agm_verify.py`, SSO integration in `modules/sso.py`, `static/checkin.*`). **Stateless: eligibility is
+Ports `utsu_core/programs/agm/program.py` and consolidates the portal's existing AGM code (`programs/agm/module.py`,
+`programs/agm/verify.py`, SSO integration in `modules/sso.py`, `static/checkin.*`). **Stateless: eligibility is
 computed when it is needed.** See [00](00-overview.md) section 3.
 
 ## 1. Purpose
@@ -11,9 +11,9 @@ attendees' identity, provide Zoom SSO to eligible voters, and record check-in.
 
 ## 2. Already implemented (keep, move)
 
-Invitation panel, QR, Zoom join, check-in and attendance (`modules/agm.py`); online ID verification and 12 h grant
-(`modules/agm_verify.py`); OIDC provider with eligibility callback (`modules/sso.py`); check-in screen. They move
-into `programs/agm/` unchanged; covered by `test_agm`, `test_agm_review`, `test_agm_sso`.
+Invitation panel, QR, Zoom join, check-in and attendance (`programs/agm/module.py`); online ID verification and 12 h grant
+(`programs/agm/verify.py`); OIDC provider with eligibility callback (`modules/sso.py`); check-in screen. The routers now live
+in `programs/agm/` without changing their behavior; covered by `test_agm`, `test_agm_review`, `test_agm_sso`.
 
 ## 3. Stored facts vs computed views
 
@@ -31,8 +31,10 @@ on every roster upload; the AGM has no email-domain veto and no matching of its 
 - **Per person, O(1):** invitation/QR, Zoom join, the SSO authorize eligibility callback and check-in each load that
   person's newest RSVP submission and read the account's `roster_checks` result. Check-in is the authoritative moment: it evaluates
   eligibility, then writes the `agm_checkins` fact under optimistic lock.
-- **Lists, on admin request:** `GET /api/admin/agm/rsvps[.csv]` streams the voter list (verified, unverified, needs
-  review) with a cursor; `GET /api/admin/agm/alerts` computes duplicates.
+- **Lists, on admin request:** `GET /api/admin/agm/rsvps` returns a paginated registration list.
+  `GET /api/admin/agm/alerts` identifies ineligible registrations and online attendees without a current
+  identity-verification grant. `GET /api/admin/agm/rsvps.csv` exports registrations to an audited, spreadsheet-safe
+  private CSV. Historical batch duplicate alerts are not implemented.
 - **Notices:** preview computes recipients now; send requires the preview hash.
 - **Standalone verification:** `POST /api/admin/agm/verify` checks a person against the roster with no RSVP.
 
@@ -48,11 +50,12 @@ on every roster upload; the AGM has no email-domain veto and no matching of its 
 
 ## 6. Left to implement
 
-- [ ] Create `programs/agm`; move modules and check-in assets; update imports and `app.py`.
-- [ ] Port `build_rsvp`, `agm_uuid`, `review_flags`, `annotate`, `is_in_person`, `attendance`, `real_need`.
+- [x] Move AGM routers into `programs/agm` and update `app.py`; assets remain in the shared static directory.
+- [ ] Complete the pure RSVP model port and integrate it with portal submissions.
 - [ ] `eligibility.evaluate(person_or_rsvp)` used by invitation, Zoom, SSO callback, check-in and the list.
-- [ ] Voter list, alerts, notices, standalone verify.
-- [ ] `agm_admin` role for door staff (check-in only; name and pronouns only).
+- [ ] Voter list CSV, alerts and notices. A paginated JSON registration list and standalone roster check are available
+  to `agm_admin` through the API and basic admin screen; the existing `checkin` role remains limited to check-in and attendance.
+- [ ] Limit the door-staff response to name and pronouns.
 - [ ] Tests: port `test_agm`; roster change flips eligibility on the next request; check-in rejects ineligible; roles.
 
 ## 7. Open questions

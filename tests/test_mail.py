@@ -5,14 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from utsu_mail import campaign, transport
-from utsu_mail.__main__ import main
-from utsu_mail.notices import NAME_FIELD, NUMBER_FIELD, diagnose, main as notices_main
-from utsu_mail.recipients import read_csv as read_csv_rows, read_sql, split_by_validity
+from utsu_core.mail import campaign, transport
+from utsu_core.mail.notices import NAME_FIELD, NUMBER_FIELD, build_notices, diagnose, write_notices
+from utsu_core.mail.recipients import read_csv as read_csv_rows, read_sql, split_by_validity
 from utsu_core.resources import package_text, schema_dirs
-from utsu_mail.schema import schema_fields
-from utsu_mail.templates import Template, TemplateError, load_template, parse_template
-from utsu_std.utils import student_uuid_for
+from utsu_core.mail.schema import schema_fields
+from utsu_core.mail.templates import Template, TemplateError, load_template, parse_template
+from utsu_core.std.utils import student_uuid_for
 
 ROOT = Path(__file__).resolve().parents[1]
 SETTINGS = transport.SmtpSettings(host="localhost", from_addr="elections@utsu.ca", from_name="UTSU", security="none", delay=0)
@@ -58,7 +57,7 @@ def test_notice_templates_are_tracked_and_use_known_fields():
 
 
 def test_schema_fields_reads_sql_files():
-    fields = schema_fields(schema_dirs("utsu_core", "utsu_programs"))
+    fields = schema_fields(schema_dirs("utsu_core", "utsu_core.programs"))
     assert "first_name" in fields["uoft_data"]
     assert {"senate_application", "student_aid", "agm_rsvp"} <= set(fields)  # every program's schema is found
 
@@ -120,26 +119,6 @@ def test_send_all_logs_and_resumes(monkeypatch, tmp_path):
     assert campaign.already_sent(log) == {"a@b.ca"}
 
 
-def test_cli_dry_run_and_cancel(monkeypatch, tmp_path, capsys):
-    tdir = tmp_path / "tpl"
-    tdir.mkdir()
-    (tdir / "hello.txt").write_text("Subject: Hi {{ full_name }}\n\nBody for {{ division }}\n", encoding="utf-8")
-    recipients = tmp_path / "r.csv"
-    write_csv(recipients, [{"email": "a@b.ca", "full_name": "Ada L", "division": "UC"}])
-    base = ["hello", "--template_dir", str(tdir), "--recipients", str(recipients), "--log_dir", str(tmp_path),
-            "--config", str(tmp_path / "none.json")]
-
-    assert main(base + ["--dry_run"]) == 0
-    assert "Subject: Hi Ada L" in capsys.readouterr().out
-
-    # a missing field is reported against the schema, before any SMTP use
-    (tdir / "bad.txt").write_text("Subject: x\n\n{{ faculty }}\n", encoding="utf-8")
-    assert main(["bad"] + base[1:]) == 2
-
-    # real send path with no smtp config refuses
-    assert main(base) == 2
-
-
 def make_uoft_db(path):
     conn = sqlite3.connect(path)
     conn.executescript(package_text("utsu_core", "schema/uoft_data.sql"))
@@ -183,9 +162,9 @@ def test_notices_to_tracked_email(monkeypatch, tmp_path):
         {"uuid": "app-2", "submission_ts": "2026/09/13 1:00:00 p.m. AST", "full_name": "Ada Lovelace",
          "id": "1006639715", "email": "ok@x.ca", "division": "UC"}])
     out = tmp_path / "notices.csv"
-    base = ["senate", "more_info", "--input", str(applications), "--db", str(tmp_path / "db.sqlite"),
-            "--config", str(tmp_path / "none.json"), "--output", str(out)]
-    assert notices_main(base) == 0
+    with sqlite3.connect(tmp_path / "db.sqlite") as conn:
+        notices = build_notices(read_csv_rows(applications), conn.cursor(), "more_info", program="senate")
+    write_notices(out, notices)
 
     ada_id = student_uuid_for("ada@x.ca")
     rows = read_csv_rows(out)
@@ -201,7 +180,15 @@ def test_notices_to_tracked_email(monkeypatch, tmp_path):
     logged = read_csv_rows(log)
     assert (logged[0]["application_uuid"], logged[0]["student_uuid"]) == ("app-1", ada_id)
 
-    # a rejection needs a reason
-    assert notices_main(["sabp", "rejection"] + base[2:]) == 2
-    assert notices_main(["senate", "rejection", "--reason", "Not eligible"] + base[2:]) == 0
-    assert {r["rejection_reason"] for r in read_csv_rows(out)} == {"Not eligible"}
+    with sqlite3.connect(tmp_path / "db.sqlite") as conn:
+        rejected = build_notices(read_csv_rows(applications), conn.cursor(), "rejection", "Not eligible", "senate")
+    assert {r["rejection_reason"] for r in rejected} == {"Not eligible"}
+
+
+def test_notice_validation(tmp_path):
+    make_uoft_db(tmp_path / "db.sqlite")
+    with sqlite3.connect(tmp_path / "db.sqlite") as conn:
+        with pytest.raises(ValueError, match="needs a reason"):
+            build_notices([{"uuid": "app"}], conn.cursor(), "rejection")
+        with pytest.raises(ValueError, match="Unknown notice kind"):
+            build_notices([], conn.cursor(), "other")

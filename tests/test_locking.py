@@ -9,11 +9,11 @@ sys.path.insert(0, str(Path(__file__).parent))
 from test_portal import activate, login, register, setup_admin_and_user  # noqa: E402
 from test_stores import make  # noqa: E402
 
-from utsu_portal import create_app
-from utsu_portal.crypto import Crypter, EncryptingStore
-from utsu_portal.mailer import OutboxMailer
-from utsu_portal.settings import Settings
-from utsu_portal.store import REV, Conflict, MemoryStore
+from utsu_core import create_app
+from utsu_core.crypto import Crypter, EncryptingStore
+from utsu_core.mailer import OutboxMailer
+from utsu_core.settings import Settings
+from utsu_core.store import REV, Conflict, MemoryStore
 
 KINDS = ["memory", "sqlite", "sql", "chunk"]
 
@@ -137,7 +137,7 @@ def test_verification_decided_once_even_with_two_admins():
 
 
 def test_sso_code_redeemable_once():
-    from utsu_portal.modules import sso
+    from utsu_core.modules import sso
     c, mail, store = boot()
     ah, uh = setup_admin_and_user(c, mail)
     activate(c, ah, uh)

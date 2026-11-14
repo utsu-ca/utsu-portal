@@ -4,8 +4,8 @@ import sqlite3
 
 from test_agm import form_csv as agm_form, rsvp, students_db
 from test_sap import AP_ROW, LC_ROW, form_csv as sap_form
-from utsu_programs.agm import program as agm
-from utsu_programs.sap import program as sap
+from utsu_core.programs.agm import program as agm
+from utsu_core.programs.sap import program as sap
 from utsu_core.integrity import duplicate_verified
 from utsu_core.selection import select_current, set_statuses
 

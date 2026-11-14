@@ -7,10 +7,10 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).parent))
 from test_portal import login, register  # noqa: E402
 
-from utsu_portal import create_app
-from utsu_portal.formdef import safe_pattern
-from utsu_portal.mailer import OutboxMailer
-from utsu_portal.settings import Settings
+from utsu_core import create_app
+from utsu_core.formdef import safe_pattern
+from utsu_core.mailer import OutboxMailer
+from utsu_core.settings import Settings
 
 
 def boot(**kw):
@@ -87,7 +87,7 @@ def test_ordinary_patterns_ok(p):
 
 
 def test_pattern_is_checked_by_re2_on_submit_and_publish():
-    from utsu_portal import formdef
+    from utsu_core import formdef
     assert type(safe_pattern(r"\d+")).__module__.startswith("re2")
     base = {"id": "t", "title": "T", "version": 1, "fields": [{"id": "a", "type": "text", "label": "A", "pattern": r"(a+)+$"}]}
     with pytest.raises(formdef.FormError, match="pattern"):

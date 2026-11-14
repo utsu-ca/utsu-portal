@@ -5,8 +5,8 @@ Generate all the fake test data. This is the single entry point; the per-form lo
     python testing/generate_fake_data.py --only senate sabp       # just some of them
     python testing/generate_fake_data.py --seed 7 --students 5000 --sabp-rows 4000
 
-The files are written to testing/output/ (not committed). `utsu-all --testing` calls generate_all()
-itself, so it only needs running by hand to regenerate with other seeds or sizes.
+The files are written to testing/output/ (not committed). These generators remain available for testing and
+comparison with the web application's data processing.
 
     students  generate_fake_student_data.py  testing/output/fake_uoft_data.csv (from data/seats_senate.csv)
     senate    generate_fake_senate.py        testing/output/fake_senator.csv
@@ -262,7 +262,7 @@ def generate_all(only=None, seed=DEFAULT_SEED, students=DEFAULT_STUDENTS, sabp_r
     selected = only or ["students", "senate", "sabp", "agm"]
 
     # The generators import this module for the shared code, and this file's folder is not otherwise importable
-    # when called from elsewhere (e.g. `utsu-all --testing`).
+    # when called from elsewhere.
     if str(TESTING) not in sys.path:
         sys.path.insert(0, str(TESTING))
     if "students" in selected:

@@ -8,7 +8,7 @@ from fastapi import FastAPI, Header, HTTPException, UploadFile, File
 from typing import Optional
 
 # 1. UNIFIED OBSERVABILITY
-from utsu_portal.observability import (
+from utsu_core.observability import (
     setup_observability,
     get_tracer,
     get_logger,
@@ -16,13 +16,13 @@ from utsu_portal.observability import (
 )
 
 # 2. CLOUD-AGNOSTIC FILE HANDLER
-from utsu_portal.filesvc import FileHandler
+from utsu_core.filesvc import FileHandler
 
 # 3. CENTRALIZED AUTHENTICATION
-from utsu_portal.authsvc.service_auth import ServiceAuthModule, ServicePermission
+from utsu_core.authsvc.service_auth import ServiceAuthModule, ServicePermission
 
 # 4. AUDIT COMPLIANCE
-from utsu_portal.authsvc.audit_compliance import (
+from utsu_core.authsvc.audit_compliance import (
     build_audit_entry_read,
     build_audit_entry_write,
     AuditAction,

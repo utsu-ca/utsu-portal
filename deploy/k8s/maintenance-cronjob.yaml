@@ -20,7 +20,7 @@ spec:
           containers:
             - name: maintain
               image: ghcr.io/utsu-ca/student-processing-core:latest   # pin by digest in production
-              command: [python, -m, utsu_portal.authsvc, maintain]
+              command: [python, -m, utsu_core.authsvc, maintain]
               env:
                 - {name: DATABASE_URL_FILE, value: /run/secrets/portal/database-url}
                 - {name: PORTAL_AUTH_SIGNING_KEY_FILE, value: /run/secrets/portal/auth-signing-key}

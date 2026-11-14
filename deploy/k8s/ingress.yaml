@@ -18,8 +18,11 @@ spec:
         paths:
           - {path: /api/auth, pathType: Prefix, backend: {service: {name: auth, port: {number: 8080}}}}
           - {path: /api/me, pathType: Exact, backend: {service: {name: auth, port: {number: 8080}}}}
+          - {path: /api/me/roster-number, pathType: Exact, backend: {service: {name: auth, port: {number: 8080}}}}
           - {path: /api/verification, pathType: Prefix, backend: {service: {name: auth, port: {number: 8080}}}}
           - {path: /api/recovery, pathType: Prefix, backend: {service: {name: auth, port: {number: 8080}}}}
           - {path: /api/admin/verifications, pathType: Prefix, backend: {service: {name: auth, port: {number: 8080}}}}
+          - {path: /api/admin/roster, pathType: Exact, backend: {service: {name: auth, port: {number: 8080}}}}
+          - {path: /api/admin/roles, pathType: Prefix, backend: {service: {name: auth, port: {number: 8080}}}}
           - {path: /api/admin/auth-audit, pathType: Prefix, backend: {service: {name: auth, port: {number: 8080}}}}
           - {path: /, pathType: Prefix, backend: {service: {name: portal, port: {number: 8080}}}}

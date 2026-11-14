@@ -14,7 +14,7 @@ import logging
 import sqlite3
 from pathlib import Path
 
-from utsu_std.csv_safe import write_rows
+from utsu_core.std.csv_safe import write_rows
 
 logger = logging.getLogger("utsu.integrity")
 

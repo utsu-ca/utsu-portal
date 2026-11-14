@@ -20,8 +20,8 @@ from utsu_core.selection import (OUTCOME_COLUMNS, dedupe_by_uuid, select_current
 from utsu_core.integrity import build_alerts, duplicate_verified, write_alerts
 from utsu_core.spec import ProgramSpec
 from utsu_core.verification import match_students, setup_reader
-from utsu_std.database import replace_table
-from utsu_std.utils import absfile
+from utsu_core.std.database import replace_table
+from utsu_core.std.utils import absfile
 
 logger = logging.getLogger(__name__)
 

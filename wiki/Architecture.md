@@ -1,5 +1,8 @@
 # Architecture
 
+> Historical batch architecture reference; the command interfaces below have been removed. See
+> [Applicant Portal](Applicant-Portal.md) and [README](../README.md) for the current web application.
+
 ## Packages
 
 | Package | Module | Responsibility |
@@ -12,23 +15,23 @@
 | | `selection.py` | Timestamp parsing, `person_key`, one-binding-per-person selection (`select_current`) |
 | | `integrity.py` | Duplicate detection, alerts |
 | | `resources.py` | Reads the schema files that ship inside a package |
-| `utsu_programs` | `runner.py` | `utsu-all`: Senate, SABP and AGM in one run |
+| `utsu_core.programs` | `runner.py` | `utsu-all`: Senate, SABP and AGM in one run |
 | | `senate/` | `program.py` (spec, `verify_senators`), `seating.py` (seat assignment), `cli.py` (`utsu-senate`), `schema.sql` |
 | | `sap/` | `program.py` (spec, batches, reviews, decisions), `wfni.py` (WFNI scoring), `cli.py` (`utsu-sap`), `schema.sql` |
 | | `agm/` | `program.py` (spec, RSVP processing, lists, verification report), `cli.py` (`utsu-agm`), `schema.sql` |
-| `utsu_std` | `utils.py` | Logging setup, config load/save/merge, ASCII cleaning, typed ids, project-root paths |
+| `utsu_core.std` | `utils.py` | Logging setup, config load/save/merge, ASCII cleaning, typed ids, project-root paths |
 | | `database.py` | Connection, consistent backups |
 | | `csv_safe.py` | Encoding-tolerant reading, formula-safe writing (`write_rows`) |
 | | `parsing_utils.py` | Student-number and division helpers |
-| `utsu_mail` | `__main__.py` | Mail-merge CLI |
+| `utsu_core.mail` | `__main__.py` | Mail-merge CLI |
 | | `templates.py`, `recipients.py`, `schema.py` | Template parsing/rendering, recipients and validity, schema introspection |
 | | `campaign.py`, `transport.py` | Preview/confirm/send/log; SMTP and message building |
 | | `notices.py` | Builds recipient files for rejections and more-info requests |
 
-Dependencies point one way: a program imports `utsu_core` and `utsu_std`, never another program, and `utsu_core` never
-imports a program (`tests/test_programs.py` checks both). Each program is therefore a unit that can be packaged as its
-own application; `pyproject.toml` installs one command per program (`utsu-senate`, `utsu-sap`, `utsu-agm`) and
-`utsu-all`.
+The shared batch-processing engine does not import the program processors, and a processor does not import another
+program (`tests/test_programs.py` checks both). They are all distributed in the `utsu_core` package;
+`pyproject.toml` installs one command per program (`utsu-senate`, `utsu-sap`, `utsu-agm`) and `utsu-all`.
+The portal's HTTP modules and services also live under `utsu_core`.
 
 ## Data flow
 
@@ -46,7 +49,7 @@ flowchart TD
     I --> DB[(SQLite tables)]
     I --> O[CSV / JSON outputs]
     O --> SEAT[seating.run_seating]
-    O --> MAIL[utsu_mail]
+    O --> MAIL[utsu_core.mail]
 ```
 
 ## The common per-program pipeline
@@ -87,9 +90,9 @@ export:
 
 ## Extending
 
-- **A new form/program**: add `data/conversion_table_<x>.csv`, a package `src/utsu_programs/<x>/` with a `schema.sql`, a
+- **A new form/program**: add `data/conversion_table_<x>.csv`, a package `src/utsu_core/programs/<x>/` with a `schema.sql`, a
   `program.py` that defines its `ProgramSpec` and uses `Run` (see `agm/program.py`, the shortest), and a `cli.py` with a
-  `ProgramCli` and `main()`; add a console script in `pyproject.toml` and the program to `utsu_programs/runner.py`.
-- **A new email**: drop `templates/email/<name>.txt`; check columns with `python -m utsu_mail --list_fields <name>`.
+  `ProgramCli` and `main()`; add a console script in `pyproject.toml` and the program to `utsu_core/programs/runner.py`.
+- **A new email**: drop `templates/email/<name>.txt`; check columns with `python -m utsu_core.mail --list_fields <name>`.
 - **A new SABP question**: add the form heading to `conversion_table_sap.csv`, add the question to `QUESTIONS` in
-  `utsu_programs/sap/wfni.py` and rows to `wfni_weights.csv`.
+  `utsu_core/programs/sap/wfni.py` and rows to `wfni_weights.csv`.

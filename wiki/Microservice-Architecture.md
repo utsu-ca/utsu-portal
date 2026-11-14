@@ -92,7 +92,7 @@ With reverse proxy:
 **Deployment:**
 ```bash
 # Start auth service
-uvicorn utsu_portal.authsvc:create_auth_app --host 0.0.0.0 --port 8080
+uvicorn utsu_core.authsvc:create_auth_app --host 0.0.0.0 --port 8080
 ```
 
 ### 3. **Email Service (mailsvc)** ← NEW
@@ -114,7 +114,7 @@ uvicorn utsu_portal.authsvc:create_auth_app --host 0.0.0.0 --port 8080
 **Deployment:**
 ```bash
 # Start email service
-uvicorn utsu_portal.mailsvc:create_mail_app --host 0.0.0.0 --port 8080
+uvicorn utsu_core.mailsvc:create_mail_app --host 0.0.0.0 --port 8080
 ```
 
 ### 4. **Portal Service (portal)**
@@ -384,13 +384,13 @@ curl -H "Authorization: Bearer $SERVICE_TOKEN" \
 
 ```bash
 # Terminal 1: Auth service
-uvicorn utsu_portal.authsvc:create_auth_app --reload --port 8001
+uvicorn utsu_core.authsvc:create_auth_app --reload --port 8001
 
 # Terminal 2: Mail service
-uvicorn utsu_portal.mailsvc:create_mail_app --reload --port 8002
+uvicorn utsu_core.mailsvc:create_mail_app --reload --port 8002
 
 # Terminal 3: Portal service
-uvicorn utsu_portal.app:app --reload --port 8000
+uvicorn utsu_core.app:app --reload --port 8000
 
 # Test auth → mail communication
 curl -X POST http://localhost:8002/mail/queue \
@@ -417,20 +417,20 @@ services:
 
   authsvc:
     build: .
-    command: uvicorn utsu_portal.authsvc:create_auth_app --host 0.0.0.0
+    command: uvicorn utsu_core.authsvc:create_auth_app --host 0.0.0.0
     environment:
       PORTAL_SERVICE_TOKEN: "test-token-32-chars-minimum---"
     
   mailsvc:
     build: .
-    command: uvicorn utsu_portal.mailsvc:create_mail_app --host 0.0.0.0
+    command: uvicorn utsu_core.mailsvc:create_mail_app --host 0.0.0.0
     environment:
       PORTAL_SERVICE_TOKEN: "test-token-32-chars-minimum---"
       PORTAL_SMTP_URL: "smtp://localhost:1025"
 
   portal:
     build: .
-    command: uvicorn utsu_portal.app:app --host 0.0.0.0
+    command: uvicorn utsu_core.app:app --host 0.0.0.0
     environment:
       PORTAL_SERVICE_TOKEN: "test-token-32-chars-minimum---"
 ```

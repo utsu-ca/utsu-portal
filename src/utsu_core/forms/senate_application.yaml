@@ -1,0 +1,29 @@
+id: senate_application
+version: 2
+title: Senate Application
+description: Apply for a student seat on the UTSU Senate.
+fields:
+  - {id: intro, type: info, label: "Senate seats are open to verified UTSU members."}
+  - {id: division, type: select, label: Division, required: true, options: [UTSG, UTM, UTSC]}
+  - {id: college, type: text, label: College or faculty, required: true, max: 100}
+  - {id: year_of_study, type: select, label: Year of study, required: true, options: ["1", "2", "3", "4", "5+"]}
+  - {id: seat_type, type: radio, label: Seat type, required: true, options: [Undergraduate, Graduate, Part-time]}
+  - {id: statement, type: textarea, label: Candidate statement, required: true, min: 50, max: 2000, help: 50-2000 characters}
+  - {id: has_experience, type: checkbox, label: I have previous governance experience}
+  - id: experience
+    type: textarea
+    label: Describe your experience
+    max: 1500
+    show_if: {field: has_experience, equals: true}
+  - {id: delegated, type: checkbox, label: I am a delegated applicant}
+  - {id: public_listing, type: checkbox, label: I consent to my name being listed if seated}
+  - {id: pref_first_year, type: select, label: First-Year Student preference, options: [First-choice, Second-choice, Third-choice, Interested, Not interested]}
+  - {id: pref_commuter, type: select, label: Commuter preference, options: [First-choice, Second-choice, Third-choice, Interested, Not interested]}
+  - {id: pref_residence, type: select, label: Residence preference, options: [First-choice, Second-choice, Third-choice, Interested, Not interested]}
+  - {id: pref_mature, type: select, label: Mature Students and Student Parents preference, options: [First-choice, Second-choice, Third-choice, Interested, Not interested]}
+  - {id: pref_international, type: select, label: International Students preference, options: [First-choice, Second-choice, Third-choice, Interested, Not interested]}
+  - {id: pref_first_generation, type: select, label: First Generation Student preference, options: [First-choice, Second-choice, Third-choice, Interested, Not interested]}
+  - {id: pref_small_program, type: select, label: Small and Specialized Program preference, options: [First-choice, Second-choice, Third-choice, Interested, Not interested]}
+  - {id: pref_general, type: select, label: General Member preference, options: [First-choice, Second-choice, Third-choice, Interested, Not interested]}
+  - {id: pref_faculty, type: select, label: Faculty/College preference, options: [First-choice, Second-choice, Third-choice, Interested, Not interested]}
+  - {id: consent, type: checkbox, label: I confirm the information is accurate, required: true}

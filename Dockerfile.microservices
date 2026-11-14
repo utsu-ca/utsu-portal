@@ -49,11 +49,11 @@ EXPOSE 8080
 # Run appropriate service
 CMD case ${SERVICE} in \
         authsvc) \
-            uvicorn utsu_portal.authsvc:create_auth_app --host 0.0.0.0 --port 8080 ;; \
+            uvicorn utsu_core.authsvc:create_auth_app --host 0.0.0.0 --port 8080 ;; \
         mailsvc) \
-            uvicorn utsu_portal.mailsvc:create_mail_app --host 0.0.0.0 --port 8080 ;; \
+            uvicorn utsu_core.mailsvc:create_mail_app --host 0.0.0.0 --port 8080 ;; \
         portal) \
-            uvicorn utsu_portal.app:app --host 0.0.0.0 --port 8080 ;; \
+            uvicorn utsu_core.app:app --host 0.0.0.0 --port 8080 ;; \
         *) \
             echo "Unknown service: ${SERVICE}" && exit 1 ;; \
     esac

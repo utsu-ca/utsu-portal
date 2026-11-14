@@ -1,5 +1,8 @@
 # Input and Output Files
 
+> Historical batch reference only. These files and command flags are not portal import instructions.
+> See [README](../README.md) for current workflows.
+
 ## Inputs
 
 | File | Used for | Notes |

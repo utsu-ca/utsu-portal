@@ -15,7 +15,7 @@ spec:
         - name: auth
           image: ghcr.io/utsu-ca/student-processing-core:latest   # pin by digest in production
           env:
-            - {name: PORTAL_APP, value: "utsu_portal.authsvc:create_auth_app"}
+            - {name: PORTAL_APP, value: "utsu_core.authsvc:create_auth_app"}
             - {name: PORT, value: "8080"}
             - {name: DATABASE_URL_FILE, value: /run/secrets/portal/database-url}
             - {name: PORTAL_AUTH_SIGNING_KEY_FILE, value: /run/secrets/portal/auth-signing-key}

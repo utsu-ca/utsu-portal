@@ -3,8 +3,8 @@ import doctest
 
 import pytest
 
-from utsu_portal.programs.agm import models as agm
-from utsu_portal.services import selection, text
+from utsu_core.programs.agm import models as agm
+from utsu_core.services import selection, text
 
 
 @pytest.mark.parametrize("module", [text, selection, agm])
@@ -47,8 +47,8 @@ def _roster_csv(*rows):
 
 
 def test_roster_import_and_match_over_store():
-    from utsu_portal.services import roster
-    from utsu_portal.store import MemoryStore
+    from utsu_core.services import roster
+    from utsu_core.store import MemoryStore
     store = MemoryStore()
     text = _roster_csv("Ann Marie,Lee,xxxxx3161x,ARTSC,UC", "Sam,Lee,xxxxx0001x,ARTSC,TRIN")
     assert roster.import_roster(store, text) == {"imported": True, "count": 2, "checked": 0, "rostered": 0}
@@ -62,8 +62,8 @@ def test_roster_import_and_match_over_store():
 
 
 def test_bad_roster_leaves_previous_one():
-    from utsu_portal.services import roster
-    from utsu_portal.store import MemoryStore
+    from utsu_core.services import roster
+    from utsu_core.store import MemoryStore
     store = MemoryStore()
     roster.import_roster(store, _roster_csv("Ann,Lee,xxxxx3161x,ARTSC,UC"))
     with pytest.raises(ValueError):
@@ -72,8 +72,8 @@ def test_bad_roster_leaves_previous_one():
 
 
 def test_roster_replace_removes_old_students():
-    from utsu_portal.services import roster
-    from utsu_portal.store import MemoryStore
+    from utsu_core.services import roster
+    from utsu_core.store import MemoryStore
     store = MemoryStore()
     roster.import_roster(store, _roster_csv("Ann,Lee,xxxxx3161x,ARTSC,UC"))
     roster.import_roster(store, _roster_csv("Bo,Chan,xxxxx1111x,ARTSC,UC"), replace_existing=True)
@@ -82,5 +82,5 @@ def test_roster_replace_removes_old_students():
 
 
 def test_roster_doctests():
-    from utsu_portal.services import roster
+    from utsu_core.services import roster
     assert doctest.testmod(roster).failed == 0

@@ -1,5 +1,8 @@
 # Full Exports and Integrity
 
+> Historical batch reference only. The web application does not implement these export workflows; see
+> [README](../README.md).
+
 The Senate, SABP and AGM exports are meant to be re-run as they grow. **Always give the full export**, not just the new
 responses. Every run reads the whole export and checks every application in it; nothing is skipped because an earlier
 run saw it.
@@ -64,7 +67,7 @@ deleted) stays as it is, with its batch, ratings and decision:
 - if it is still verified it is raised as a `missing_from_export` alert for a person.
 
 **Completed applications are final.** An application is complete once the committee's decision is recorded (`decided`
-stage; `COMPLETE_STAGE` in `utsu_programs/sap/program.py` is the single definition), even if its row has left the export. Any other application
+stage; `COMPLETE_STAGE` in `utsu_core/programs/sap/program.py` is the single definition), even if its row has left the export. Any other application
 of the student for that term becomes `not_considered`. Other terms are unaffected. See
 [Student Aid Bursary Program](Student-Aid-Bursary-Program).
 
