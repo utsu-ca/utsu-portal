@@ -1,6 +1,5 @@
 """A complete application (the committee decision is recorded) is final: the student's other applications for that
 term are not considered. Other terms are unaffected."""
-import csv
 import logging
 
 from test_sap import LC_ROW, form_csv, students_db
@@ -35,8 +34,6 @@ def test_a_new_application_for_a_completed_term_is_not_considered(tmp_path, capl
     assert r2["summary"]["not_considered"] == 1 and "not considered" in caplog.text
     assert table(conn) == [("Fall 2026", FALL_1["Timestamp"], "verified", "decided", 1),
                            ("Fall 2026", FALL_2["Timestamp"], "not_considered", None, None)]
-    assert [a["kind"] for a in r2["alerts"]] == ["not_considered"]
-    # nothing was verified, scored or batched for the new one
     assert r2["batches"][0][0]["uuid"] == done and len(r2["batches"][0]) == 1
 
 
@@ -62,7 +59,7 @@ def test_a_different_term_is_still_considered(tmp_path):
     decide(conn, tmp_path, done)
     r = sap.process_sap(form_csv(tmp_path / "2.csv", [FALL_1, WINTER]), conn, output_dir=out)
     assert sorted(a["terms"] for a in r["verified"]) == ["Fall 2026", "Winter 2027"]
-    assert r["summary"]["not_considered"] == 0 and r["alerts"] == []
+    assert r["summary"]["not_considered"] == 0
     # the new term is an ordinary application; the Fall one keeps its stage
     assert dict(conn.execute("SELECT terms, stage FROM student_aid")) == {"Fall 2026": "decided", "Winter 2027": "scored"}
 
@@ -101,12 +98,10 @@ def test_before_completion_the_newest_verified_application_still_wins(tmp_path):
         FALL_1["Timestamp"]: "superseded", FALL_2["Timestamp"]: "verified"}
 
 
-def test_the_alerts_file_lists_what_a_person_has_to_look_at(tmp_path):
+def test_no_alerts_file_is_written(tmp_path):
     conn = students_db(("Ann", "Lee", 3161))
     out = tmp_path / "out"
     done = sap.process_sap(form_csv(tmp_path / "1.csv", [FALL_1]), conn, output_dir=out)["verified"][0]["uuid"]
     decide(conn, tmp_path, done)
     sap.process_sap(form_csv(tmp_path / "2.csv", [FALL_1, FALL_2]), conn, output_dir=out)
-    alerts = list(csv.DictReader(open(out / "alerts_sap.csv", encoding="utf-8-sig")))
-    assert [(a["severity"], a["kind"], a["program"]) for a in alerts] == [("WARNING", "not_considered", "SABP")]
-    assert alerts[0]["uuid"].startswith("application:sap:") and alerts[0]["student_uuid"].startswith("student:email:")
+    assert not list(out.glob("alerts_*.csv"))

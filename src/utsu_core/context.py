@@ -25,6 +25,7 @@ ROLES = {
     "agm_admin": "view AGM registrations and verify roster matches",
     "senate_admin": "view Senate applications",
     "sap_admin": "view student aid applications",
+    "sap_finance": "student aid banking: flag details that fail validation, review void cheques",
     "sap_reviewer": "review student aid applications",
     "finance": "club transactions and grants",
     "clubs": "club registration decisions",

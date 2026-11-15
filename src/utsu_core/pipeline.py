@@ -9,7 +9,6 @@ Every run reads the full export (see selection.py): nothing is skipped because a
     run.select()                                # the binding application per person
     run.replace_all()                           # or each program saves its own way
     run.settle()                                # saved statuses, duplicate check
-    alerts = run.alert(out_dir)                 # alerts_<program>.csv
 """
 import logging
 import sqlite3
@@ -17,7 +16,7 @@ from pathlib import Path
 
 from utsu_core.selection import (OUTCOME_COLUMNS, dedupe_by_uuid, select_current, set_statuses,
                                  warn_unreadable_timestamps)
-from utsu_core.integrity import build_alerts, duplicate_verified, write_alerts
+from utsu_core.integrity import duplicate_verified
 from utsu_core.spec import ProgramSpec
 from utsu_core.verification import match_students, setup_reader
 from utsu_core.std.database import replace_table
@@ -63,7 +62,7 @@ class Run:
     verified one winning.
 
     `spec.sticky`: an application an earlier run verified is never downgraded. If it no longer matches the student
-    data (the data was re-imported) it stays verified, and is raised as an alert (see `keep_verified`). Only
+    data (the data was re-imported) it stays verified and is logged (see `keep_verified`). Only
     unverified applications can become verified. Without it the status follows the student data on every run.
 
     `absent` are applications stored by an earlier run that are not in this export any more (see the SABP program).
@@ -140,20 +139,9 @@ class Run:
         set_statuses(self.conn, self.table, stored_only)
         self.duplicates = duplicate_verified(self.conn, self.table, self.label, group_columns)
 
-    def alert(self, out: Path, ambiguous: list[dict] = (), extra: list[dict] = ()) -> list[dict]:
-        """Write alerts_<program>.csv: what a person has to look at. Returns the alerts."""
-        kept = [{"severity": "WARNING", "kind": "roster_mismatch", "program": self.label, "uuid": app["uuid"],
-                 "student_uuid": app.get("student_uuid", ""),
-                 "detail": "no longer matches the student data; it was verified before, so it stays verified"}
-                for app in self.kept]
-        alerts = build_alerts(self.label, self.rows, self.statuses, self.duplicates, ambiguous, [*kept, *extra])
-        write_alerts(out, self.slug, alerts)
-        return alerts
-
-    def summary(self, alerts: list[dict]) -> dict:
+    def summary(self) -> dict:
         """The counts every program reports in its run summary."""
         return {"submissions_in_export": len(self.rows),
                 "kept_verified_despite_roster": len(self.kept),
-                "alerts": len(alerts),
                 "integrity_duplicates": len(self.duplicates),
                 "non_binding": sum(s == "non_binding" for s in self.statuses.values())}

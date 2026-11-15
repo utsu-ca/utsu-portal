@@ -6,8 +6,8 @@ user asks.** See [00](00-overview.md) section 3.
 Status: the portal exposes application views using current account and roster checks, configurable seats, deterministic
 seating previews and versioned published results. Form version 2 collects ranked preferences; older submissions must
 be updated before they can be seated. The unified client exposes public results and basic administration for
-applications, seat configuration, previews and publication. The alerts view identifies ineligible applications and
-missing or invalid seating preferences; historical batch alerts and bulk notices remain unimplemented.
+applications, seat configuration, previews and publication. Missing or invalid seating preferences are prevented at
+submission (the form requires them) and ineligible applicants cannot submit; there is no alerts view. Bulk notices remain unimplemented.
 The latest published results can be downloaded by a Senate administrator as an audited private CSV; it includes
 names even when they are not public.
 
@@ -55,7 +55,6 @@ is independently checkable. Until something is published the API returns null.
 | Method and path | Role |
 |---|---|
 | `GET /api/admin/senate/applications?status=&cursor=` | senate_admin |
-| `GET /api/admin/senate/alerts` (computed) | senate_admin |
 | `PUT /api/admin/senate/seats` | senate_admin |
 | `GET /api/admin/senate/seats` | senate_admin |
 | `POST /api/admin/senate/seating` | senate_admin |

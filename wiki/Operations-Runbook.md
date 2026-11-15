@@ -25,8 +25,7 @@ utsu-all --db secrets/db.sqlite --import_uoft_data secrets/uoft_data.csv `
 
 Then read the log and these files in `secrets/output/`:
 
-- [ ] `alerts_*.csv`: anything with `ERROR` needs a person; see [alerts](Full-Exports-and-Integrity#alerts-files).
-- [ ] `*_run.json`: do the counts look right (rows read, verified, unverified)?
+- [ ] `*_run.json`: do the counts look right (rows read, verified, unverified)? Check the log for `INTEGRITY` errors.
 - [ ] `unverified.csv` / `sap_unverified.csv` / `agm_unverified.csv`: why (`reason` column)? A student corrects a typo by
       editing or re-submitting the form (Google Forms gives it a new timestamp), not in the program.
 
@@ -36,18 +35,18 @@ Export the **full** form again and re-run the same command (flags are remembered
 the export is verified again and the newest verified one per student is binding. See
 [Full Exports and Integrity](Full-Exports-and-Integrity).
 
-If the roster itself changed: add `--reimport_uoft_data`. A student who was verified stays verified (with a
-`roster_mismatch` alert if they no longer match), and unverified ones can now become verified.
+If the roster itself changed: add `--reimport_uoft_data`. A student who was verified stays verified (the mismatch is
+logged and counted in `kept_verified_despite_roster`), and unverified ones can now become verified.
 
 ## 3. Handle problems
 
 | Situation | Do this |
 |---|---|
 | Student replied to a "more information" email | They edit or re-submit the form; export the full form again and re-run |
-| `roster_mismatch` alert | A verified application no longer matches the roster. Check the roster change was intended |
-| `missing_from_export` alert (SABP) | A verified application's row left the export (deleted, or edited into a new row). It is kept; check it |
-| `non_binding` warning | An unverified submission used a verified student's email. Check it is not impersonation |
-| `duplicate_verified` | Two verified applications for one student (per term): investigate in the database |
+| `kept_verified_despite_roster` > 0 | A verified application no longer matches the roster. Check the roster change was intended |
+| `missing_from_export` > 0 (SABP) | A verified application's row left the export (deleted, or edited into a new row). It is kept; check it |
+| `non_binding` count | An unverified submission used a verified student's email. Check it is not impersonation |
+| `INTEGRITY` in the log | Two verified applications for one student (per term): investigate in the database |
 | Wrong run | Restore the matching file from `<db folder>/backups/` |
 
 ## 4. Senate
@@ -71,7 +70,7 @@ If the roster itself changed: add `--reimport_uoft_data`. A student who was veri
 
 1. Run with `--agm_file`. Hand out `agm_list_all.csv` (or `agm_list_in_person.csv`) to the door team and
    `agm_accommodations.csv` (no names) to the organizers.
-2. Check `alerts_agm.csv` for `ambiguous_match` warnings (an RSVP that fits more than one student) and fix those rows
+2. Check `agm_unverified.csv` for RSVPs whose `reason` says a name is shared by more than one student, and fix those rows
    with a student number or division.
 
 ## 7. Emails

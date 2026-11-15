@@ -677,32 +677,6 @@ def stored_applications(conn: sqlite3.Connection, present: set[str]) -> list[dic
                 "WHERE status IN ('verified', 'unverified')") if uuid not in present]
 
 
-def overlapping_terms(applications: list[dict]) -> list[dict]:
-    """
-    Alerts for a student whose binding applications name different term selections that share a term (for example
-    `Fall 2026` and `Fall 2026;Winter 2027`). One binding application per student per term is decided on the whole
-    selection, so these are not replaced by each other and a person has to decide which one stands.
-
-    >>> apps = [{"uuid": "a", "student_uuid": "s", "terms": "Fall 2026"},
-    ...         {"uuid": "b", "student_uuid": "s", "terms": "Fall 2026; Winter 2027"}]
-    >>> [(a["kind"], a["uuid"]) for a in overlapping_terms(apps)]
-    [('overlapping_terms', 'b')]
-    """
-    alerts, seen = [], {}
-    for app in sorted(applications, key=lambda a: (parse_submission_ts(a.get("submission_ts", "")) or datetime.min,
-                                                   a["uuid"])):
-        terms = {clean_text(t).casefold() for t in split_multi(app.get("terms", ""))}
-        for other_uuid, other_terms in seen.get(app.get("student_uuid") or app["uuid"], []):
-            if terms & other_terms and terms != other_terms:
-                alerts.append({"severity": "WARNING", "kind": "overlapping_terms", "program": "SABP",
-                               "uuid": app["uuid"], "student_uuid": app.get("student_uuid") or "",
-                               "detail": f"names terms that overlap with the student's application {other_uuid}, "
-                                         f"which is not replaced by it; a person has to decide which one stands"})
-                break
-        seen.setdefault(app.get("student_uuid") or app["uuid"], []).append((app["uuid"], terms))
-    return alerts
-
-
 def prepare(conn: sqlite3.Connection, applications: list[dict]) -> list[dict]:
     """Before verifying: mark the applications already complete as final; return the stored ones not in the export."""
     ensure_schema(conn)
@@ -729,12 +703,12 @@ def process_sap(csv_file: Path | str, conn: sqlite3.Connection, output_dir: Path
     Give the full export each time. Every application in it is verified, so an edit or a re-submission (which Google
     Forms stamps with a new timestamp) is a newer application. Per student and term, the newest verified application
     is the binding one; a newer unverified one never replaces it (it becomes non-binding), and one that was verified
-    before is never downgraded when the student data changes (it is raised in alerts_sap.csv). Applications already
+    before is never downgraded when the student data changes (it is logged). Applications already
     in a batch keep their batch and record, and the committee's work (ratings, decisions) is never overwritten.
     Once a student's application for a term is complete (the committee decision is recorded, see COMPLETE_STAGE)
     it is final: any other application of theirs for that term is not considered.
-    A stored application that is no longer in the export is kept as it is, and raised in alerts_sap.csv if it is
-    still verified; if the student has a newer application it is superseded.
+    A stored application that is no longer in the export is kept as it is (and counted in the run summary if it is
+    still verified); if the student has a newer application it is superseded.
     """
     reviewers = parse_reviewers(reviewers)
     out = Path(absfile(output_dir))
@@ -763,21 +737,18 @@ def process_sap(csv_file: Path | str, conn: sqlite3.Connection, output_dir: Path
     write_master(unverified, out / "sap_unverified.csv")
     write_batches(batches, out / "sap_batches", assignments, closed)
     mark_in_review(conn, assignments)  # newly assigned batches are now with reviewers
-    gone = [{"severity": "WARNING", "kind": "missing_from_export", "program": run.label, "uuid": a["uuid"],
-             "student_uuid": a["student_uuid"] or "",
-             "detail": "verified, but its form row is not in this export (the student edited or re-submitted it, or "
-                       "the row was deleted); kept as it is, with its batch, ratings and decision"}
-            for a in absent if a["status"] == "verified"]
-    alerts = run.alert(out, extra=[*gone, *overlapping_terms([a for a in run.current if a["status"] == "verified"])])
+    missing = [a for a in absent if a["status"] == "verified"]
+    for app in missing:
+        logger.warning(f"SABP application {app['uuid']} is verified but not in this export; kept as it is")
     stage_counts = {stage or "(none)": n for stage, n in conn.execute(
         "SELECT stage, COUNT(*) FROM student_aid WHERE status = 'verified' GROUP BY stage ORDER BY stage")}
 
     current = run.current
-    summary = {**run.summary(alerts),
+    summary = {**run.summary(),
                "binding_applications": len(current),
                "verified_applications": len(verified), "unverified_applications": len(unverified),
                "not_considered": sum(s == "not_considered" for s in run.statuses.values()),
-               "missing_from_export": len(gone),
+               "missing_from_export": len(missing),
                "stages": stage_counts, "wfni_weights_sha256": current_weights().sha256,
                "batches": len(batches), "batch_size": batch_size,
                "reviewers": {str(b): rs for b, rs in assignments.items()},
@@ -787,7 +758,7 @@ def process_sap(csv_file: Path | str, conn: sqlite3.Connection, output_dir: Path
     (out / "sap_run.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     logger.info(f"SABP: {len(verified)} verified, {len(unverified)} unverified, {len(batches)} batch(es) "
                 f"of up to {batch_size}")
-    return {"verified": verified, "unverified": unverified, "alerts": alerts, "batches": batches,
+    return {"verified": verified, "unverified": unverified, "batches": batches,
             "assignments": assignments, "summary": summary}
 
 

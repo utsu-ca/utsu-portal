@@ -58,7 +58,11 @@ def test_split_deployment_roundtrip():
     assert pc.put("/api/forms/agm_rsvp/submission", json=body, headers=uh).status_code == 403  # not verified yet
     activate(ac, ah, uh)
     pc.app.state.ctx.identity._cache.clear()  # status lookups are cached for RemoteIdentity.CACHE_TTL seconds
-    assert pc.put("/api/forms/agm_rsvp/submission", json={"version": f["version"], "hash": f["hash"], "data": {}}, headers=uh).status_code != 403
+    refused = pc.put("/api/forms/agm_rsvp/submission", json=body, headers=uh)
+    assert refused.status_code == 403 and "student status" in refused.json()["detail"]  # verified, but not rostered
+    roster = "First Name,Last Name,Truncated Student Number,Faculty,Division\nAda,Lovelace,xxxxx6789x,ARTSC,UC\n"
+    assert ac.post("/api/admin/roster", json={"csv": roster}, headers=ah).status_code == 200
+    assert pc.put("/api/forms/agm_rsvp/submission", json=body, headers=uh).status_code == 422  # now only the form is wrong
 
 
 def test_portal_cannot_mint_or_replay_tokens():

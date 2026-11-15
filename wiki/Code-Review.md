@@ -26,8 +26,8 @@ Decisions that came with it:
 
 - Senate and AGM tables are rebuilt from the export on every run.
 - SABP keeps its table (batches, ratings, decisions). A stored application that left the export is kept, superseded if the
-  student has a newer one, and raised as an alert if it is still verified.
-- A verified application is never downgraded for Senate and SABP (a `roster_mismatch` alert is raised); AGM follows the
+  student has a newer one, and logged if it is still verified.
+- A verified application is never downgraded for Senate and SABP (the mismatch is logged); AGM follows the
   roster on every run.
 - Editing `data/wfni_weights.csv` changes the scores on the next run (intended).
 
@@ -41,12 +41,12 @@ Decisions that came with it:
 | N2 | High | Identity | An edited email gave a new application id and left the old one verified | **Resolved** by the full-export design: the edit is a newer submission and supersedes the old row |
 | M1 | Medium | WFNI | Prefix matching scored unknown answers (`"10"` dependents scored as `1`) | **Fixed**: only options written with a trailing `*` match by prefix |
 | M2 | Medium | Logging | `--verbosity` compared as a string | **Fixed**: a map of names, any case, unknown values refused |
-| M3 | Medium | SABP | "Per term" is the whole `terms` string | **Mitigated**: overlapping selections raise an `overlapping_terms` alert for a person |
+| M3 | Medium | SABP | "Per term" is the whole `terms` string | **Mitigated**: the portal refuses a new SABP application that overlaps a completed term |
 | M4 | Medium | Matching | Same name and same last 4 digits picked the first student | **Fixed earlier**: the match is refused as ambiguous |
 | M5 | Medium | CLI | A missing roster file exited with status 0 | **Fixed**: raises `FileNotFoundError` |
 | N3 | Medium | SABP | Editing the weights changes stored scores | **Intended** (scores are recomputed every run) |
 | N4 | Medium | Mail | A failed reconnect left no client and aborted `send_all` | **Fixed** |
-| N5 | Medium | Integrity | An edited superseded row was held without an alert | **Gone** with the hold machinery |
+| N5 | Medium | Integrity | An edited superseded row was held without a warning | **Gone** with the hold machinery |
 | N6 | Medium | CLI | `--program all` aborted when the Senate export was missing | **Fixed**: Senate and seating are skipped with a warning |
 | N7 | Medium | SABP | Redaction missed names shorter than 3 letters and accented spellings | **Fixed** |
 | L1 | Low | SABP | `parse_amount` accepted `nan`, `inf`, negatives | **Fixed** (zero is allowed for an awarded amount) |

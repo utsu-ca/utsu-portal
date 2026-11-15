@@ -263,7 +263,6 @@ stage. Databases from before the `stage` column get it filled in on the next run
 | `sap_unverified.csv` | **Private.** Same columns for unverified binding applications |
 | `sap_batches/` | Anonymized sheets (above) |
 | `sap_merged_ratings.csv` | Created by `--merge_reviews` |
-| `alerts_sap.csv` | Duplicate / roster-mismatch / missing-from-export / overlapping-terms / non-binding / not-considered |
-| `sap_run.json` | Counts: submissions, binding, verified, unverified, alerts, duplicates, non-binding, not considered, `missing_from_export`, `kept_verified_despite_roster`, `stages`, `wfni_weights_sha256`, `batches`, `batch_size`, `reviewers`, `emergency`, `flags` |
+| `sap_run.json` | Counts: submissions, binding, verified, unverified, duplicates, non-binding, not considered, `missing_from_export`, `kept_verified_despite_roster`, `stages`, `wfni_weights_sha256`, `batches`, `batch_size`, `reviewers`, `emergency`, `flags` |
 
 Database tables for SABP are described in [Data Model](Data-Model#student_aid).

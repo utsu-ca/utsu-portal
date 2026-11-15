@@ -22,13 +22,13 @@ The timestamp decides which submission is the newest. If some cannot be read (th
 1. Read and clean the export, build the `uuid` of every row (the last row wins when two share a `uuid`).
 2. **Verify every application** against the roster. See [Identity and Verification](Identity-and-Verification).
 3. A verified application is **never downgraded** (Senate and SABP): if the roster is re-imported and a student who was
-   verified no longer matches, the application stays verified and a `roster_mismatch` alert is raised. Only unverified
+   verified no longer matches, the application stays verified and the mismatch is logged. Only unverified
    applications can become verified. **AGM is not sticky**: its status follows the roster on every run.
 4. Choose the binding application per student ([below](#one-binding-application-per-student)).
 5. Save. The **Senate and AGM tables are dropped and created again from their schema, in one transaction** (so rows that
    are no longer in the export, and tables from an older version, are gone). The SABP
    table is **kept** (it holds the committee's work), see [SABP](#sabp-keeps-the-committees-work).
-6. Write the outputs and the alerts files.
+6. Write the outputs.
 
 `--reimport_uoft_data` replaces the roster; because every run verifies everything, the next run uses it.
 
@@ -51,7 +51,7 @@ used. Older submissions that lose are `superseded`.
 
 > For SABP the "term" is the whole `terms` answer (for example `Fall 2026;Winter 2027`). Applications from one student
 > whose term selections are different but share a term (`Fall 2026` and `Fall 2026;Winter 2027`) do not replace each
-> other; they are raised as an `overlapping_terms` alert for a person to decide.
+> other. The portal's SABP form refuses a new application whose terms overlap a completed one.
 
 ## SABP keeps the committee's work
 
@@ -64,24 +64,17 @@ A stored SABP application that is **no longer in the export** (the student edite
 deleted) stays as it is, with its batch, ratings and decision:
 
 - if the student has a newer application for the term it is `superseded` by it;
-- if it is still verified it is raised as a `missing_from_export` alert for a person.
+- if it is still verified it is logged and counted as `missing_from_export` in `sap_run.json`.
 
 **Completed applications are final.** An application is complete once the committee's decision is recorded (`decided`
 stage; `COMPLETE_STAGE` in `utsu_core/programs/sap/program.py` is the single definition), even if its row has left the export. Any other application
 of the student for that term becomes `not_considered`. Other terms are unaffected. See
 [Student Aid Bursary Program](Student-Aid-Bursary-Program).
 
-## Alerts files
+## Integrity checks
 
-Every run writes `alerts_senate.csv`, `alerts_sap.csv` and `alerts_agm.csv` (header only when there is nothing). Columns:
-`severity, kind, program, uuid, student_uuid, detail`. The integrity checks live in `src/utsu_core/integrity.py`.
-
-| Severity | Kind | When |
-|---|---|---|
-| ERROR | `duplicate_verified` | more than one verified application for a student (per term for SABP) |
-| WARNING | `roster_mismatch` | an application that was verified before no longer matches the roster (Senate, SABP); it stays verified |
-| WARNING | `ambiguous_match` | AGM: more than one student fits the RSVP, so it cannot be verified |
-| WARNING | `missing_from_export` | SABP: a verified application whose row is not in the export any more |
-| WARNING | `overlapping_terms` | SABP: one student's applications name different but overlapping terms |
-| WARNING | `non_binding` | an unverified submission that did not replace a verified one |
-| WARNING | `not_considered` | an application ignored because a completed one exists |
+The only integrity check is `duplicate_verified` in `src/utsu_core/integrity.py`: more than one verified application for
+a student (per term for SABP) is logged as `INTEGRITY: ...` and counted as `integrity_duplicates` in the run summary.
+There are no alert files or alert screens. Problems are prevented where the data is entered (the portal refuses a
+Senate or AGM submission when the student status cannot be verified, and Senate seating preferences are required by the
+form) or show up as a reason on the unverified application, so the person can correct and re-submit it.

@@ -96,7 +96,7 @@ def verify_senators(csv_file: Path, cursor: sqlite3.Cursor, output_dir: Path | s
     application that was verified before is never downgraded if the student data changes. The senate_application
     table is rebuilt from the export.
     Writes verified.csv and unverified.csv (the whole export's result) to output_dir (relative paths resolve
-    from the project root), and alerts_senate.csv.
+    from the project root).
     """
     run = Run.start(SPEC, cursor.connection, csv_file)
     run.verify(cursor)
@@ -106,10 +106,8 @@ def verify_senators(csv_file: Path, cursor: sqlite3.Cursor, output_dir: Path | s
 
     verified = [a for a in run.current if a["status"] == "verified"]
     unverified = [a for a in run.current if a["status"] == "unverified"]
-    out = Path(absfile(output_dir))
-    write_results(verified, unverified, out)
-    alerts = run.alert(out)
-    return {"verified": verified, "unverified": unverified, "duplicates": run.duplicates, "alerts": alerts,
+    write_results(verified, unverified, Path(absfile(output_dir)))
+    return {"verified": verified, "unverified": unverified, "duplicates": run.duplicates,
             "kept": run.kept, "non_binding": [u for u, s in run.statuses.items() if s == "non_binding"]}
 
 

@@ -149,21 +149,6 @@ class AgmModule:
                 })
             return {"items": result, "next_cursor": result[-1]["id"] if len(submissions) > limit else None}
 
-        @r.get("/admin/agm/alerts")
-        def alerts(cursor: str = "", limit: int = 100, actor: dict = agm_admin):
-            page = registrations(cursor, limit, actor)
-            items = []
-            for item in page["items"]:
-                if not item["eligible"]:
-                    reason = ("registration rejected" if item["submission_status"] == "rejected"
-                              else item["roster_reason"] or "account is not verified")
-                    items.append({"id": item["id"], "uuid": item["uuid"], "name": item["name"],
-                                  "kind": "ineligible", "detail": reason})
-                elif item["attendance"] == "Online" and not has_grant(ctx, item["uuid"]):
-                    items.append({"id": item["id"], "uuid": item["uuid"], "name": item["name"],
-                                  "kind": "online_identity_required", "detail": "Online identity verification required"})
-            return {"items": items, "next_cursor": page["next_cursor"]}
-
         @r.get("/admin/agm/rsvps.csv")
         def export_registrations(actor: dict = agm_admin):
             cursor, rows = "", []

@@ -44,7 +44,7 @@ where = ["src"]
 include = ["utsu_core", "utsu_core.*"]
 
 [tool.setuptools.package-data]
-utsu_core = ["schema/*.sql", "static/*", "forms/*.yaml"]
+utsu_core = ["schema/*.sql", "static/*", "static/assets/*", "branding/*", "forms/*.yaml"]
 "utsu_core.programs.senate" = ["*.sql"]
 "utsu_core.programs.sap" = ["*.sql"]
 "utsu_core.programs.agm" = ["*.sql"]

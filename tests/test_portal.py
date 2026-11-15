@@ -76,6 +76,10 @@ def test_submission_validation_and_status(env):
     activate(c, ah, uh)
     f = c.get("/api/forms/agm_rsvp/static").json()
     base = {"version": f["version"], "hash": f["hash"]}
+    unrostered = c.put("/api/forms/agm_rsvp/submission", json={**base, "data": {"attendance": "Online", "division": "UTSG", "eligible": True}}, headers=uh)
+    assert unrostered.status_code == 403 and "could not verify your student status" in unrostered.json()["detail"]
+    roster = "First Name,Last Name,Truncated Student Number,Faculty,Division\nAda,Lovelace,xxxxx6789x,ARTSC,UC\n"
+    assert c.post("/api/admin/roster", json={"csv": roster}, headers=ah).status_code == 200
     bad = c.put("/api/forms/agm_rsvp/submission", json={**base, "data": {"attendance": "Online", "division": "UTSG", "eligible": True, "proxy": True}}, headers=uh)
     assert bad.status_code == 422  # proxy_name required when proxy
     bad = c.put("/api/forms/agm_rsvp/submission", json={**base, "data": {"attendance": "Online", "division": "UTSG", "eligible": True, "x": 1}}, headers=uh)
@@ -119,6 +123,8 @@ def test_stale_hash_rejected(env):
     c, mail = env
     ah, uh = setup_admin_and_user(c, mail)
     activate(c, ah, uh)
+    roster = "First Name,Last Name,Truncated Student Number,Faculty,Division\nAda,Lovelace,xxxxx6789x,ARTSC,UC\n"
+    assert c.post("/api/admin/roster", json={"csv": roster}, headers=ah).status_code == 200
     r = c.put("/api/forms/agm_rsvp/submission", json={"version": 2, "hash": "0" * 64, "data": {}}, headers=uh)
     assert r.status_code == 409
 

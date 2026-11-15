@@ -152,7 +152,6 @@ the integrity report). No background reconcile exists. Edits are newer submissio
 | `GET /api/admin/sap/review-report[.csv]` | sap_admin | merged ratings and suggested amounts (computed) |
 | `GET /api/admin/sap/banking[.csv]`, `/eft` | sap_admin | banking export, EFT file |
 | `POST .../applications/{id}/banking/reverify`, `DELETE .../banking` | sap_admin | request re-verification; destroy details |
-| `GET /api/admin/sap/integrity` | sap_admin | alerts computed on request |
 | `GET /api/me/sap` | verified | applicant status (stage hidden until decided) |
 
 ## 8. Left to implement

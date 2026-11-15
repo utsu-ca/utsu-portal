@@ -27,7 +27,7 @@ core, adding a front-end framework (same-origin vanilla JS and the CSP model sta
 |---|---|---|---|
 | Student roster (`uoft_data`) import and matching | `utsu_core.importing_data`, `verification` (exact + fuzzy match, levels) | None. Identity is OTP email + face/ID + admin approval | Roster service (01) |
 | Typed uuids, one binding application per person | `selection.py`, `pipeline.Run` | Per-account submissions only | Selection service (01) |
-| Integrity alerts (duplicates, mismatches, non-binding) | `integrity.py` | None | Alerts service (01) |
+| Integrity check (duplicates, logged) | `integrity.py` | None | Selection service (01) |
 | Form definitions | Google Form exports + lookup tables | YAML forms for all three programs (`forms/*.yaml`) | Program-specific fields (WFNI, banking, seat preferences) must be checked against the CSV mapping |
 | Mail-merge, templates | `utsu_core.mail` | `Mailer` (OTP only), `SMTPMailer` | Notice service (01) |
 | Senate verification + seating | `senate/program.py`, `seating.py` | Form only | Senate module (02) |

@@ -1,6 +1,6 @@
 """Declarative form definitions (YAML) : parsing, hashing, validation and sanitisation.
 
-The same rules are implemented client-side in static/forms.js; the server re-validates every submission.
+The same rules are implemented client-side in web/src/lib/forms.js; the server re-validates every submission.
 """
 from __future__ import annotations
 

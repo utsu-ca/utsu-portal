@@ -49,11 +49,11 @@ called inside a request (list, per-person view, notice preview). Rules carried o
 4. `person_lookup(spec, person)` evaluates one person cheaply (their submissions + one roster lookup) for
    per-user endpoints.
 
-## 3a. Alerts
+## 3a. No alerts
 
-Computed on request, not stored: `GET /api/admin/{program}/alerts` runs `select` plus the integrity checks. Kinds:
-`duplicate_verified` (ERROR), `roster_mismatch`, `overlapping_terms`, `non_binding`, `not_considered` (WARNING).
-Acknowledgements (who saw what) are the only stored part, as audit events. Replaces `alerts_<slug>.csv`.
+There is no alerts service, endpoint or file. A problem is prevented where the data is entered, or it surfaces on
+failure and the person is asked to re-enter the field (for example, student status or banking details that cannot be
+verified). `duplicate_verified` remains an internal check that is logged.
 
 ## 4. Notices
 

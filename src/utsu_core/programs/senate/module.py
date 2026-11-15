@@ -96,22 +96,6 @@ def application_view(ctx: Context, submission: dict) -> dict:
     }
 
 
-def application_alerts(application: dict) -> list[dict]:
-    alerts = []
-    if not application["eligible"]:
-        reason = ("submission rejected" if application["submission_status"] == "rejected"
-                  else application["roster_reason"] or "account is not verified")
-        alerts.append({"kind": "ineligible", "detail": reason})
-    missing = [field for field in PREFERENCES if field not in application["data"]]
-    invalid = [field for field in PREFERENCES if field in application["data"]
-               and not valid_preference(application["data"][field])]
-    if missing:
-        alerts.append({"kind": "missing_preferences", "detail": "Missing preferences: " + ", ".join(missing)})
-    if invalid:
-        alerts.append({"kind": "invalid_preferences", "detail": "Invalid preferences: " + ", ".join(invalid)})
-    return alerts
-
-
 class SenateModule:
     name = "senate"
 
@@ -129,13 +113,6 @@ class SenateModule:
             )
             items = [application_view(ctx, s) for s in submissions[:limit]]
             return {"items": items, "next_cursor": items[-1]["id"] if len(submissions) > limit else None}
-
-        @router.get("/admin/senate/alerts")
-        def alerts(cursor: str = "", limit: int = 100, _: dict = admin):
-            page = applications(cursor, limit, _)
-            items = [{"id": item["id"], "uuid": item["uuid"], "name": item["name"], **alert}
-                     for item in page["items"] for alert in application_alerts(item)]
-            return {"items": items, "next_cursor": page["next_cursor"]}
 
         @router.get("/me/senate")
         def my_application(account: dict = ctx.require_verified()):

@@ -39,9 +39,9 @@ At least one of the name columns or `Student Number` must exist.
 - A name shared by several roster students stays unverified (`name shared by N students`, flag `ambiguous_name`) until
   the form adds `Student Number` or `Division`, which is then used (level 2 or 3).
 - A row with a number and no name stays unverified (`no name given`): a student number alone never matches anyone.
-- **Ambiguous cases raise a warning.** An RSVP that fits more than one student is logged
+- **Ambiguous cases stay unverified.** An RSVP that fits more than one student is logged
   (`AMBIGUOUS AGM RSVP ... more than one student matches`), counted as `ambiguous_matches` in `agm_run.json`, and listed
-  in `alerts_agm.csv` (kind `ambiguous_match`, severity WARNING) on every run until resolved, e.g. by correcting the row
+  in `agm_unverified.csv` with its reason on every run until resolved, e.g. by correcting the row
   with a student number or division. It never reaches the door list.
 
 ### Flags
@@ -63,7 +63,6 @@ At least one of the name columns or `Student Number` must exist.
 | `agm_unverified.csv` | RSVPs that could not be verified, with `reason`. Keeps `uuid` and `student_uuid` for the "more information" emails. |
 | `agm_fuzzy_review.csv` | **Private.** For a person to reconcile: every binding RSVP whose name was not found exactly but has close roster students (same last name, similar first name). Has the RSVP, `status`, `reason`, `match_method`, `name_similarity`, then the closest three students as `match1_*`…`match3_*` (`uoft_uuid, name, student_number` (truncated), `division, similarity, selected`), where `selected` is `SELECTED` for the student the RSVP was verified as (none when it could not be decided), and empty `reviewer_decision` / `reviewer_notes` columns. |
 | `agm_accommodations.csv` | Dietary and accessibility needs of verified attendees, by `uuid` only, no names. Answers such as `None` or `N/A` are not needs and are left out (and not counted). |
-| `alerts_agm.csv` | Duplicate, ambiguous-match and non-binding RSVPs. |
 | `agm_run.json` | Counts (below). |
 
 All but `agm_accommodations.csv` carry names and emails: keep them private.
@@ -80,7 +79,7 @@ sticky).
 `submissions_in_export`, `binding_rsvps`, `verified_rsvps`,
 `verified_in_person`, `unverified_rsvps`, `ambiguous_matches`, `attendance` (In-person / Virtual counts), `match_method`,
 `unverified_reasons`, `dietary_requests`, `accessibility_requests`, `flags`, `non_binding`, `kept_verified_despite_roster`,
-`integrity_duplicates`, `alerts`. (`sap_run.json` uses the same names with `applications` instead of
+`integrity_duplicates`. (`sap_run.json` uses the same names with `applications` instead of
 `rsvps`.)
 
 ## Door check-in

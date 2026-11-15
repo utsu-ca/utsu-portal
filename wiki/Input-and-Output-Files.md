@@ -58,7 +58,6 @@ Lookup Key, Replacement Key, Version 1
 | `agm_list_all.csv`, `agm_list_in_person.csv`, `agm_unverified.csv` | AGM | **yes** | names, emails |
 | `agm_accommodations.csv` | AGM | no names | by `uuid` only |
 | `agm_verification.csv` | AGM (standalone) | **yes** | |
-| `alerts_senate.csv`, `alerts_sap.csv`, `alerts_agm.csv` | all | ids only | rebuilt every run |
 | `notices_<program>_<kind>.csv` | mail | **yes** | |
 | `mail_log_<template>.csv` | mail | addresses | resume log |
 

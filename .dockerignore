@@ -10,3 +10,5 @@ wiki
 *.pdf
 __pycache__
 *.egg-info
+
+web/node_modules

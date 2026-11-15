@@ -14,6 +14,8 @@ from ..programs.sap.terms import normalized_terms
 
 name = "forms"
 STATUSES = ("submitted", "under_review", "needs_info", "accepted", "rejected")
+# forms only open to people the student roster confirms, so no ineligible submission is ever stored
+ROSTER_GATED = ("senate_application", "agm_rsvp")
 
 
 class DraftIn(BaseModel):
@@ -51,6 +53,13 @@ class FormsModule:
                 raise HTTPException(404, "form not published")
             return S.get("form_versions", f"{fid}@{f['published_version']}")
 
+        def require_student_status(acct: dict) -> None:
+            check = ctx.identity.roster_check(acct["uuid"])
+            if not check or not check.get("rostered"):
+                reason = (check or {}).get("reason") or "no roster record"
+                raise HTTPException(403, f"We could not verify your student status ({reason}). Check the name and "
+                                         f"student number on your account, then submit again.")
+
         # ---------- public / applicant ----------
         @r.get("/forms")
         def list_forms():
@@ -74,6 +83,8 @@ class FormsModule:
         @r.put("/forms/{fid}/submission")
         def submit(fid: str, b: SubmitIn, acct: dict = verified):
             v = published(fid)
+            if fid in ROSTER_GATED:
+                require_student_status(acct)
             if (b.version, b.hash) != (v["version"], v["hash"]):
                 raise HTTPException(409, {"error": "form changed; reload", "version": v["version"], "hash": v["hash"]})
             try:

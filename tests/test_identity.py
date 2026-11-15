@@ -236,7 +236,6 @@ def test_a_corrected_submission_is_a_newer_one_and_the_old_row_goes(tmp_path):
     fixed = senate_file(tmp_path / "2.csv", [("2026/10/02 9:00:00 a.m. AST", "Ann Lee", "1001231617", "ann@x.ca")])
     r2 = run_senate(fixed, conn, tmp_path)
     assert r2["unverified"] == [] and r2["verified"][0]["verification_level"] == 3
-    assert r2["alerts"] == []
     # the table holds exactly the export
     assert conn.execute("SELECT submission_ts, status FROM senate_application").fetchall() == \
         [("2026/10/02 9:00:00 a.m. AST", "verified")]
@@ -254,9 +253,9 @@ def test_a_verified_senate_application_is_never_downgraded_but_agm_follows_the_r
     conn.commit()
     senate_result = run_senate(senate_form, conn, tmp_path)
     assert len(senate_result["verified"]) == 1 and senate_result["unverified"] == []
-    assert [a["kind"] for a in senate_result["alerts"]] == ["roster_mismatch"]
+    assert [a["uuid"] for a in senate_result["kept"]] == [senate_result["verified"][0]["uuid"]]
     agm_result = agm.process_agm(agm_form_file, conn, output_dir=tmp_path / "agm")
-    assert agm_result["verified"] == [] and len(agm_result["unverified"]) == 1 and agm_result["alerts"] == []
+    assert agm_result["verified"] == [] and len(agm_result["unverified"]) == 1
 
 
 def test_a_resubmission_with_the_same_email_replaces_the_older_one_even_if_the_number_changed(tmp_path):

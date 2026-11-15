@@ -265,7 +265,6 @@ def process_agm(csv_file: Path | str, conn: sqlite3.Connection, output_dir: Path
       agm_fuzzy_review.csv    RSVPs matched (or nearly) on a close rather than exact first name, with the closest
                               students, for a person to reconcile
       agm_accommodations.csv  dietary and accessibility needs of verified attendees, by uuid only (no names)
-      alerts_agm.csv          what a person has to look at (duplicate, ambiguous, non-binding RSVPs)
       agm_run.json            counts
     The lists carry names and emails and are private. The agm_rsvp table is rebuilt from the export.
 
@@ -279,8 +278,7 @@ def process_agm(csv_file: Path | str, conn: sqlite3.Connection, output_dir: Path
     out = Path(absfile(output_dir))
     out.mkdir(parents=True, exist_ok=True)
     files = {name: out / name for name in ("agm_list_all.csv", "agm_list_in_person.csv", "agm_unverified.csv",
-                                            "agm_fuzzy_review.csv", "agm_accommodations.csv", "alerts_agm.csv",
-                                            "agm_run.json")}
+                                            "agm_fuzzy_review.csv", "agm_accommodations.csv", "agm_run.json")}
     check_writable(*files.values())  # before anything changes: a file open in Excel stops the run here
 
     run = Run.start(SPEC, conn, csv_file)
@@ -302,11 +300,10 @@ def process_agm(csv_file: Path | str, conn: sqlite3.Connection, output_dir: Path
     fuzzy_rows = fuzzy_review_rows(run.current)
     write_rows(files["agm_fuzzy_review.csv"], FUZZY_REVIEW_FIELDS, fuzzy_rows)
     write_csv(with_needs, ACCOMMODATION_FIELDS, files["agm_accommodations.csv"])
-    # an RSVP that more than one student fits cannot be verified: raise it for a person, every run until resolved
+    # an RSVP that more than one student fits cannot be verified; it stays in agm_unverified.csv with its reason
     ambiguous = [r for r in unverified if is_ambiguous(r.get("reason", ""))]
-    alerts = run.alert(out, ambiguous)
 
-    summary = {**run.summary(alerts),
+    summary = {**run.summary(),
                "binding_rsvps": len(run.current),
                "verified_rsvps": len(verified), "verified_in_person": len(in_person),
                "unverified_rsvps": len(unverified), "ambiguous_matches": len(ambiguous),
@@ -319,5 +316,5 @@ def process_agm(csv_file: Path | str, conn: sqlite3.Connection, output_dir: Path
                "flags": _tally(f.partition("=")[0] for r in run.current for f in (r.get("flags") or "").split(";") if f)}
     files["agm_run.json"].write_text(json.dumps(summary, indent=2), encoding="utf-8")
     logger.info(f"AGM: {len(verified)} verified ({len(in_person)} in person), {len(unverified)} unverified")
-    return {"verified": verified, "in_person": in_person, "unverified": unverified, "alerts": alerts,
+    return {"verified": verified, "in_person": in_person, "unverified": unverified,
             "ambiguous": ambiguous, "summary": summary}

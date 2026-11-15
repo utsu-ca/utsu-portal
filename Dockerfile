@@ -11,4 +11,4 @@ USER 10001
 ENV PORT=8080 PORTAL_APP=utsu_core:create_app
 # PORTAL_APP=utsu_core.authsvc:create_auth_app runs the standalone authentication service from the same image
 CMD ["sh", "-c", "exec uvicorn --factory ${PORTAL_APP} --host 0.0.0.0 --port ${PORT} --no-server-header --proxy-headers --forwarded-allow-ips='*'"]
-# The Tailwind stylesheet (static/app.css) is committed; rebuild it with web/build-css.sh after changing web/app.src.css or UI classes.
+# The Svelte front end (web/) is built into src/utsu_core/static and committed, so this image needs no Node. Rebuild with `npm run build` in web/ after changing it.

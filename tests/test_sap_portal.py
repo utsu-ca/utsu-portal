@@ -1,3 +1,4 @@
+import base64
 import csv
 import io
 import sys
@@ -17,6 +18,9 @@ from utsu_core.settings import Settings
 from utsu_core.store import MemoryStore
 from utsu_core.programs.sap.wfni import QUESTIONS
 from utsu_core.programs.sap.module import review_stage
+
+CHEQUE_BYTES = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF"
+CHEQUE = "data:application/pdf;base64," + base64.b64encode(CHEQUE_BYTES).decode()
 
 
 def test_living_costs_subsidies_prioritize_emergency_reviews():
@@ -359,10 +363,10 @@ def test_banking_reverification_is_single_use_encrypted_and_requires_acceptance(
     link = mail.outbox[-1][2].splitlines()[-1]
     token = parse_qs(urlsplit(link).fragment)["sap-banking"][0]
     assert token not in str(inner.get("sap_banking", uid))
-    assert c.put("/api/sap/banking/reverify", json={**new, "token": "wrong"}, headers=user).status_code == 409
+    assert c.put("/api/sap/banking/reverify", json={**new, "token": "wrong", "void_cheque": CHEQUE}, headers=user).status_code == 409
     with ThreadPoolExecutor(max_workers=2) as pool:
         responses = list(pool.map(lambda _: c.put("/api/sap/banking/reverify",
-                             json={**new, "token": token}, headers=user), range(2)))
+                             json={**new, "token": token, "void_cheque": CHEQUE}, headers=user), range(2)))
     assert sorted(response.status_code for response in responses) == [200, 409]
     assert c.get("/api/sap/banking", headers=user).json() == {"status": "reverify_received"}
     raw = inner.get("sap_banking", uid)
@@ -383,9 +387,77 @@ def test_banking_reverification_is_single_use_encrypted_and_requires_acceptance(
     token = parse_qs(urlsplit(mail.outbox[-1][2].splitlines()[-1]).fragment)["sap-banking"][0]
     expires = c.app.state.ctx.store.get("sap_banking", uid)["request_expires"]
     monkeypatch.setattr(c.app.state.ctx, "now", lambda: expires)
-    assert c.put("/api/sap/banking/reverify", json={**old, "token": token}, headers=user).status_code == 409
+    assert c.put("/api/sap/banking/reverify", json={**old, "token": token, "void_cheque": CHEQUE}, headers=user).status_code == 409
     assert c.request("DELETE", path, json={"confirm": True}, headers=admin).status_code == 200
-    assert c.put("/api/sap/banking/reverify", json={**old, "token": token}, headers=user).status_code == 409
+    assert c.put("/api/sap/banking/reverify", json={**old, "token": token, "void_cheque": CHEQUE}, headers=user).status_code == 409
+
+
+def test_finance_controller_flags_failed_validation_and_reviews_the_void_cheque():
+    inner, mail = MemoryStore(), OutboxMailer()
+    c = TestClient(create_app(Settings(secret="s" * 32, admin_emails=("boss@x.ca",)), store=inner, mailer=mail))
+    register(c, mail, "boss", "boss@x.ca", sn="9999999999", first="Bo", last="Ss")
+    admin = login(c, mail, "boss")
+    register(c, mail, "fin", "fin@x.ca", sn="1111111111", first="Fi", last="Nance")
+    finance = login(c, mail, "fin")
+    verification = c.post("/api/verification", json={**scan(c, finance), "first_name": "Fi", "last_name": "Nance"},
+                          headers=finance)
+    assert c.post(f"/api/admin/verifications/{verification.json()['id']}/decision", json={"approve": True},
+                  headers=admin).status_code == 200
+    assert c.put("/api/admin/roles", json={"username": "fin", "roles": ["sap_finance"]}, headers=admin).status_code == 200
+    register(c, mail, "ada", "ada@x.ca")
+    user = login(c, mail, "ada")
+    activate(c, admin, user)
+    form = c.get("/api/forms/student_aid_bursary/static").json()
+    data = {"terms": ["Fall 2026"], "enrolment": "Full-time", "monthly_income": 500,
+            "monthly_expenses": 1500, "amount_requested": 1000, "hardship": "private " * 10,
+            "contact_email": "ada@example.ca", "consent": True}
+    assert c.put("/api/forms/student_aid_bursary/submission",
+                 json={"version": form["version"], "hash": form["hash"], "data": data}, headers=user).status_code == 200
+    old = {"institution_number": "001", "transit_number": "00023", "account_number": "0000456"}
+    new = {"institution_number": "002", "transit_number": "12345", "account_number": "999888"}
+    assert c.put("/api/sap/banking", json=old, headers=user).status_code == 200
+    uid = c.get("/api/me", headers=user).json()["user"]["uuid"]
+    path = f"/api/finance/sap/banking/{uid}"
+
+    assert c.get("/api/finance/sap/banking", headers=user).status_code == 403  # applicants and other roles are refused
+    listing = c.get("/api/finance/sap/banking", headers=finance).json()
+    assert [(i["name"], i["status"]) for i in listing["items"]] == [("Ada Lovelace", "on_file")]
+    assert c.get("/api/admin/sap/applications", headers=finance).status_code == 403  # banking only
+
+    flagged = c.post(path + "/validation-failed", headers=finance)  # the one click
+    assert flagged.status_code == 200 and flagged.json()["status"] == "reverify_requested"
+    to, subject, body = mail.outbox[-1][:3]
+    assert to == "ada@x.ca" and "banking information" in subject and "void cheque" in body
+    assert c.get("/api/sap/banking", headers=user).json()["status"] == "reverify_requested"  # shown in the portal too
+    token = parse_qs(urlsplit(body.splitlines()[-1]).fragment)["sap-banking"][0]
+
+    for bad in ("data:image/png;base64,AAAA", "data:application/pdf;base64," + base64.b64encode(b"not a pdf").decode(),
+                "data:application/pdf;base64,***"):
+        assert c.put("/api/sap/banking/reverify", json={**new, "token": token, "void_cheque": bad},
+                     headers=user).status_code == 422
+    assert c.get("/api/sap/banking", headers=user).json()["status"] == "reverify_requested"  # can try again
+    big = "data:application/pdf;base64," + base64.b64encode(b"%PDF-" + b"0" * 3_000_001).decode()
+    assert c.put("/api/sap/banking/reverify", json={**new, "token": token, "void_cheque": big},
+                 headers=user).status_code == 413
+    assert c.put("/api/sap/banking/reverify", json={**new, "token": token, "void_cheque": CHEQUE},
+                 headers=user).json() == {"status": "reverify_received"}
+    raw = inner.get("sap_banking", uid)
+    assert raw["pending"].startswith(PREFIX) and "JVBERi" not in str(raw)  # the cheque is encrypted at rest
+
+    comparison = c.get(path + "/pending", headers=finance).json()
+    assert comparison["active"] == old and comparison["pending"] == new
+    assert comparison["void_cheque"]["size"] == len(CHEQUE_BYTES) and "data_url" not in comparison["void_cheque"]
+    pdf = c.get(path + "/cheque", headers=finance)
+    assert pdf.status_code == 200 and pdf.content == CHEQUE_BYTES and pdf.headers["content-type"] == "application/pdf"
+    assert pdf.headers["cache-control"] == "no-store"
+    assert c.get(f"/api/finance/sap/banking/{uid}/cheque", headers=user).status_code == 403
+    accepted = c.post(path + "/accept", json={"revision": comparison["revision"], "confirm": True}, headers=finance)
+    assert accepted.json() == {"status": "on_file"}
+    assert c.get(path, headers=finance).json() == new
+    assert c.get(path + "/cheque", headers=finance).content == CHEQUE_BYTES  # kept on file after acceptance
+    actions = {e["action"] for e in c.get("/api/admin/audit?limit=200", headers=admin).json()["entries"]}
+    assert {"sap.banking_reverify_requested", "sap.void_cheque_accessed", "sap.banking_reverify_accepted"} <= actions
+    assert all("999888" not in str(entry) for entry in c.app.state.ctx.audit.entries())
 
 
 def test_review_queue_claims_decision_and_submission_lock():

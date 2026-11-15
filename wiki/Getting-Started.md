@@ -42,7 +42,6 @@ written to `testing/output/` (gitignored, rebuilt each run, seeded so the data i
 | `verified.csv`, `unverified.csv`, `seats.csv`, `unseated.csv`, `seating_run.json` | Senate + seating |
 | `sap_*.csv`, `sap_batches/`, `sap_run.json` | SABP |
 | `agm_*.csv`, `agm_run.json` | AGM |
-| `alerts_senate.csv`, `alerts_sap.csv`, `alerts_agm.csv` | integrity checks |
 
 In testing mode `config.json` is neither read nor written, and a fresh database is built each time. Flags such as
 `--seed` or `--seats_file` still override the testing defaults. Reviewers `Reviewer_A,Reviewer_B,Reviewer_C` are

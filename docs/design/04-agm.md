@@ -32,9 +32,9 @@ on every roster upload; the AGM has no email-domain veto and no matching of its 
   person's newest RSVP submission and read the account's `roster_checks` result. Check-in is the authoritative moment: it evaluates
   eligibility, then writes the `agm_checkins` fact under optimistic lock.
 - **Lists, on admin request:** `GET /api/admin/agm/rsvps` returns a paginated registration list.
-  `GET /api/admin/agm/alerts` identifies ineligible registrations and online attendees without a current
-  identity-verification grant. `GET /api/admin/agm/rsvps.csv` exports registrations to an audited, spreadsheet-safe
-  private CSV. Historical batch duplicate alerts are not implemented.
+  `GET /api/admin/agm/rsvps.csv` exports registrations to an audited, spreadsheet-safe
+  private CSV. Registrants whose student status cannot be verified are refused at submission, and online registrants
+  see on their invitation that identity verification is still required; there is no alerts view.
 - **Notices:** preview computes recipients now; send requires the preview hash.
 - **Standalone verification:** `POST /api/admin/agm/verify` checks a person against the roster with no RSVP.
 
@@ -43,7 +43,6 @@ on every roster upload; the AGM has no email-domain veto and no matching of its 
 | Method and path | Role |
 |---|---|
 | `GET /api/admin/agm/rsvps[.csv]?status=&cursor=` | agm_admin |
-| `GET /api/admin/agm/alerts` | agm_admin |
 | `POST /api/admin/agm/verify` | agm_admin |
 | `POST /api/admin/agm/notices/{preview,send}` | agm_admin |
 | existing `/api/agm/*`, `/api/admin/agm/checkin`, `/attendance` | agm_admin (was admin), routes unchanged |

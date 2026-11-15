@@ -37,6 +37,7 @@ from .settings import FORMS_DIR, Settings
 from .store import ACCESS, AccessLog, AuditedStore, Store, open_store
 
 STATIC = Path(__file__).parent / "static"
+BRANDING = Path(__file__).parent / "branding"
 CORE_MODULES = (SSOModule(), AuthModule(), AgmVerifyModule(), AgmModule(), SenateModule(), SapModule(), FormsModule(), NoticesModule(), AdminModule(), ClubsModule(), AuditModule(), RolesModule())
 REMOTE_MODULES = (SSOModule(), AgmVerifyModule(), AgmModule(), SenateModule(), SapModule(), FormsModule(), NoticesModule(), ClubsModule(), AuditModule())  # no auth/admin-verification
 RATE_LIMITED = ("/api/auth/", "/api/recovery", "/sso/token", "/sso/authorize")
@@ -110,7 +111,7 @@ def build_app(settings: Settings, store: Store | None, mailer: Mailer | None, mo
         path = request.url.path
         who = actor_of(request)
         pid = hmac.new(settings.secret.encode(), client_ip(request).encode(), hashlib.sha256).hexdigest()[:12]
-        access = AccessLog(who or f"anonymous:{pid}") if settings.audit_db_access and not path.startswith(("/static", "/healthz", "/readyz")) else None
+        access = AccessLog(who or f"anonymous:{pid}") if settings.audit_db_access and not path.startswith(("/static", "/branding", "/healthz", "/readyz")) else None
         token = ACCESS.set(access)  # every store call made while serving this request is attributed to the requester
         try:
             resp = await call_next(request)
@@ -122,7 +123,7 @@ def build_app(settings: Settings, store: Store | None, mailer: Mailer | None, mo
                                         None, None, {"ops": access.ops, "method": request.method, "status": resp.status_code})
             except Exception:
                 log.exception("access audit failed")
-        watched = request.method not in ("GET", "HEAD", "OPTIONS") or path.startswith("/api/admin/")
+        watched = request.method not in ("GET", "HEAD", "OPTIONS") or path.startswith(("/api/admin/", "/api/finance/"))
         if watched and not path.startswith("/api/admin/audit") and not path.startswith("/static"):
             route = request.scope.get("route")
             try:  # no bodies, query strings or tokens are logged; IPs are keyed-hashed
@@ -155,10 +156,15 @@ def build_app(settings: Settings, store: Store | None, mailer: Mailer | None, mo
             h.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         if request.url.path.startswith(("/api/", "/sso/")):
             h.setdefault("Cache-Control", "no-store")
+        elif request.url.path.startswith("/branding/"):
+            h.setdefault("Cache-Control", "no-cache")  # edits to the theme or logos show on the next page load
         return resp
 
     if ui:
         app.mount("/static", StaticFiles(directory=STATIC), name="static")
+        branding = Path(settings.branding_dir) if settings.branding_dir else BRANDING
+        branding.mkdir(parents=True, exist_ok=True)
+        app.mount("/branding", StaticFiles(directory=branding), name="branding")
 
     @app.get("/healthz", include_in_schema=False)
     def healthz():

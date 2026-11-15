@@ -17,11 +17,11 @@ SENSITIVE: dict[str, tuple[str, ...]] = {
     "agm_media": ("face", "id_card"),
     "receipts": ("data_url",),
     "submissions": ("data", "sap_review", "sap_review_hardship", "sap_previous"),
-    "sap_banking": ("institution_number", "transit_number", "account_number", "pending"),
+    "sap_banking": ("institution_number", "transit_number", "account_number", "pending", "void_cheque"),
     "roster_identifiers": ("digits",),
 }  # plus the `blob` field of every `audit_*` collection (see `sensitive`)
 JSON_SENSITIVE = {("submissions", "data"), ("submissions", "sap_review"),
-                  ("submissions", "sap_previous"), ("sap_banking", "pending")}
+                  ("submissions", "sap_previous"), ("sap_banking", "pending"), ("sap_banking", "void_cheque")}
 
 
 def sensitive(col: str) -> tuple[str, ...]:

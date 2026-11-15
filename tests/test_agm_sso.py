@@ -50,8 +50,9 @@ def test_roster_removal_blocks_checkin_and_zoom_sso(env):
     c.app.state.ctx.store.put("agm_grants", bob, {"uuid": bob, "exp": c.app.state.ctx.now() + 600})
     roster = "First Name,Last Name,Truncated Student Number,Faculty,Division\nAda,Test,xxxxx6789x,ARTSC,UC\n"
     assert c.post("/api/admin/roster", json={"csv": roster}, headers=h["boss"]).status_code == 200
-    alerts = c.get("/api/admin/agm/alerts", headers=h["boss"]).json()["items"]
-    assert len(alerts) == 1 and alerts[0]["kind"] == "ineligible"
+    rsvps = c.get("/api/admin/agm/rsvps", headers=h["boss"]).json()["items"]
+    assert [(r["name"], r["eligible"]) for r in rsvps if r["name"] == "Bob Test"] == [("Bob Test", False)]
+    assert c.get("/api/admin/agm/alerts", headers=h["boss"]).status_code == 404
     assert c.post("/api/admin/agm/checkin", json={"uuid": bob}, headers=h["boss"]).status_code == 403
     assert c.app.state.ctx.store.get("agm_attendance", bob) is None
     body = {"client_id": "zoom", "redirect_uri": REDIR}
@@ -71,12 +72,10 @@ def test_admin_registration_report_and_standalone_verification(env):
     assert ada["accessibility"] == "'=Needs a quiet space" and ada["proxy_name"] == "Proxy Person"
     assert export.headers["cache-control"] == "no-store"
     assert "agm.rsvps_exported" in {e["action"] for e in c.get("/api/admin/audit?limit=200", headers=h["boss"]).json()["entries"]}
-    assert c.get("/api/admin/agm/alerts", headers=h["ada"]).status_code == 403
-    alerts = c.get("/api/admin/agm/alerts", headers=h["boss"]).json()
-    assert [(a["name"], a["kind"]) for a in alerts["items"]] == [("Bob Test", "online_identity_required")]
+    assert c.get("/api/agm/invitation", headers=h["bob"]).json()["id_verified"] is False  # applicant is told what is left
     bob = uid(c, h, "bob")
     c.app.state.ctx.store.put("agm_grants", bob, {"uuid": bob, "exp": c.app.state.ctx.now() + 600})
-    assert c.get("/api/admin/agm/alerts", headers=h["boss"]).json()["items"] == []
+    assert c.get("/api/agm/invitation", headers=h["bob"]).json()["id_verified"] is True
     first = c.get("/api/admin/agm/rsvps?limit=1", headers=h["boss"]).json()
     assert len(first["items"]) == 1 and first["items"][0]["eligible"]
     second = c.get("/api/admin/agm/rsvps", params={"cursor": first["next_cursor"], "limit": 1},

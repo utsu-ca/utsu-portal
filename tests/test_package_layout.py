@@ -29,6 +29,7 @@ def test_packaged_program_schemas_and_portal_assets():
         ("utsu_core.programs.senate", "schema.sql"),
         ("utsu_core", "forms/agm_rsvp.yaml"),
         ("utsu_core", "static/index.html"),
+        ("utsu_core", "static/finance.html"),
     ):
         assert resources.files(package).joinpath(filename).is_file()
 

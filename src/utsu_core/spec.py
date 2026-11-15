@@ -21,7 +21,7 @@ def flag_fuzzy_match(row: dict, match: Match) -> None:
 @dataclass(frozen=True)
 class ProgramSpec:
     """
-    slug, label        file names (`alerts_<slug>.csv`) and the name people read in logs and alerts
+    slug, label        the program's short name and the name people read in logs
     table              the table the program fills; its schema is `schema_file` in `package`
     mapping            lookup table (project-root relative) that renames the form's columns
     optional, identity form columns that may be missing, and the ones of which at least one must be there

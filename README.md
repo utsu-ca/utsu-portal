@@ -38,16 +38,21 @@ Secrets can also be supplied via the corresponding `_FILE` environment variable.
 ## Current workflows
 
 - **AGM:** verified, rostered accounts can RSVP, access invitations and check in; online participation requires
-  separate identity verification. AGM administrators can view registrations, eligibility and online-verification
-  alerts, download a private registration CSV including accessibility and proxy details, and check a person against
-  the roster. Historical batch alerts are not implemented.
+  separate identity verification. AGM administrators can view registrations and eligibility,
+  download a private registration CSV including accessibility and proxy details, and check a person against
+  the roster.
 - **Senate:** administrators configure seats, inspect applications, run seeded previews and publish the reviewed
   result. Applicants must provide all seating preferences, including explicit "Not interested" choices. Public
-  results show names only when the applicant consented. Administrators can see eligibility and preference alerts
-  and download the latest published results (including non-public names) as a private CSV.
-  Seat configuration is not populated automatically; historical batch alerts are not implemented.
+  results show names only when the applicant consented. Administrators can see eligibility and
+  download the latest published results (including non-public names) as a private CSV.
+  Seat configuration is not populated automatically.
 - **SABP:** applicants can submit applications and encrypted banking details. Administrators can configure WFNI
-  weights, view and export current applications, and manage banking details, including re-verification. The private
+  weights, view and export current applications, and manage banking details, including re-verification. The
+  **finance portal** (`/static/finance.html`, role `sap_finance`) is a separate, banking-only surface for the
+  financial controller: it lists banking records and, when details fail validation, one click ("Banking failed
+  validation") emails the applicant a single-use link to the banking information verification page, where they
+  re-enter their details and upload a PDF void cheque (3 MB maximum, checked server-side, encrypted at rest). The
+  controller reviews the new details and the cheque (every view is audited) and accepts them. The private
   CSV excludes hardship statements and banking details; it is not a payment export. The review queue requires
   `PORTAL_SAP_REVIEW_ENABLED=1`; it is experimental and not a complete committee process. Administrators must
   review and confirm redacted hardship statements. Client-side static redaction and server identifier checks cannot

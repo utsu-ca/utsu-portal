@@ -1,0 +1,129 @@
+/* Global styles for the portal. Built into src/utsu_core/static by Vite (`npm run build` in web/).
+   Colours come from the branding theme (branding/theme.json), applied at run time as --user-* and --admin-* variables;
+   admin mode swaps the accent by setting data-mode="admin" on <html>. */
+@import "tailwindcss";
+
+@font-face {
+  font-family: "Noto Emoji Menu";
+  src: url("./assets/noto-emoji-menu.woff2") format("woff2");
+  font-weight: 300 700;
+  font-display: swap;
+}
+
+@theme {
+  --color-accent: #1e3a8a;
+  --color-accent-hover: #1e40af;
+  --color-chrome: #172554;
+  --color-page: #f1f5f9;
+}
+
+:root {
+  --color-accent: var(--user-accent, #1e3a8a);
+  --color-accent-hover: var(--user-accent-hover, #1e40af);
+  --color-chrome: var(--user-chrome, #172554);
+  --color-page: var(--user-page, #f1f5f9);
+}
+:root[data-mode="admin"] {
+  --color-accent: var(--admin-accent, #b45309);
+  --color-accent-hover: var(--admin-accent-hover, #92400e);
+  --color-chrome: var(--admin-chrome, #451a03);
+}
+
+@layer base {
+  body { @apply m-0 bg-page font-sans text-base text-slate-900 antialiased; }
+  header { @apply flex flex-wrap items-center justify-between gap-3 bg-chrome px-4 py-2 text-white; }
+  header h1 { @apply m-0 text-lg font-semibold; }
+  header nav { @apply flex flex-wrap items-center gap-3; }
+  header nav a { @apply cursor-pointer p-1 text-white underline underline-offset-2 hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white; }
+  main { @apply mx-auto my-4 max-w-3xl px-3 sm:px-4; }
+  label, legend { @apply mt-3 mb-1 block font-semibold; }
+  fieldset { @apply m-0 border-0 p-0; }
+  input, select, textarea { @apply box-border w-full rounded-md border border-slate-400 bg-white px-3 py-2 text-base focus:border-accent focus:outline-2 focus:outline-offset-1 focus:outline-accent; }
+  input[type=checkbox], input[type=radio] { @apply mr-2 h-4 w-auto; }
+  h2 { @apply mb-2 text-xl font-semibold; }
+  h3 { @apply mb-2 text-lg font-semibold; }
+  video, canvas, img.shot { @apply max-w-full rounded-md; }
+  :focus-visible { @apply outline-2 outline-offset-2 outline-accent; }
+}
+
+@layer components {
+  .card { @apply mb-4 rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200; }
+  .help { @apply block text-sm font-normal text-slate-600; }
+  .opt { @apply block font-normal; }
+  button.primary { @apply mr-2 mt-2 min-h-11 cursor-pointer rounded-md border-0 bg-accent px-4 py-2 font-medium text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50; }
+  button.secondary { @apply mr-2 mt-2 min-h-11 cursor-pointer rounded-md border border-slate-400 bg-white px-4 py-2 font-medium text-slate-900 hover:bg-slate-50; }
+  button.danger { @apply mr-2 mt-2 min-h-11 cursor-pointer rounded-md border-0 bg-red-800 px-4 py-2 font-medium text-white hover:bg-red-700; }
+  .err { @apply text-sm font-medium text-red-800; }
+  .ok { @apply font-medium text-green-800; }
+  .badge { @apply inline-block rounded-full bg-slate-200 px-3 py-0.5 text-sm text-slate-900; }
+  .row { @apply flex flex-col gap-4 sm:flex-row; }
+  .row > * { @apply flex-1; }
+  textarea.yaml { @apply min-h-80 font-mono text-sm; }
+  /* check-in verification banner */
+  .banner-ok { @apply mb-2 rounded-md bg-green-100 p-3 text-green-900 ring-1 ring-green-700; }
+  .banner-warn { @apply mb-2 rounded-md bg-amber-100 p-3 text-amber-900 ring-1 ring-amber-700; }
+  .big-name { @apply my-2 text-3xl font-bold; }
+  .banner-action { @apply mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md bg-amber-100 p-3 text-amber-900 ring-1 ring-amber-700; }
+  .banner-admin { @apply mb-4 rounded-md bg-accent px-3 py-2 text-sm font-semibold text-white; }
+  table.grid { @apply w-full border-collapse text-left text-sm; }
+  table.grid th, table.grid td { @apply border-b border-slate-200 px-2 py-2 align-top; }
+  .wide { @apply max-w-5xl; }
+  .site-footer { @apply px-4 py-6 text-center text-sm text-slate-600; }
+  .logo { @apply block h-8 w-auto max-w-full; }
+  .actions { @apply flex flex-wrap gap-2; }
+  .actions button.primary, .actions a.primary { @apply mt-0; }
+  a.primary { @apply inline-flex min-h-11 items-center rounded-md bg-accent px-4 py-2 font-medium text-white no-underline hover:bg-accent-hover; }
+}
+
+/* Sidebar shell. Below 48rem the sidebar is a full-screen overlay opened from the top bar; from 48rem it is fixed to
+   the left and collapses to a narrow rail that keeps the menu button. The sidebar has a border on each side in its own colour, a
+   share of the viewport width (--column-border, default 1vw), between 5px and 15px; the collapsed rail keeps a fixed 5px. */
+@layer components {
+  .topbar { @apply sticky top-0 z-30 flex items-center gap-3 bg-chrome px-3 py-2 text-white md:hidden; }
+  .sidebar { @apply invisible fixed inset-y-0 left-0 z-40 flex w-full -translate-x-full flex-col overflow-y-auto bg-chrome text-white md:visible md:w-64 md:translate-x-0; border-inline: clamp(5px, var(--column-border, 1vw), 15px) solid var(--color-chrome); }
+  .sidebar.open { @apply visible translate-x-0; }
+  .side-head { @apply flex items-center gap-3 px-2 py-2; }
+  .hamburger { @apply min-h-11 min-w-11 cursor-pointer rounded-md border-0 bg-transparent text-2xl leading-none text-white hover:bg-white/15 focus-visible:outline-white; }
+  .side-nav ul { @apply m-0 list-none p-0; }
+  .side-row { @apply flex items-stretch; }
+  .side-link { @apply flex min-h-11 flex-1 cursor-pointer items-center rounded-md border-0 bg-transparent px-3 py-2 text-left text-base text-white hover:bg-white/15 focus-visible:outline-white; }
+  .side-link[aria-current="page"] { @apply bg-white/25 font-semibold; }
+  .side-fold { @apply min-h-11 min-w-11 cursor-pointer rounded-md border-0 bg-transparent text-white hover:bg-white/15 focus-visible:outline-white; }
+  .depth-1 > .side-row > .side-link { @apply pl-6; }
+  .depth-2 > .side-row > .side-link { @apply pl-9 text-sm; }
+  .side-group-label { @apply text-xs font-semibold uppercase tracking-wide; }
+  /* last in the sidebar: at the bottom edge when everything fits, reached by scrolling when it does not */
+  .side-bottom { @apply mt-auto; }
+  .side-foot { @apply border-t border-white/25 p-3; }
+  /* the logo is a rectangle at the bottom of the sidebar, twice the height of a menu row (2 x 2.75rem) */
+  .side-logo { @apply m-2 h-22 overflow-hidden rounded-md; }
+  .side-logo img { @apply block h-full w-full object-cover; }
+  .side-name { @apply min-w-0 leading-tight; }
+  .side-foot button { @apply min-h-11 w-full cursor-pointer rounded-md border border-white/60 bg-transparent px-3 py-2 font-medium text-white hover:bg-white/15; }
+  .content { @apply md:ml-64; }
+  .content.collapsed { @apply md:ml-16; }
+  .sidebar.collapsed { @apply md:w-16; border-inline-width: 5px; }
+    .sidebar.collapsed .side-bottom, .sidebar.collapsed .side-name, .sidebar.collapsed .side-label,
+  .sidebar.collapsed .side-fold, .sidebar.collapsed .side-nav ul ul { @apply md:hidden; }
+  .sidebar.collapsed .side-link { @apply md:justify-center md:px-0; }
+  .sidebar.collapsed .side-link[data-active] { @apply md:bg-white/25 md:ring-1 md:ring-white/60; }
+  /* Noto Emoji (monochrome, subset to the menu icons, SIL OFL) so icons take the menu's text colour */
+  .side-icon { @apply inline-block w-6 shrink-0 text-center text-xl normal-case leading-none; font-family: "Noto Emoji Menu", "Noto Emoji", sans-serif; font-weight: 400; }
+  .side-link .side-icon + .side-label { @apply ml-2; }
+  .sidebar.collapsed .side-link .side-icon + .side-label { @apply md:ml-0; }
+}
+
+/* "In this section" sidecar: only when the screen is wide enough to hold it beside the content. */
+@layer components {
+  .content-grid { @apply block; }
+  .related { @apply hidden; }
+  .related-title { @apply mb-1 mt-0 text-xs font-semibold uppercase tracking-wide text-slate-600; }
+  .related ul { @apply m-0 mb-4 list-none p-0; }
+  .related-sub { @apply ml-3 mt-1 border-l border-slate-300 pl-2; }
+  .related-link { @apply min-h-8 w-full cursor-pointer rounded-md border-0 bg-transparent px-2 py-1 text-left text-sm text-slate-900 hover:bg-white focus-visible:outline-accent; }
+  .related-link[aria-current="page"] { @apply bg-white font-semibold text-accent ring-1 ring-slate-200; }
+}
+@media (min-width: 80rem) {
+  .content-grid { display: grid; grid-template-columns: minmax(0, 1fr) 15rem; gap: 1rem; align-items: start; padding-right: 1rem; }
+  .related { display: block; position: sticky; top: 1rem; margin-top: 1rem; max-height: calc(100vh - 2rem); overflow-y: auto; }
+}

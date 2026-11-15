@@ -13,7 +13,7 @@
 | | `importing_data.py` | Roster CSV → validated rows → `uoft_data` in one transaction (schema in `schema/uoft_data.sql`) |
 | | `verification.py` | `decide` / `match_students` (the matching rules); `setup_reader`; `is_uoft_email`; `truncated_numbers` |
 | | `selection.py` | Timestamp parsing, `person_key`, one-binding-per-person selection (`select_current`) |
-| | `integrity.py` | Duplicate detection, alerts |
+| | `integrity.py` | Duplicate detection (logged) |
 | | `resources.py` | Reads the schema files that ship inside a package |
 | `utsu_core.programs` | `runner.py` | `utsu-all`: Senate, SABP and AGM in one run |
 | | `senate/` | `program.py` (spec, `verify_senators`), `seating.py` (seat assignment), `cli.py` (`utsu-senate`), `schema.sql` |
@@ -55,7 +55,7 @@ flowchart TD
 ## The common per-program pipeline
 
 A program is declared as a `ProgramSpec` (`utsu_core/spec.py`) in its `program.py`, and the shared engine in
-`utsu_core/pipeline.py` (the `Run` class: `Run.start`, `verify`, `select`, `replace_all`, `settle`, `alert`, `summary`)
+`utsu_core/pipeline.py` (the `Run` class: `Run.start`, `verify`, `select`, `replace_all`, `settle`, `summary`)
 runs it, so the three programs cannot drift apart. What a program supplies itself are hooks: `build_row` (a form row →
 a row), `annotate` (what else it records about a verification), `veto` (a rule that overrides the roster, e.g. the AGM's
 email rule), `prepare` (stored rows that compete, for SABP) and what it writes afterwards. Every run reads the **full**
@@ -65,7 +65,7 @@ export:
    row with the spec's `build_row`, compute `uuid` and `student_uuid`, and de-duplicate by `uuid` (last row wins).
    `Run` also reads which applications an earlier run verified (`sticky` specs: Senate and SABP; AGM is not sticky).
 2. **Verify** (`Run.verify`) every row (`match_students` in chunks of 300, using the spec's `id_key`), then keep what an
-   earlier run verified: an application verified before is never downgraded (it is raised as a `roster_mismatch` alert).
+   earlier run verified: an application verified before is never downgraded (the mismatch is logged).
 3. **Select** one binding application per person (`select_current`: grouped by the spec's `key`, by default email, else
    student number, else name, ordered by its `rank`, by default the submission timestamp), assigning `superseded`,
    `non_binding` or `not_considered` to the others. SABP's `key` adds the term, marks an already-decided application
@@ -74,7 +74,7 @@ export:
 4. **Persist**: Senate and AGM rebuild their table from the export (`replace_all`, with the spec's `insert`); SABP upserts,
    never deleting the committee's work. Statuses of stored rows that lost are recorded in `settle`, which also checks
    duplicates.
-5. **Write** the CSV/JSON outputs and the alerts.
+5. **Write** the CSV/JSON outputs.
 
 ## Design decisions worth knowing
 

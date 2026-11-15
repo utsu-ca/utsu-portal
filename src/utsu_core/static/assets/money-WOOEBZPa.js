@@ -1,0 +1,1 @@
+var e=e=>(e<0?`-`:``)+`$`+(Math.abs(e)/100).toFixed(2);function t(e){let t=String(e??``).trim().replace(/^\$/,``);if(!/^\d+(\.\d{1,2})?$/.test(t))return null;let n=Math.round(Number(t)*100);return n>0?n:null}export{t as n,e as t};

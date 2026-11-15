@@ -1,0 +1,22 @@
+{
+  "name": "UTSU Digital Service",
+  "logo": "logo.svg",
+  "favicon": "favicon.svg",
+  "colors": {
+    "user": {
+      "accent": "#1e3a8a",
+      "accentHover": "#1e40af",
+      "chrome": "#172554",
+      "page": "#f1f5f9"
+    },
+    "admin": {
+      "accent": "#b45309",
+      "accentHover": "#92400e",
+      "chrome": "#451a03"
+    }
+  },
+  "copyright": {
+    "holder": "UTSU",
+    "startYear": 2026
+  }
+}

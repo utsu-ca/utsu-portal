@@ -22,18 +22,20 @@ def test_senate_application_views_recheck_roster_and_enforce_roles():
 
     f = c.get("/api/forms/senate_application/static").json()
     data = {"division": "UTSG", "college": "UC", "year_of_study": "2", "seat_type": "Undergraduate",
-            "statement": "A" * 50, "consent": True}
-    assert c.put("/api/forms/senate_application/submission",
-                 json={"version": f["version"], "hash": f["hash"], "data": data}, headers=user).status_code == 200
-    assert c.get("/api/admin/senate/applications", headers=user).status_code == 403
-    assert not c.get("/api/me/senate", headers=user).json()["eligible"]
-    assert c.get("/api/admin/senate/alerts", headers=user).status_code == 403
-    before = c.get("/api/admin/senate/alerts", headers=admin).json()
-    assert {item["kind"] for item in before["items"]} == {"ineligible", "missing_preferences"}
+            "statement": "A" * 50, "consent": True, **{field: "Not interested" for field in PREFERENCES}}
+    submit = lambda body: c.put("/api/forms/senate_application/submission",
+                                json={"version": f["version"], "hash": f["hash"], "data": body}, headers=user)
+    refused = submit(data)  # student status cannot be verified yet: the applicant is asked to fix their details
+    assert refused.status_code == 403 and "could not verify your student status" in refused.json()["detail"]
+    assert c.get("/api/me/senate", headers=user).json() is None
     roster = "First Name,Last Name,Truncated Student Number,Faculty,Division\nAda,Lovelace,xxxxx6789x,ARTSC,UC\n"
     assert c.post("/api/admin/roster", json={"csv": roster}, headers=admin).status_code == 200
+    incomplete = {k: v for k, v in data.items() if k != "pref_general"}
+    assert submit(incomplete).status_code == 422  # a missing preference is stopped at the form
+    assert submit(data).status_code == 200
+    assert c.get("/api/admin/senate/applications", headers=user).status_code == 403
     assert c.get("/api/me/senate", headers=user).json()["eligible"]
-    assert {item["kind"] for item in c.get("/api/admin/senate/alerts", headers=admin).json()["items"]} == {"missing_preferences"}
+    assert c.get("/api/admin/senate/alerts", headers=admin).status_code == 404
     page = c.get("/api/admin/senate/applications?limit=1", headers=admin).json()
     assert len(page["items"]) == 1 and page["items"][0]["eligible"] and page["next_cursor"] is None
     assert c.get("/api/admin/senate/applications?limit=201", headers=admin).status_code == 422
@@ -54,7 +56,7 @@ def test_seating_requires_preferences_and_publishes_only_consented_names():
             "statement": "A" * 50, "consent": True}
     submit = lambda data: c.put("/api/forms/senate_application/submission",
                                 json={"version": f["version"], "hash": f["hash"], "data": data}, headers=user)
-    assert submit(base).status_code == 200
+    assert submit(base).status_code == 422  # preferences are required by the form
     seats = {"seats": [{"constituency": "General Member", "seats": 1}]}
     assert c.get("/api/admin/senate/seats", headers=user).status_code == 403
     assert c.get("/api/admin/senate/seats", headers=admin).json() == {"seats": []}
@@ -62,16 +64,13 @@ def test_seating_requires_preferences_and_publishes_only_consented_names():
     assert c.put("/api/admin/senate/seats", json=seats, headers=admin).status_code == 200
     assert c.get("/api/admin/senate/seats", headers=admin).json()["seats"] == [
         {"constituency": "General Member", "division": "", "seats": 1}]
-    assert c.post("/api/admin/senate/seating", json={"seed": 42}, headers=admin).status_code == 409
     preferences = {field: "Not interested" for field in PREFERENCES}
     preferences["pref_general"] = "First-choice"
     assert submit({**base, **preferences}).status_code == 200
-    assert c.get("/api/admin/senate/alerts", headers=admin).json()["items"] == []
     uid = c.get("/api/me", headers=user).json()["user"]["uuid"]
     store = c.app.state.ctx.store
     key = f"senate_application:{uid}"
     store.update("submissions", key, lambda s: {**s, "data": {**s["data"], "pref_general": 2}})
-    assert {item["kind"] for item in c.get("/api/admin/senate/alerts", headers=admin).json()["items"]} == {"invalid_preferences"}
     assert c.post("/api/admin/senate/seating", json={"seed": 42}, headers=admin).status_code == 409
     assert submit({**base, **preferences}).status_code == 200
     preview = c.post("/api/admin/senate/seating", json={"seed": 42}, headers=admin).json()

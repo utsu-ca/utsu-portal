@@ -92,15 +92,6 @@ def test_the_database_keeps_only_the_last_four_digits_of_a_student_number(tmp_pa
     assert "1001231617" not in str(conn.execute("SELECT * FROM student_aid").fetchall())
 
 
-def test_overlapping_term_selections_are_raised_for_a_person(tmp_path):
-    conn = sap_students(("Ann", "Lee", 3161))
-    first = {**LC_ROW, "Timestamp": "2026/09/01 10:00:00 a.m. AST"}
-    second = {**LC_ROW, "Timestamp": "2026/09/02 10:00:00 a.m. AST", "Application Semester": "Fall 2026;Winter 2027"}
-    result = sap.process_sap(sap_form(tmp_path / "1.csv", [first, second]), conn, output_dir=tmp_path / "out",
-                             batch_size=5)
-    assert [a["kind"] for a in result["alerts"]] == ["overlapping_terms"]
-
-
 def test_amounts_must_be_positive_and_finite():
     assert [sap.parse_amount(v) for v in ("nan", "inf", "-50", "0", "", "$1,500")] == [None] * 5 + [1500.0]
     assert sap.parse_amount("0", allow_zero=True) == 0.0

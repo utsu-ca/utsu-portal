@@ -153,7 +153,7 @@ def test_standalone_verification_only_reports(tmp_path):
     assert conn.execute("SELECT COUNT(*) FROM sqlite_master WHERE name = 'agm_rsvp'").fetchone() == (0,)
 
 
-def test_an_rsvp_that_more_than_one_student_fits_raises_an_alert_until_it_is_resolved(tmp_path, caplog):
+def test_an_rsvp_that_more_than_one_student_fits_is_unverified_until_it_is_resolved(tmp_path, caplog):
     conn = students_db(("Di", "Park", 1111), ("Di", "Park", 2222), ("Ann", "Lee", 3161))
     out = tmp_path / "out"
     ts = "2026/10/01 12:00:00 p.m. AST"
@@ -163,23 +163,19 @@ def test_an_rsvp_that_more_than_one_student_fits_raises_an_alert_until_it_is_res
     form = form_csv(tmp_path / "1.csv", rows(""), extra_header="Student Number")
     with caplog.at_level(logging.WARNING):
         r = agm.process_agm(form, conn, output_dir=out)
-    # only the genuinely ambiguous one is raised (not "name not found"), in the log and in the alerts file
+    # only the genuinely ambiguous one is flagged (not "name not found"), in the log and in agm_unverified.csv
     assert [x["full_name"] for x in r["ambiguous"]] == ["Di Park"] and r["summary"]["ambiguous_matches"] == 1
     assert "AMBIGUOUS AGM RSVP" in caplog.text and "more than one student matches" in caplog.text
-    alerts = list(csv.DictReader(open(out / "alerts_agm.csv", encoding="utf-8-sig")))
-    assert [(a["severity"], a["kind"]) for a in alerts] == [("WARNING", "ambiguous_match")]
-    assert "shared by 2 students" in alerts[0]["detail"] and alerts[0]["uuid"] == r["ambiguous"][0]["uuid"]
+    assert not (out / "alerts_agm.csv").exists()
+    unverified = list(csv.DictReader(open(out / "agm_unverified.csv", encoding="utf-8-sig")))
+    assert "shared by 2 students" in next(u for u in unverified if u["full_name"] == "Di Park")["reason"]
     assert "ambiguous_name" in r["ambiguous"][0]["flags"]
     assert "Park" not in (out / "agm_list_all.csv").read_text(encoding="utf-8-sig")  # not on the door list
 
-    # it stays raised on every run until it is resolved ...
-    again = agm.process_agm(form, conn, output_dir=out)
-    assert [a["kind"] for a in again["alerts"]] == ["ambiguous_match"]
-
-    # ... for instance by correcting the row with a student number, which tells the two students apart
+    # it can be resolved by correcting the row with a student number, which tells the two students apart
     fixed = form_csv(tmp_path / "2.csv", rows("1000011119"), extra_header="Student Number")
     done = agm.process_agm(fixed, conn, output_dir=out)
-    assert done["ambiguous"] == [] and done["alerts"] == []
+    assert done["ambiguous"] == []
     assert "Di Park" in [x["full_name"] for x in done["verified"]]
 
 
@@ -202,7 +198,7 @@ def test_agm_unverified_for_other_reasons_is_not_an_ambiguity(tmp_path):
     conn = students_db(("Ann", "Lee", 3161))
     form = form_csv(tmp_path / "1.csv", [rsvp("2026/10/01 9:00:00 a.m. AST", "Zed", "Zed", "z@mail.utoronto.ca")])
     r = agm.process_agm(form, conn, output_dir=tmp_path / "out")
-    assert r["ambiguous"] == [] and r["alerts"] == [] and r["summary"]["ambiguous_matches"] == 0
+    assert r["ambiguous"] == [] and r["summary"]["ambiguous_matches"] == 0
 
 
 def test_student_number_column_breaks_name_ties(tmp_path):

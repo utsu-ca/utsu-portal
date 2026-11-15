@@ -15,11 +15,10 @@ def person(first, last, number, ts):
             "ACORN-registered Last Name": last, "UofT Email Address": f"{first.lower()}@mail.utoronto.ca"}
 
 
-def test_alerts_file_is_written_even_when_there_is_nothing_to_look_at(tmp_path):
+def test_no_alerts_file_is_written(tmp_path):
     conn = students_db(("Ann", "Lee", 3161))
     sap.process_sap(sap_form(tmp_path / "1.csv", [LC_ROW]), conn, output_dir=tmp_path / "out")
-    text = (tmp_path / "out" / "alerts_sap.csv").read_text(encoding="utf-8-sig").strip()
-    assert text == "severity,kind,program,uuid,student_uuid,detail"
+    assert not list((tmp_path / "out").glob("alerts_*.csv"))
 
 
 def test_integrity_check_finds_two_verified_applications_for_one_student(caplog):
@@ -121,10 +120,10 @@ def test_sap_an_edited_row_leaves_the_export_and_is_superseded_by_its_replacemen
     r = sap.process_sap(sap_form(tmp_path / "2.csv", [edited]), conn, output_dir=out, batch_size=5, reviewers="A,B")
     assert dict(conn.execute("SELECT submission_ts, status FROM student_aid")) == {
         "2026/09/30 10:39:14 a.m. AST": "superseded", "2026/10/05 9:00:00 a.m. AST": "verified"}
-    assert [a["kind"] for a in r["alerts"]] == [] and r["summary"]["missing_from_export"] == 0
+    assert r["summary"]["missing_from_export"] == 0
 
 
-def test_sap_a_verified_application_missing_from_the_export_is_kept_and_alerted(tmp_path):
+def test_sap_a_verified_application_missing_from_the_export_is_kept_and_counted(tmp_path):
     conn = students_db(("Ann", "Lee", 3161), ("Bo", "Chan", 9111))
     out = tmp_path / "out"
     sap.process_sap(sap_form(tmp_path / "1.csv", [LC_ROW, AP_ROW]), conn, output_dir=out, batch_size=5,
@@ -132,7 +131,7 @@ def test_sap_a_verified_application_missing_from_the_export_is_kept_and_alerted(
     r = sap.process_sap(sap_form(tmp_path / "2.csv", [AP_ROW]), conn, output_dir=out, batch_size=5, reviewers="A,B")
     assert conn.execute("SELECT status, stage, batch, record FROM student_aid WHERE aid_type = 'LC'").fetchone() \
         == ("verified", "in_review", 1, 1)
-    assert [a["kind"] for a in r["alerts"]] == ["missing_from_export"] and r["summary"]["missing_from_export"] == 1
+    assert r["summary"]["missing_from_export"] == 1
 
 
 def test_sap_a_completed_application_that_left_the_export_stays_final(tmp_path):
@@ -169,4 +168,4 @@ def test_agm_an_edited_rsvp_replaces_the_old_row_in_the_table(tmp_path):
     r = agm.process_agm(agm_form(tmp_path / "2.csv", [edited]), conn, output_dir=out)
     assert conn.execute("SELECT submission_ts, status FROM agm_rsvp").fetchall() == \
         [("2026/10/03 9:00:00 a.m. AST", "verified")]
-    assert len(r["verified"]) == 1 and r["alerts"] == []
+    assert len(r["verified"]) == 1

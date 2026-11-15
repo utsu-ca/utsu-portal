@@ -38,6 +38,8 @@ class Settings:
     expense_large_cents: int = 50_000  # expenses at/above this need the larger approval count
     default_tax_bps: int = 1300  # Ontario HST 13%
     max_receipt_bytes: int = 3_000_000
+    branding_dir: str | None = None  # folder holding theme.json and logos, served at /branding (default: the bundled one)
+    max_cheque_bytes: int = 3_000_000
     sso_issuer: str = "http://localhost:8000"
     sso_key_pem: str | None = None  # RSA private key; an ephemeral one is generated when unset
     zoom_client_id: str = "zoom"
@@ -85,4 +87,5 @@ class Settings:
                    redis_url=env("PORTAL_REDIS_URL"), data_key=env("PORTAL_DATA_KEY"),
                    rate_limit_auth=int(env("PORTAL_RATE_LIMIT_AUTH", "30")), hsts=env("PORTAL_HSTS", "1") != "0",
                    anchor=env("PORTAL_ANCHOR", "none"), anchor_url=env("PORTAL_ANCHOR_URL"), anchor_token=env("PORTAL_ANCHOR_TOKEN"),
-                   audit_db_access=env("PORTAL_AUDIT_DB_ACCESS", "0") == "1")
+                   audit_db_access=env("PORTAL_AUDIT_DB_ACCESS", "0") == "1",
+                   branding_dir=env("PORTAL_BRANDING_DIR"))
