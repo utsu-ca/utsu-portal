@@ -32,7 +32,8 @@ secrets, backups, database and deployment configuration.
 
 Registration and sign-in use email codes. Configure `PORTAL_SMTP_URL` as an `smtp://` or `smtps://` URL and
 `PORTAL_MAIL_FROM` as the sender to deliver mail; without SMTP, the default mailer logs only recipient and subject,
-not the code. An administrator account is created only after the email listed in `PORTAL_ADMIN_EMAILS` is verified.
+not the code. For local testing, `testing/mail_sink.py` catches mail without sending it (see below). An
+administrator account is created only after the email listed in `PORTAL_ADMIN_EMAILS` is verified.
 Secrets can also be supplied via the corresponding `_FILE` environment variable.
 
 ## Current workflows
@@ -91,6 +92,10 @@ notice. SMTP must be configured. This is individual messaging, not the historica
 - `testing/generate_fake_*.py` generates synthetic historical-form and roster data for testing. Run
   `python testing/generate_fake_data.py` or use `--help` for generator options. Generated exports are not direct
   portal-import files; some required portal fields have no historical equivalent.
+- `testing/mail_sink.py` is a local mail catcher (standard library only). Run `python testing/mail_sink.py`, start
+  the portal with `PORTAL_SMTP_URL=smtp://127.0.0.1:1025`, and read sign-in codes and notices at
+  `http://127.0.0.1:8025` (JSON at `/messages?to=ADDR`). `--reject REGEX` bounces matching recipients with 550 to
+  exercise failure paths; `--help` lists the other options.
 - [Design documents](docs/design/00-overview.md) describe the target architecture and outstanding work; proposed
   functionality should not be read as implemented.
 

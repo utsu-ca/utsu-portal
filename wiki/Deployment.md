@@ -20,7 +20,7 @@ generated once into Secret Manager and mounted as env vars. **Never rotate `PORT
 | `PORTAL_STORE` | `memory`, `sqlite:<path>`, `sql:<url>` (or `sql` + `DATABASE_URL`), `firestore`, or `pkg.module:factory` |
 | `PORTAL_ADMIN_EMAILS` | emails that become admin once verified by OTP |
 | `PORTAL_BASE_URL`, `PORTAL_SSO_KEY` | SSO issuer URL and RSA private key (PEM) |
-| `PORTAL_SMTP_URL`, `PORTAL_MAIL_FROM` | OTP email over any SMTP service; without it codes are only logged |
+| `PORTAL_SMTP_URL`, `PORTAL_MAIL_FROM` | OTP email over any SMTP service; without it codes are only logged. `smtp://` requires STARTTLS except on a loopback host that doesn't offer it (e.g. `testing/mail_sink.py`) |
 | `PORTAL_ZOOM_*`, `PORTAL_AGM_VERIFY_MODE` | see the AGM section of [Applicant portal](Applicant-Portal.md) |
 
 `GET /healthz` is the liveness probe. The container listens on `$PORT`.

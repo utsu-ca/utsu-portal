@@ -23,8 +23,11 @@ class OutboxMailer(Mailer):
 class SMTPMailer(Mailer):
     """Provider-neutral delivery over SMTP (SES, SendGrid, Office 365, Gmail relay, Postfix...).
 
-    Configure with PORTAL_SMTP_URL=smtp[s]://user:pass@host:port and PORTAL_MAIL_FROM.
+    Configure with PORTAL_SMTP_URL=smtp[s]://user:pass@host:port and PORTAL_MAIL_FROM. `smtp://` always upgrades with
+    STARTTLS, except on a loopback host that does not offer it (a local test sink such as testing/mail_sink.py).
     """
+
+    LOOPBACK = {"localhost", "127.0.0.1", "::1"}
 
     def __init__(self, url: str, sender: str) -> None:
         from urllib.parse import unquote, urlsplit
@@ -43,7 +46,9 @@ class SMTPMailer(Mailer):
         msg.set_content(body)
         with (smtplib.SMTP_SSL(self.host, self.port, timeout=20) if self.ssl else smtplib.SMTP(self.host, self.port, timeout=20)) as s:
             if not self.ssl:
-                s.starttls()
+                s.ehlo()
+                if s.has_extn("starttls") or (self.host or "").lower() not in self.LOOPBACK:
+                    s.starttls()
             if self.user:
                 s.login(self.user, self.password)
             s.send_message(msg)
