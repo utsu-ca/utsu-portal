@@ -1,0 +1,11 @@
+Subject: We could not verify your UTSU Senate application
+
+Hi {{ full_name }},
+
+We were unable to match your UTSU Senate application (student number
+{{ id }}) to a University of Toronto student record.
+
+Please check that your name matches your ACORN registration and reply to this
+email so we can correct it.
+
+UTSU Elections Team

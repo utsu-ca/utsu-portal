@@ -1,6 +1,13 @@
+"""Rendering for historical, reply-based program correspondence templates.
+
+These are not the live portal's generic account-notification messages.
+"""
+
 import html
 import re
 from dataclasses import dataclass
+from importlib.resources import files
+from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Mapping
 
@@ -87,21 +94,29 @@ def parse_template(name: str, raw_text: str, raw_html: str | None = None) -> Tem
                     raw_html.lstrip("\ufeff") if raw_html is not None else None)
 
 
-def list_templates(template_dir: Path) -> list[str]:
-    return sorted(p.stem for p in Path(template_dir).glob("*.txt"))
+def _template_directory(template_dir: str | Path | Traversable | None) -> Path | Traversable:
+    if template_dir is not None:
+        return Path(template_dir) if isinstance(template_dir, (str, Path)) else template_dir
+    return files(__package__).joinpath("templates", "historical")
 
 
-def load_template(name: str, template_dir: Path) -> Template:
+def list_templates(template_dir: str | Path | Traversable | None = None) -> list[str]:
+    directory = _template_directory(template_dir)
+    return sorted(p.name[:-4] for p in directory.iterdir() if p.is_file() and p.name.endswith(".txt"))
+
+
+def load_template(name: str, template_dir: str | Path | Traversable | None = None) -> Template:
     """
-    Load `<template_dir>/<name>.txt` (subject header + plain-text body) and, if present,
-    `<template_dir>/<name>.html` as the HTML alternative body.
+    Load a historical `<name>.txt` template from bundled resources or an explicit source-tree
+    directory, and, if present, its `<name>.html` alternative.
     """
     if Path(name).name != name:
         raise TemplateError(f"Invalid template name '{name}'")
-    text_path = Path(template_dir) / f"{name}.txt"
+    directory = _template_directory(template_dir)
+    text_path = directory.joinpath(f"{name}.txt")
     if not text_path.is_file():
-        available = ", ".join(list_templates(template_dir)) or "none"
+        available = ", ".join(list_templates(directory)) or "none"
         raise TemplateError(f"Template '{name}' not found at {text_path} (available: {available})")
-    html_path = text_path.with_suffix(".html")
+    html_path = directory.joinpath(f"{name}.html")
     return parse_template(name, text_path.read_text(encoding="utf-8"),
                           html_path.read_text(encoding="utf-8") if html_path.is_file() else None)

@@ -1,5 +1,5 @@
 """
-Choosing the binding application per person from a full form export.
+Historical CSV/SQLite adapter for choosing the binding application per person from a full form export.
 
 Every run reads the whole export. Google Forms stamps a new timestamp on an edited or re-submitted response, so an
 edit is simply a newer submission: per person (by email, else student number, else name) the newest verified

@@ -4,6 +4,35 @@ The portal is a stateless container configured only through `PORTAL_*` environme
 in `deploy/gcp/deploy.sh`; the application never imports a cloud SDK except the Firestore adapter, which is loaded only
 when `PORTAL_STORE=firestore`.
 
+## Supported entry points
+
+The root [Dockerfile](../Dockerfile) is the one supported image for the portal and authentication service.
+`PORTAL_APP` selects `utsu_core:create_app` (default) or `utsu_core.authsvc:create_auth_app`. Both use the shared
+bootstrap, `/healthz` for liveness, and `/readyz` for readiness. `/docs` is deliberately disabled.
+
+The root [Compose configuration](../docker-compose.yml) runs a single portal application with PostgreSQL and Redis:
+
+```sh
+export PORTAL_SECRET="$(openssl rand -hex 32)"       # save securely and reuse across restarts
+export PORTAL_DB_PASSWORD="$(openssl rand -hex 24)"  # URL-safe; save and reuse for the database volume
+export PORTAL_ADMIN_EMAILS="admin@example.com"
+# Set PORTAL_SMTP_URL and PORTAL_MAIL_FROM to a working TLS SMTP provider before testing sign-in.
+docker compose up --build
+```
+
+Only the portal is published, on `127.0.0.1:8000` by default (`PORTAL_PORT` overrides the host port). PostgreSQL data
+uses a named volume; Redis is transient. This is a local HTTP stack with HSTS disabled, not a production ingress.
+The database password is embedded in a connection URL: use URL-safe characters as generated above.
+
+For a local no-delivery inbox, run the portal natively with `python testing/mail_sink.py` as described in the
+[README](../README.md); the SMTP exception for plaintext sinks applies only to loopback hosts. Inside a container,
+`127.0.0.1` is that container, not the host. Compose does not pretend an unconfigured mail service can deliver codes.
+
+For split authentication, use the [Kustomization](../deploy/k8s/kustomization.yaml). Superseded multi-service
+Docker/Compose/RBAC manifests are retained under [deploy/legacy](../deploy/legacy/) and are not supported entry
+points. The optional mail API is not the portal's configured delivery transport and has no durable automatic worker.
+Optional observability examples are not automatically initialized by the application.
+
 ## Deploy to GCP
 In Google Cloud Shell (billing-enabled project): `./deploy/gcp/deploy.sh`. It is safe to re-run and, like
 [agm-gcp-runbook](https://github.com/utsu-ca/agm-gcp-runbook), it: enables APIs, creates a native-mode Firestore database
@@ -20,7 +49,7 @@ generated once into Secret Manager and mounted as env vars. **Never rotate `PORT
 | `PORTAL_STORE` | `memory`, `sqlite:<path>`, `sql:<url>` (or `sql` + `DATABASE_URL`), `firestore`, or `pkg.module:factory` |
 | `PORTAL_ADMIN_EMAILS` | emails that become admin once verified by OTP |
 | `PORTAL_BASE_URL`, `PORTAL_SSO_KEY` | SSO issuer URL and RSA private key (PEM) |
-| `PORTAL_SMTP_URL`, `PORTAL_MAIL_FROM` | OTP email over any SMTP service; without it codes are only logged. `smtp://` requires STARTTLS except on a loopback host that doesn't offer it (e.g. `testing/mail_sink.py`) |
+| `PORTAL_SMTP_URL`, `PORTAL_MAIL_FROM` | OTP, program notices, and banking re-verification. Without it only recipient and subject are logged, not codes. `smtp://` requires STARTTLS except on a loopback host that doesn't offer it (e.g. `testing/mail_sink.py`) |
 | `PORTAL_ZOOM_*`, `PORTAL_AGM_VERIFY_MODE` | see the AGM section of [Applicant portal](Applicant-Portal.md) |
 
 `GET /healthz` is the liveness probe. The container listens on `$PORT`.
@@ -62,7 +91,7 @@ session-signing key, its own store and audit log (`/api/admin/auth-audit`).
 | Holds accounts / users / scans | yes | **no** (modules that mutate them are not even mounted) |
 | Session token | signs (Ed25519, `PORTAL_AUTH_SIGNING_KEY`) | verifies offline with `PORTAL_AUTH_PUBLIC_KEY` only; cannot mint sessions |
 | Live status/role, name lookups | serves `/internal/*` | calls it (cached 15 s, **fails closed** if unreachable) |
-| Secrets | own `PORTAL_SECRET`, data key, DB, SMTP | own `PORTAL_SECRET`, data key, DB; plus `PORTAL_SERVICE_TOKEN` |
+| Secrets | own `PORTAL_SECRET`, data key, DB, SMTP | own `PORTAL_SECRET`, data key, DB, SMTP; plus `PORTAL_SERVICE_TOKEN` |
 
 `/internal/*` requires `PORTAL_SERVICE_TOKEN` (≥32 chars, constant-time compared; returns 404 otherwise or when unset),
 exposes a minimal projection (no hashes or lookup keys), and must never be routed publicly (see `deploy/k8s`). In a
@@ -71,6 +100,10 @@ Use a short `PORTAL_TOKEN_TTL` (e.g. 900) in split mode. `PORTAL_AUTH_URL` must 
 Route `/api/auth`, `/api/me`, `/api/verification`, `/api/recovery`, `/api/admin/verifications`, `/api/admin/auth-audit` to
 the auth service and everything else to the portal (`deploy/k8s/ingress.yaml`). Rotate signing keys by giving the portal
 two concatenated public PEMs, then switching the auth service key.
+
+Both deployments need their own SMTP configuration: auth sends verification codes, while the portal sends
+program notices and banking re-verification messages. Mount `smtp-url` in each service's separate secret. The portal
+must never receive the auth signing key.
 
 ## Kubernetes
 `kubectl apply -k deploy/k8s` (after creating the secrets from `secret.example.yaml`). Includes: restricted namespace,

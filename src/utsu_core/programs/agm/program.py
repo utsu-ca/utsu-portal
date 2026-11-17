@@ -1,5 +1,5 @@
 """
-Annual General Meeting (AGM) voter RSVP processor.
+Historical Annual General Meeting (AGM) CSV/SQLite voter RSVP processor.
 
 Reads the RSVP form export, keeps each person's newest RSVP, verifies them against uoft_data, records every RSVP in
 the agm_rsvp table, and writes two attendee lists (everyone, and in-person only) plus a separate name-free

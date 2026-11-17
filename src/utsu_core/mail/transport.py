@@ -37,12 +37,13 @@ class SmtpSettings:
     def validate(self):
         if self.security not in SECURITY_MODES:
             raise ValueError(f"smtp security must be one of {SECURITY_MODES}, got '{self.security}'")
-        if not valid_email(self.from_addr):
+        # Preserve the portal mailer's legacy local sender fallback.
+        if self.from_addr != "no-reply@localhost" and not valid_email(self.from_addr):
             raise ValueError(f"Invalid from_addr '{self.from_addr}'")
         if self.reply_to and not valid_email(self.reply_to):
             raise ValueError(f"Invalid reply_to '{self.reply_to}'")
-        if self.username and self.security == "none" and self.host.lower() not in LOCAL_HOSTS:
-            raise ValueError("Refusing to send SMTP credentials over an unencrypted connection to a remote host")
+        if self.security == "none" and self.host.lower() not in LOCAL_HOSTS:
+            raise ValueError("Refusing to send SMTP without TLS to a remote host")
 
 
 def build_message(settings: SmtpSettings, to_addr: str, rendered: RenderedMessage) -> EmailMessage:
@@ -63,11 +64,16 @@ def build_message(settings: SmtpSettings, to_addr: str, rendered: RenderedMessag
 
 
 class SmtpSender:
-    """Context manager around one SMTP session; reconnects once if the server drops the connection."""
+    """Context manager around one SMTP session.
 
-    def __init__(self, settings: SmtpSettings):
+    A disconnected send is not retried: the server may have accepted the message
+    before the connection was lost, so retrying it could deliver a duplicate.
+    """
+
+    def __init__(self, settings: SmtpSettings, loopback_hosts: set[str] | None = None):
         settings.validate()
         self.settings = settings
+        self.loopback_hosts = LOCAL_HOSTS if loopback_hosts is None else loopback_hosts
         self._client: smtplib.SMTP | None = None
 
     def __enter__(self) -> "SmtpSender":
@@ -87,8 +93,11 @@ class SmtpSender:
         try:
             client.ehlo()
             if s.security == "starttls":
-                client.starttls(context=context)
-                client.ehlo()
+                if client.has_extn("starttls"):
+                    client.starttls(context=context)
+                    client.ehlo()
+                elif s.host.lower() not in self.loopback_hosts:
+                    raise smtplib.SMTPNotSupportedError("STARTTLS is required for remote SMTP delivery")
             if s.username:
                 client.login(s.username, s.password)
         except Exception:
@@ -105,11 +114,10 @@ class SmtpSender:
             self._client = None
 
     def send(self, msg: EmailMessage):
-        if self._client is None:  # an earlier reconnect failed
+        if self._client is None:
             self._connect()
         try:
             self._client.send_message(msg)
         except smtplib.SMTPServerDisconnected:
             self._close()
-            self._connect()
-            self._client.send_message(msg)
+            raise

@@ -86,9 +86,17 @@ notice. SMTP must be configured. This is individual messaging, not the historica
 
 ## Code and development
 
-- `src/utsu_core/programs/` contains the AGM, Senate and SABP modules and retained processing logic.
+- `src/utsu_core/app.py` assembles the portal; `bootstrap.py` constructs shared application infrastructure without
+  importing program routers. A module's optional `configure(ctx)` runs before any module's routers are assembled.
+- `src/utsu_core/programs/` contains the AGM, Senate, SABP and clubs modules. Historical CSV/SQLite processors remain
+  available for compatibility but are not loaded by live application assembly.
 - `src/utsu_core/modules/` and `src/utsu_core/services/` contain shared web modules and services.
 - `src/utsu_core/forms/` contains bundled form definitions; `src/utsu_core/static/` contains the web client.
+- `src/utsu_core/mail/transport.py` owns SMTP delivery for both historical tooling and the live `Mailer` interface.
+  Bundled reply-based correspondence lives in `src/utsu_core/mail/templates/historical/` and loads from installed
+  package resources, not the working directory. Live generic notices keep their separate content and confirmation flow.
+- `web/src/features/` groups AGM, clubs, SABP and Senate code and tests. Session, layout, navigation and generic
+  forms remain shared; banking status belongs to SABP and does not block general session startup.
 - `testing/generate_fake_*.py` generates synthetic historical-form and roster data for testing. Run
   `python testing/generate_fake_data.py` or use `--help` for generator options. Generated exports are not direct
   portal-import files; some required portal fields have no historical equivalent.
@@ -96,8 +104,9 @@ notice. SMTP must be configured. This is individual messaging, not the historica
   the portal with `PORTAL_SMTP_URL=smtp://127.0.0.1:1025`, and read sign-in codes and notices at
   `http://127.0.0.1:8025` (JSON at `/messages?to=ADDR`). `--reject REGEX` bounces matching recipients with 550 to
   exercise failure paths; `--help` lists the other options.
-- [Design documents](docs/design/00-overview.md) describe the target architecture and outstanding work; proposed
-  functionality should not be read as implemented.
+- [Architecture implementation plan](docs/design/06-architecture-implementation.md) tracks the approved
+  reorganization, acceptance criteria, verification, and remaining work. Earlier
+  [design documents](docs/design/00-overview.md) are historical proposals, not the current implementation.
 
 Run tests with `python -m pytest` (the `pythonpath` and test folder are set in `pyproject.toml`). Some integration
 tests additionally require Node.js. Install only the extras needed for the deployment; see `pyproject.toml` for

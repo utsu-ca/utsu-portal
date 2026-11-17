@@ -1,5 +1,5 @@
 """
-Senate applications: read the form export, verify every applicant against uoft_data and write verified.csv /
+Historical Senate applications: read the form export, verify every applicant against uoft_data and write verified.csv /
 unverified.csv for the seating. The steps are the shared pipeline's (see utsu_core.pipeline); this module is the
 Senate form's `ProgramSpec` and what is written afterwards.
 """
@@ -12,6 +12,7 @@ from utsu_core.pipeline import Run, ensure_table
 from utsu_core.spec import ProgramSpec
 from utsu_core.std.csv_safe import write_rows
 from utsu_core.std.utils import absfile, application_uuid_for, normalize_uoft_email, student_uuid_for, EMAIL_FLAGS
+from .preferences import PREF_PREFIX
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,6 @@ OUTPUT_FIELDS = ["uuid", "submission_ts", "full_name", "id", "email", "personal_
 RESULT_FIELDS = OUTPUT_FIELDS + ["student_uuid", "uoft_uuid", "verification_level", "match_method", "flags"]
 OPTIONAL_FIELDS = ("id", "full_name")
 IDENTITY_FIELDS = ("full_name",)  # the form needs a name column; the student number is optional and only narrows a match
-PREF_PREFIX = "pref:"
 _PREF_COLUMN = re.compile(r"^\s*Constituency Choice \[(.+)\]\s*$")
 
 

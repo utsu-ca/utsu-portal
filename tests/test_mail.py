@@ -8,9 +8,10 @@ import pytest
 from utsu_core.mail import campaign, transport
 from utsu_core.mail.notices import NAME_FIELD, NUMBER_FIELD, build_notices, diagnose, write_notices
 from utsu_core.mail.recipients import read_csv as read_csv_rows, read_sql, split_by_validity
+from utsu_core.mailer import SMTPMailer
 from utsu_core.resources import package_text, schema_dirs
 from utsu_core.mail.schema import schema_fields
-from utsu_core.mail.templates import Template, TemplateError, load_template, parse_template
+from utsu_core.mail.templates import RenderedMessage, Template, TemplateError, list_templates, load_template, parse_template
 from utsu_core.std.utils import student_uuid_for
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,6 +43,14 @@ def test_bundled_templates_only_use_schema_or_form_fields():
     allowed = {"full_name", "division", "id"}
     for name in ("senate_verified", "senate_unverified"):
         assert load_template(name, ROOT / "templates" / "email").fields <= allowed
+
+
+def test_packaged_historical_templates_load_outside_the_repository(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    template = load_template("senate_more_info")
+    assert "application_uuid" in template.fields
+    assert "Please reply to this email" in template.text
+    assert "senate_more_info" in list_templates()
 
 
 def test_notice_templates_are_tracked_and_use_known_fields():
@@ -88,6 +97,105 @@ def test_review_requires_exact_confirmation():
     assert campaign.review(SETTINGS, ready, [], lambda i: None, lambda _: next(answers), out.append, random.Random(1))
     assert not campaign.review(SETTINGS, ready, [], lambda i: None, lambda _: "n", out.append)
     assert not campaign.review(SETTINGS, ready, [], lambda i: None, lambda _: (_ for _ in ()).throw(EOFError), out.append)
+
+
+def test_shared_smtp_sender_does_not_retry_an_uncertain_send(monkeypatch):
+    class DisconnectingSMTP:
+        sends = 0
+
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def ehlo(self):
+            pass
+
+        def send_message(self, msg):
+            type(self).sends += 1
+            raise transport.smtplib.SMTPServerDisconnected("connection lost after DATA")
+
+        def quit(self):
+            raise transport.smtplib.SMTPServerDisconnected("connection closed")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(transport.smtplib, "SMTP", DisconnectingSMTP)
+    with transport.SmtpSender(SETTINGS) as sender:
+        with pytest.raises(transport.smtplib.SMTPServerDisconnected):
+            sender.send(transport.build_message(SETTINGS, "a@b.ca", RenderedMessage("s", "b")))
+    assert DisconnectingSMTP.sends == 1
+
+
+def test_remote_smtp_without_tls_is_rejected():
+    settings = transport.SmtpSettings(host="smtp.example.com", from_addr="elections@utsu.ca", security="none")
+    with pytest.raises(ValueError, match="without TLS"):
+        settings.validate()
+
+
+def test_smtp_mailer_uses_shared_transport_and_decodes_credentials(monkeypatch):
+    seen = {}
+
+    class FakeSMTP:
+        def __init__(self, host, port, timeout, context):
+            seen.update(host=host, port=port, context=context)
+
+        def ehlo(self):
+            pass
+
+        def login(self, username, password):
+            seen["credentials"] = (username, password)
+
+        def send_message(self, message):
+            seen["message"] = message
+
+        def quit(self):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(transport.smtplib, "SMTP_SSL", FakeSMTP)
+    mailer = SMTPMailer("smtps://us%40er:p%3Ass@smtp.example.com:2465", "elections@utsu.ca")
+    mailer.send("ada@example.com", "Subject", "Body")
+
+    assert seen["credentials"] == ("us@er", "p:ss")
+    assert (seen["host"], seen["port"]) == ("smtp.example.com", 2465)
+    assert seen["message"]["From"] == "elections@utsu.ca"
+    assert seen["message"]["To"] == "ada@example.com"
+    assert seen["message"].get_content() == "Body\n"
+
+
+def test_portal_default_sender_remains_accepted_by_shared_transport():
+    transport.SmtpSettings(host="localhost", from_addr="no-reply@localhost").validate()
+
+
+def test_smtps_uses_verified_tls(monkeypatch):
+    import ssl
+
+    captured = {}
+
+    class FakeSMTP:
+        def __init__(self, host, port, timeout, context):
+            captured["context"] = context
+
+        def ehlo(self):
+            pass
+
+        def send_message(self, msg):
+            pass
+
+        def quit(self):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(transport.smtplib, "SMTP_SSL", FakeSMTP)
+    settings = transport.SmtpSettings(host="smtp.example.com", from_addr="elections@utsu.ca", security="ssl")
+    with transport.SmtpSender(settings) as sender:
+        sender.send(transport.build_message(settings, "a@b.ca", RenderedMessage("s", "b")))
+    assert captured["context"].verify_mode == ssl.CERT_REQUIRED
+    assert captured["context"].check_hostname
 
 
 class FakeSMTP:

@@ -3,6 +3,7 @@
   import Footer from "./components/Footer.svelte";
   import RelatedPanel from "./components/RelatedPanel.svelte";
   import Sidebar from "./components/Sidebar.svelte";
+  import BankingStatus from "./features/sabp/components/BankingStatus.svelte";
   import { currentMenu } from "./lib/appmenu.svelte.js";
   import { start } from "./lib/boot.js";
   import { layout } from "./lib/layout.svelte.js";
@@ -13,7 +14,6 @@
 
   const menu = $derived(currentMenu());
   const loader = $derived(views[nav.name]);
-  const bankingNeedsAction = $derived(session.banking?.status === "reverify_requested" && nav.name !== "banking");
 
   onMount(() => {
     applyMode();
@@ -42,12 +42,7 @@
     {#if session.adminMode}
       <div class="banner-admin" role="status">Admin mode: staff tools are shown. Actions here affect real records.</div>
     {/if}
-    {#if bankingNeedsAction}
-      <div class="banner-action" role="alert">
-        <span>Action needed: we could not verify your banking information.</span>
-        <button class="primary" onclick={() => go("banking")}>Verify banking information</button>
-      </div>
-    {/if}
+    <BankingStatus />
     {#key nav.seq}
       {#if loader}
         {#await loader() then module}

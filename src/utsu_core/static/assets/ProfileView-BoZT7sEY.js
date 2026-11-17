@@ -1,0 +1,1 @@
+import{D as e,E as t,K as n,R as r,S as i,a,q as o}from"./disclose-version-EHZ4dDe7.js";import{a as s}from"./session.svelte-B61wreBZ.js";import c from"./AccountView-CaGvqd5n.js";import l from"./AuthView-DN7ZSaUJ.js";function u(u,d){o(d,!1),a();var f=e(),p=r(f),m=e=>{c(e,{})},h=e=>{l(e,{})};i(p,e=>{s.token&&s.me?e(m):e(h,-1)}),t(u,f),n()}export{u as default};

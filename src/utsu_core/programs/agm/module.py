@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from ...context import Context
 from ...services.exports import csv_response
+from ...services.submissions import SubmissionPolicy, register_submission_policy
 from .verify import has_grant, is_online, rsvp
 
 name = "agm"
@@ -37,6 +38,9 @@ def qr_svg(text: str) -> str | None:
 
 class AgmModule:
     name = name
+
+    def configure(self, ctx: Context) -> None:
+        register_submission_policy(ctx, "agm_rsvp", SubmissionPolicy(require_roster=True))
 
     def router(self, ctx: Context) -> APIRouter:
         r = APIRouter(prefix="/api")

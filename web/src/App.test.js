@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import App from "./App.svelte";
-import { go } from "./lib/nav.svelte.js";
+import { go, nav } from "./lib/nav.svelte.js";
 import { session, setAdminMode } from "./lib/session.svelte.js";
 import { layout } from "./lib/layout.svelte.js";
+import { bankingStatus, clearBankingStatus } from "./features/sabp/state/banking.svelte.js";
 
 vi.mock("./lib/api.js", async importOriginal => ({ ...(await importOriginal()), api: vi.fn() }));
 import { api } from "./lib/api.js";
@@ -24,12 +25,13 @@ const menu = () => screen.getByRole("navigation", { name: "Main" });
 beforeEach(() => {
   sessionStorage.clear();
   localStorage.clear();
+  history.replaceState(null, "", "/");
   layout.collapsed = false;
   layout.mobileOpen = false;
   layout.folded = {};
   session.token = null;
   session.me = null;
-  session.banking = null;
+  clearBankingStatus();
   setAdminMode(false);
   go("home");
 });
@@ -123,6 +125,48 @@ describe("menu behaviour", () => {
 });
 
 describe("signed in", () => {
+  it("keeps the portal usable after a banking failure and offers a working retry", async () => {
+    sessionStorage.setItem("token", "t");
+    session.token = "t";
+    let bankingCalls = 0;
+    api.mockImplementation(async path => {
+      if (path === "/me") return member;
+      if (path === "/sap/banking") {
+        if (++bankingCalls === 1) throw new Error("Banking service unavailable.");
+        return { status: "reverify_requested" };
+      }
+      return {};
+    });
+    render(App);
+    expect(await screen.findByText(/Learn more about the/)).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Banking service unavailable.");
+    expect(screen.getByText("We could not load your banking status. Retry or open banking information.")).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole("button", { name: "Retry banking status" }));
+    expect(await screen.findByText("Action needed: we could not verify your banking information.")).toBeInTheDocument();
+    expect(screen.queryByText("Banking service unavailable.")).not.toBeInTheDocument();
+    await fireEvent.click(screen.getByRole("button", { name: "Verify banking information" }));
+    await waitFor(() => expect(nav.name).toBe("banking"));
+  });
+
+  it("completes the emailed banking route without waiting for the status request", async () => {
+    sessionStorage.setItem("token", "t");
+    session.token = "t";
+    history.replaceState(null, "", "/#sap-banking=tok123");
+    const resolveBanking = [];
+    api.mockImplementation(path => {
+      if (path === "/me") return Promise.resolve(member);
+      if (path === "/sap/banking") return new Promise(resolve => { resolveBanking.push(resolve); });
+      return Promise.resolve({});
+    });
+    render(App);
+    await waitFor(() => expect(resolveBanking.length).toBeGreaterThan(0));
+    expect(resolveBanking).toHaveLength(1);
+    expect(nav.name).toBe("banking");
+    resolveBanking.forEach(resolve => resolve({ status: "reverify_requested", expires_at: 2e9 }));
+    await waitFor(() => expect(bankingStatus.status?.status).toBe("reverify_requested"));
+    expect(await screen.findByText(/Re-enter your details below and upload/)).toBeInTheDocument();
+  });
+
   it("adds the member's buttons under each program, and signs out from the profile group", async () => {
     sessionStorage.setItem("token", "t");
     session.token = "t";
@@ -136,7 +180,28 @@ describe("signed in", () => {
     expect(within(actions).queryByRole("button", { name: "Administer applications" })).not.toBeInTheDocument();
     await fireEvent.click(within(menu()).getByRole("button", { name: "Sign out" }));
     await waitFor(() => expect(session.token).toBeNull());
+    await waitFor(() => expect(bankingStatus.status).toBeNull());
     expect(within(menu()).queryByRole("button", { name: "Account" })).not.toBeInTheDocument();
+  });
+
+  it("does not restore banking state from a response that arrives after sign-out", async () => {
+    sessionStorage.setItem("token", "t");
+    session.token = "t";
+    let resolveBanking;
+    api.mockImplementation(path => {
+      if (path === "/me") return Promise.resolve(member);
+      if (path === "/sap/banking") return new Promise(resolve => { resolveBanking = resolve; });
+      return Promise.resolve({});
+    });
+    render(App);
+    await within(menu()).findByRole("button", { name: "Account" });
+    await waitFor(() => expect(resolveBanking).toBeDefined());
+    await fireEvent.click(within(menu()).getByRole("button", { name: "Sign out" }));
+    await waitFor(() => expect(session.token).toBeNull());
+    expect(bankingStatus.status).toBeNull();
+    resolveBanking({ status: "reverify_requested" });
+    await waitFor(() => expect(bankingStatus.status).toBeNull());
+    expect(screen.queryByText(/Action needed:/)).not.toBeInTheDocument();
   });
 });
 

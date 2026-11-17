@@ -1,10 +1,9 @@
 // Starts a portal session: who is signed in, any pending SSO redirect or emailed banking link, then the first view.
-import { refreshBanking, refreshMe, session } from "./session.svelte.js";
+import { refreshMe, session } from "./session.svelte.js";
 import { go } from "./nav.svelte.js";
 
 export async function start() {
   if (session.token) await refreshMe();
-  if (session.token && session.me) await refreshBanking();
   const next = sessionStorage.getItem("sso_next");
   if (session.token && session.me && next) {
     sessionStorage.removeItem("sso_next");

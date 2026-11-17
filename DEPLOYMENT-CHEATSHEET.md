@@ -1,5 +1,9 @@
 # Deployment Cheatsheet
 
+> Historical commands below target the retired multi-service examples, now under [deploy/legacy](deploy/legacy/).
+> For the supported image, Compose stack, split-auth deployment, secrets, and health checks, use
+> [Deployment](wiki/Deployment.md).
+
 ## Local Development (Docker Compose)
 
 ```bash

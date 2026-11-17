@@ -1,5 +1,10 @@
 # Microservice Architecture Implementation - Complete Index
 
+> Historical design notes, not the current deployment contract. The portal uses account roles, direct SMTP,
+> and an optional separate auth factory; the mail API is not a durable automatic worker. Use
+> [Deployment](wiki/Deployment.md) and the [implementation plan](docs/design/06-architecture-implementation.md).
+> Superseded service-specific manifests and Dockerfiles are under [deploy/legacy](deploy/legacy/).
+
 ## 📋 Executive Summary
 
 This implementation extends the UTSU Portal with:

@@ -1,10 +1,17 @@
 import base64
-
 import pytest
+from types import SimpleNamespace
 from fastapi.testclient import TestClient
+from fastapi import HTTPException
 
 from utsu_core import create_app, formdef
 from utsu_core.mailer import OutboxMailer
+from utsu_core.services.submissions import (
+    SubmissionPolicy,
+    get_submission_policy,
+    register_submission_policy,
+    validate_submission_eligibility,
+)
 from utsu_core.settings import Settings
 
 IMG = "data:image/png;base64," + base64.b64encode(b"\x89PNG fake").decode()
@@ -53,6 +60,17 @@ def activate(c, ah, uh):
     assert c.post(f"/api/admin/verifications/{r.json()['id']}/decision", json={"approve": True}, headers=ah).status_code == 200
 
 
+def test_roster_requirement_is_a_neutral_submission_policy():
+    ctx = SimpleNamespace(services={}, identity=SimpleNamespace(roster_check=lambda _: None))
+    register_submission_policy(ctx, "test_form", SubmissionPolicy(require_roster=True))
+    policy = get_submission_policy(ctx, "test_form")
+
+    with pytest.raises(HTTPException) as exc:
+        validate_submission_eligibility(ctx, policy, {"uuid": "student"})
+    assert exc.value.status_code == 403
+    assert "no roster record" in exc.value.detail
+
+
 def test_user_record_and_lifecycle(env):
     c, mail = env
     ah, uh = setup_admin_and_user(c, mail)
@@ -89,6 +107,9 @@ def test_submission_validation_and_status(env):
     mine = c.get("/api/me/submissions", headers=uh).json()[0]
     assert mine["data"]["accessibility"] == "ab  c" and mine["status"] == "submitted"
     uid = c.get("/api/me", headers=uh).json()["user"]["uuid"]
+    key = f"agm_rsvp:{uid}"
+    c.app.state.ctx.store.update("submissions", key, lambda current: {
+        **current, "sap_review": {"extension": "opaque"}, "sap_previous": [{"extension": "opaque"}]})
     assert c.post(f"/api/admin/submissions/agm_rsvp/{uid}/status", json={"status": "accepted", "note": "ok"}, headers=ah).status_code == 200
     assert c.get("/api/me/submissions", headers=uh).json()[0]["status"] == "accepted"
     assert len(c.get("/api/admin/forms/agm_rsvp/submissions", headers=ah).json()) == 1

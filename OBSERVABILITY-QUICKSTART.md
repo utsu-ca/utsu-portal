@@ -1,5 +1,9 @@
 # Quick Start: Unified Observability, File Handling, and Audit Compliance
 
+> These are optional integration examples, not systems automatically wired into the portal. The current supported
+> application and deployment contract is documented in [Deployment](wiki/Deployment.md); consult the
+> [implementation plan](docs/design/06-architecture-implementation.md) for active architecture work.
+
 This guide walks through setting up the three new production-grade systems.
 
 ## Table of Contents

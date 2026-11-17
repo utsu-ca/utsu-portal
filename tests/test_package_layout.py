@@ -6,6 +6,8 @@ import tomllib
 from importlib import resources
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -17,6 +19,24 @@ def test_batch_modules_do_not_require_portal_dependencies(tmp_path):
          "import utsu_core.programs.agm.program, utsu_core.programs.sap.program, "
          "utsu_core.programs.senate.program, utsu_core.mail, utsu_core.std; "
          "import sys; assert 'fastapi' not in sys.modules"],
+        cwd=tmp_path, env=env, check=True,
+    )
+
+
+@pytest.mark.parametrize(("statement", "forbidden"), [
+    ("from utsu_core.authsvc import create_auth_app",
+     ("utsu_core.app", "utsu_core.programs.")),
+    ("from utsu_core import create_app",
+     ("utsu_core.pipeline", "utsu_core.programs.sap.program", "utsu_core.programs.senate.program",
+      "utsu_core.programs.agm.program")),
+])
+def test_composition_imports_stay_within_their_boundary(tmp_path, statement, forbidden):
+    env = {**os.environ, "PYTHONPATH": str(ROOT / "src")}
+    subprocess.run(
+        [sys.executable, "-c",
+         f"{statement}; import sys; "
+         f"leaked = [name for name in sys.modules if name.startswith({forbidden!r})]; "
+         "assert not leaked, leaked"],
         cwd=tmp_path, env=env, check=True,
     )
 

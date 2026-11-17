@@ -1,0 +1,10 @@
+Subject: Your UTSU Senate application has been verified
+
+Hi {{ full_name }},
+
+Thank you for applying to the UTSU Senate. We have verified your application
+(division: {{ division }}) and will be in touch with next steps.
+
+If anything above looks wrong, reply to this email.
+
+UTSU Elections Team

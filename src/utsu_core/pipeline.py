@@ -1,4 +1,6 @@
 """
+Historical CSV/SQLite processing, not the live portal submission path.
+
 The steps Senate, SABP and AGM share when they process a form export, so that all three behave the same way. What a
 program is (its form, table and rules) is a `ProgramSpec` (spec.py); this runs it.
 

@@ -10,7 +10,7 @@ import hmac
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
-from ..app import build_app
+from ..bootstrap import build_app
 from ..context import Context
 from ..mailer import Mailer, mailer_from_env
 from ..modules.admin import AdminModule
@@ -21,7 +21,6 @@ from ..settings import Settings
 from ..store import Store
 from ..services.account_check import check_account
 from ..services.roster import StoreRoster, match_person
-from .rbac import RBACModule
 
 
 class Lookup(BaseModel):
@@ -101,7 +100,6 @@ def create_auth_app(settings: Settings | None = None, store: Store | None = None
     settings = settings or Settings.from_env()
     if settings.service_token is not None and len(settings.service_token) < 32:
         raise RuntimeError("PORTAL_SERVICE_TOKEN must be at least 32 characters")
-    mods = (AuthModule(), AdminModule(), AuditModule("/api/admin/auth-audit"), RBACModule(), InternalModule())
     if settings.service_token is not None and any(len(t.strip()) < 32 for t in settings.service_token.split(",")):
         raise RuntimeError("PORTAL_SERVICE_TOKEN must be at least 32 characters (comma-separate two while rotating)")
     mods = (AuthModule(), AdminModule(), AuditModule("/api/admin/auth-audit"), RolesModule(), InternalModule())

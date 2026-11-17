@@ -4,7 +4,7 @@
   import { findNode } from "../lib/menu.js";
   import { currentMenu } from "../lib/appmenu.svelte.js";
   import { session } from "../lib/session.svelte.js";
-  import SenatePublicView from "./SenatePublicView.svelte";
+  import SenatePublicView from "../features/senate/views/SenatePublicView.svelte";
 
   // A program's public page. Signing in adds buttons for what the program lets you do; staff tools appear in admin mode.
   let { program } = $props();

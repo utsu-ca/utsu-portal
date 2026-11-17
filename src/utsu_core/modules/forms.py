@@ -10,12 +10,10 @@ from pydantic import BaseModel, Field
 
 from .. import formdef
 from ..context import Context
-from ..programs.sap.terms import normalized_terms
+from ..services.submissions import get_submission_policy, validate_submission_eligibility
 
 name = "forms"
 STATUSES = ("submitted", "under_review", "needs_info", "accepted", "rejected")
-# forms only open to people the student roster confirms, so no ineligible submission is ever stored
-ROSTER_GATED = ("senate_application", "agm_rsvp")
 
 
 class DraftIn(BaseModel):
@@ -53,13 +51,6 @@ class FormsModule:
                 raise HTTPException(404, "form not published")
             return S.get("form_versions", f"{fid}@{f['published_version']}")
 
-        def require_student_status(acct: dict) -> None:
-            check = ctx.identity.roster_check(acct["uuid"])
-            if not check or not check.get("rostered"):
-                reason = (check or {}).get("reason") or "no roster record"
-                raise HTTPException(403, f"We could not verify your student status ({reason}). Check the name and "
-                                         f"student number on your account, then submit again.")
-
         # ---------- public / applicant ----------
         @r.get("/forms")
         def list_forms():
@@ -83,8 +74,8 @@ class FormsModule:
         @r.put("/forms/{fid}/submission")
         def submit(fid: str, b: SubmitIn, acct: dict = verified):
             v = published(fid)
-            if fid in ROSTER_GATED:
-                require_student_status(acct)
+            policy = get_submission_policy(ctx, fid)
+            validate_submission_eligibility(ctx, policy, acct)
             if (b.version, b.hash) != (v["version"], v["hash"]):
                 raise HTTPException(409, {"error": "form changed; reload", "version": v["version"], "hash": v["hash"]})
             try:
@@ -94,37 +85,21 @@ class FormsModule:
             key = f"{fid}:{acct['uuid']}"
             seen = {}
 
-            def save(prev):  # a decision made while the applicant was editing wins: the lock re-checks finality
-                previous = (prev or {}).get("sap_previous", []) if fid == "student_aid_bursary" else []
-                new_application = False
-                if fid == "student_aid_bursary":
-                    completed = list(previous)
-                    if prev and prev.get("sap_review", {}).get("decision"):
-                        completed.append(prev)
-                    try:
-                        requested_terms = normalized_terms(data)
-                        overlapping = any(requested_terms.intersection(
-                            normalized_terms(item.get("data") if isinstance(item, dict) else None))
-                            for item in completed)
-                    except ValueError as exc:
-                        raise HTTPException(409, str(exc)) from exc
-                    if overlapping:
-                        raise HTTPException(409, "a completed student aid application already covers a requested term")
-                    if prev and prev.get("sap_review", {}).get("decision"):
-                        previous = [*previous, {k: value for k, value in prev.items()
-                                                if k not in ("sap_previous", "_rev")}]
-                        new_application = True
-                if prev and not new_application:
-                    if prev["status"] in ("accepted", "rejected"):
-                        raise HTTPException(409, "submission is final")
-                    if prev.get("sap_review"):
-                        raise HTTPException(409, "student aid application is under review")
-                seen["prev"] = prev
-                hist = ([] if new_application else (prev or {}).get("history", [])) + [
+            def save(prev):
+                history = (prev or {}).get("history", []) + [
                     {"at": ctx.now(), "status": "submitted", "note": ""}]
-                return {"id": key, "form_id": fid, "uuid": acct["uuid"], "version": v["version"], "hash": v["hash"],
-                        "data": data, "status": "submitted", "updated_at": ctx.now(), "history": hist,
-                        **({"sap_previous": previous} if previous else {})}
+                candidate = {
+                    "id": key, "form_id": fid, "uuid": acct["uuid"], "version": v["version"], "hash": v["hash"],
+                    "data": data, "status": "submitted", "updated_at": ctx.now(), "history": history,
+                }
+                if policy is not None and policy.save is not None:
+                    result = policy.save(prev, candidate)
+                else:
+                    if prev and prev.get("status") in ("accepted", "rejected"):
+                        raise HTTPException(409, "submission is final")
+                    result = candidate
+                seen["prev"] = prev
+                return result
 
             doc = S.update("submissions", key, save)
             prev, hist = seen["prev"], doc["history"]
@@ -256,13 +231,14 @@ class FormsModule:
         def set_status(fid: str, uid: str, b: StatusIn, a: dict = admin):
             if b.status not in STATUSES:
                 raise HTTPException(422, f"status must be one of {STATUSES}")
+            policy = get_submission_policy(ctx, fid)
             seen = {}
 
             def setstatus(s):
                 if not s:
                     raise HTTPException(404, "no such submission")
-                if s.get("sap_review"):
-                    raise HTTPException(409, "use the student aid decision workflow for this submission")
+                if policy is not None and policy.validate_status_change is not None:
+                    policy.validate_status_change(s)
                 seen["old"] = s["status"]
                 s["history"].append({"at": ctx.now(), "status": b.status, "note": b.note[:500]})
                 return {**s, "status": b.status, "updated_at": ctx.now()}

@@ -19,6 +19,20 @@ from utsu_core.settings import Settings  # noqa: E402
 REDIR = "https://zoom.example/sso/cb"
 
 
+def test_agm_client_registration_does_not_depend_on_router_order():
+    from utsu_core.bootstrap import build_app
+    from utsu_core.modules.sso import SSOModule
+    from utsu_core.programs.agm.module import AgmModule
+
+    app = build_app(
+        Settings(secret="s" * 32, zoom_client_secret="zsecret", zoom_redirect_uris=(REDIR,)),
+        None, OutboxMailer(), (AgmModule(), SSOModule()), seed=False, ui=False,
+    )
+    client = app.state.ctx.services["sso"].clients["zoom"]
+    assert client.redirect_uris == (REDIR,)
+    assert client.eligibility({"uuid": "not-rostered"}, {}) == "not on the student roster"
+
+
 @pytest.fixture
 def env():
     mail = OutboxMailer()

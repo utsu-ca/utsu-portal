@@ -164,8 +164,12 @@ class AuthorizeIn(BaseModel):
 class SSOModule:
     name = name
 
+    def configure(self, ctx: Context) -> None:
+        if "sso" not in ctx.services:
+            ctx.services["sso"] = SSOProvider(ctx)
+
     def router(self, ctx: Context) -> APIRouter:
-        provider = ctx.services.setdefault("sso", SSOProvider(ctx))
+        provider = ctx.services["sso"]
         r = APIRouter()
         verified = ctx.require_verified()
 

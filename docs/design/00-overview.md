@@ -1,5 +1,9 @@
 # UTSU Portal: conversion overview and plan
 
+For the approved current reorganization and implementation status, see
+[06 Architecture implementation](06-architecture-implementation.md). That plan supersedes conflicting structure
+and frontend assumptions below; the current client is Svelte.
+
 Status: proposed; namespace consolidation is complete, but the live program workflows and retirement of the batch
 tools described below are not complete. Audience: maintainers. Companion documents: [01 Shared services](01-shared-services.md),
 [02 Senate](02-senate.md), [03 SAP](03-sap.md), [04 AGM](04-agm.md), [05 Migration and removal](05-migration.md).

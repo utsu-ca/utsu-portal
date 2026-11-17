@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from ...context import Context
 from ...services.exports import csv_response
+from ...services.submissions import SubmissionPolicy, register_submission_policy
 from .seating import FACULTY, assign_seats, tier_index
 
 PREFERENCES = {
@@ -98,6 +99,9 @@ def application_view(ctx: Context, submission: dict) -> dict:
 
 class SenateModule:
     name = "senate"
+
+    def configure(self, ctx: Context) -> None:
+        register_submission_policy(ctx, "senate_application", SubmissionPolicy(require_roster=True))
 
     def router(self, ctx: Context) -> APIRouter:
         router = APIRouter(prefix="/api")

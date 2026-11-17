@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import logging
 
+from .mail.templates import RenderedMessage
+from .mail.transport import LOCAL_HOSTS, SmtpSender, SmtpSettings, build_message
+
 log = logging.getLogger("utsu_core.mail")
 
 
 class Mailer:
-    """Override `send` to deliver real mail (e.g. via utsu_core.mail.transport)."""
+    """Mail delivery interface. Override `send` to deliver mail; the base is a logging stub."""
 
     def send(self, to: str, subject: str, body: str) -> None:
         log.info("mail to %s: %s", to, subject)
@@ -16,42 +19,45 @@ class OutboxMailer(Mailer):
     def __init__(self) -> None:
         self.outbox: list[tuple[str, str, str]] = []
 
-    def send(self, to, subject, body):
+    def send(self, to: str, subject: str, body: str) -> None:
         self.outbox.append((to, subject, body))
 
 
 class SMTPMailer(Mailer):
     """Provider-neutral delivery over SMTP (SES, SendGrid, Office 365, Gmail relay, Postfix...).
 
-    Configure with PORTAL_SMTP_URL=smtp[s]://user:pass@host:port and PORTAL_MAIL_FROM. `smtp://` always upgrades with
-    STARTTLS, except on a loopback host that does not offer it (a local test sink such as testing/mail_sink.py).
+    Configure with PORTAL_SMTP_URL=smtp[s]://user:pass@host:port and PORTAL_MAIL_FROM.
+    `smtp://` requires STARTTLS for remote hosts; a loopback host may use plaintext only
+    when it does not advertise STARTTLS. `smtps://` uses verified TLS.
     """
 
-    LOOPBACK = {"localhost", "127.0.0.1", "::1"}
+    LOOPBACK = LOCAL_HOSTS
 
     def __init__(self, url: str, sender: str) -> None:
         from urllib.parse import unquote, urlsplit
 
         u = urlsplit(url)
+        if u.scheme not in {"smtp", "smtps"}:
+            raise ValueError("SMTP URL scheme must be 'smtp' or 'smtps'")
+        if not u.hostname:
+            raise ValueError("SMTP URL must include a host")
         self.ssl, self.host = u.scheme == "smtps", u.hostname
         self.port = u.port or (465 if self.ssl else 587)
         self.user, self.password, self.sender = unquote(u.username or ""), unquote(u.password or ""), sender
+        self.settings = SmtpSettings(
+            host=self.host,
+            from_addr=sender,
+            port=self.port,
+            security="ssl" if self.ssl else "starttls",
+            username=self.user,
+            password=self.password,
+            timeout=20.0,
+        )
 
     def send(self, to: str, subject: str, body: str) -> None:
-        import smtplib
-        from email.message import EmailMessage
-
-        msg = EmailMessage()
-        msg["From"], msg["To"], msg["Subject"] = self.sender, to, subject
-        msg.set_content(body)
-        with (smtplib.SMTP_SSL(self.host, self.port, timeout=20) if self.ssl else smtplib.SMTP(self.host, self.port, timeout=20)) as s:
-            if not self.ssl:
-                s.ehlo()
-                if s.has_extn("starttls") or (self.host or "").lower() not in self.LOOPBACK:
-                    s.starttls()
-            if self.user:
-                s.login(self.user, self.password)
-            s.send_message(msg)
+        msg = build_message(self.settings, to, RenderedMessage(subject, body))
+        with SmtpSender(self.settings, loopback_hosts=self.LOOPBACK) as sender:
+            sender.send(msg)
 
 
 def mailer_from_env() -> Mailer:

@@ -1,34 +1,28 @@
-"""Standalone email microservice: `uvicorn --factory utsu_core.mailsvc:create_mail_app`.
+"""Optional HTTP email API: `uvicorn --factory utsu_core.mailsvc:create_mail_app`.
 
-Handles all email operations independently:
-- Queue and send emails asynchronously
-- Template rendering with context variables
-- Retry logic with exponential backoff
-- Rate limiting per recipient
-- Delivery status tracking
-- Integration with external SMTP providers or queuing systems
-
-Communication:
-- Portal/AuthSvc call this service via HTTP to queue emails
-- Service token authentication (same pattern as auth svc)
-- gRPC alternative available for high-volume scenarios
+This service records requests and can dispatch high-priority messages once through
+an in-process background task. It has no durable worker, automatic retry, delivery
+guarantee, or rate limiter. Messages left pending require an explicit dispatch.
+The existing DEFERRED state means claimed/in progress, or unresolved if interrupted.
+FAILED may also mean delivery is uncertain; check the provider before creating a
+replacement message. Only an unattempted PENDING request may be dispatched.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
 from typing import Optional
-from pydantic import BaseModel, EmailStr
 import hmac
 import logging
 
 from fastapi import APIRouter, HTTPException, Header, BackgroundTasks
+from pydantic import BaseModel, EmailStr
 from sqlalchemy import Column, String, Integer, DateTime, Enum as SQLEnum, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-from ..app import build_app
+from ..bootstrap import build_app
 from ..context import Context
-from ..mailer import Mailer, mailer_from_env, SMTPMailer
+from ..mailer import Mailer, mailer_from_env
 from ..settings import Settings
 from ..store import Store
 
@@ -38,7 +32,7 @@ Base = declarative_base()
 
 
 class EmailStatus(str, Enum):
-    """Status of an email in the queue."""
+    """Existing stored states; DEFERRED and FAILED must not be automatically retried."""
     PENDING = "pending"
     SENT = "sent"
     FAILED = "failed"
@@ -92,7 +86,7 @@ class EmailStatusResponse(BaseModel):
 
 
 class MailModule:
-    """Email queueing, sending, and status tracking."""
+    """Best-effort request ledger with optional one-shot dispatch."""
     
     name = "mail"
 
@@ -114,8 +108,8 @@ class MailModule:
                 raise HTTPException(status_code=403, detail="Invalid service token")
 
         def render_template(template_id: str, variables: dict) -> tuple[str, str]:
-            """Render email template with variables. Extensible for template engine integration."""
-            # This is a simple stub; integrate Jinja2, mako, or similar as needed
+            """Render live portal account notifications, separate from historical mail templates."""
+            # These live generic messages are not substitutes for historical reply-based correspondence.
             templates = {
                 "welcome": {
                     "subject": "Welcome {first_name}",
@@ -154,26 +148,25 @@ class MailModule:
                     subject, body = render_template(req.template_id, req.template_vars)
                 else:
                     subject, body = req.subject, req.body
-                
+
+                status = EmailStatus.DEFERRED if req.priority >= 10 else EmailStatus.PENDING
                 record = EmailRecord(
                     id=email_id,
                     recipient=req.to,
                     subject=subject,
                     body=body,
-                    status=EmailStatus.PENDING,
+                    status=status,
                 )
                 session.add(record)
                 session.commit()
                 
-                # Schedule sending based on priority
-                if req.priority >= 10:
-                    # High priority: send immediately
+                if status == EmailStatus.DEFERRED:
                     background_tasks.add_task(self._send_email, email_id)
                 
                 log.info(f"Queued email {email_id} to {req.to}")
                 return EmailResponse(
                     email_id=email_id,
-                    status=EmailStatus.PENDING,
+                    status=status,
                     scheduled_at=datetime.utcnow()
                 )
             finally:
@@ -205,7 +198,7 @@ class MailModule:
 
         @r.post("/retry/{email_id}")
         def retry_email(email_id: str, background_tasks: BackgroundTasks, authorization: str | None = Header(None)):
-            """Manually retry a failed email."""
+            """Dispatch an unattempted pending email; never retry an uncertain delivery."""
             guard(authorization)
             
             session = self.Session()
@@ -216,12 +209,23 @@ class MailModule:
                 
                 if record.status == EmailStatus.SENT:
                     raise HTTPException(status_code=409, detail="Email already sent")
-                
-                record.status = EmailStatus.PENDING
+
+                if record.status != EmailStatus.PENDING or record.attempt_count:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Only unattempted pending emails can be dispatched; deferred or failed delivery "
+                               "may be unresolved. Verify the provider outcome before sending a replacement",
+                    )
+
+                claimed = session.query(EmailRecord).filter_by(
+                    id=email_id, status=EmailStatus.PENDING, attempt_count=0
+                ).update({EmailRecord.status: EmailStatus.DEFERRED}, synchronize_session=False)
                 session.commit()
+                if not claimed:
+                    raise HTTPException(status_code=409, detail="Email is already being dispatched")
                 background_tasks.add_task(self._send_email, email_id)
                 
-                return {"message": "Retrying email", "email_id": email_id}
+                return {"message": "Dispatching email", "email_id": email_id}
             finally:
                 session.close()
 
@@ -233,7 +237,7 @@ class MailModule:
             session = self.Session()
             try:
                 records = session.query(EmailRecord).filter(
-                    EmailRecord.status.in_([EmailStatus.PENDING, EmailStatus.DEFERRED])
+                    EmailRecord.status == EmailStatus.PENDING
                 ).order_by(EmailRecord.created_at).limit(limit).all()
                 
                 return {
@@ -254,32 +258,40 @@ class MailModule:
 
         return r
 
-    def _send_email(self, email_id: str, max_retries: int = 3):
-        """Internal: send an email with retry logic."""
+    def _send_email(self, email_id: str):
+        """Dispatch a claimed message once and preserve uncertain outcomes."""
         session = self.Session()
         try:
             record = session.query(EmailRecord).filter_by(id=email_id).first()
             if not record:
                 log.error(f"Email {email_id} not found")
                 return
-            
+
+            if record.status != EmailStatus.DEFERRED or record.attempt_count:
+                return
+
+            if type(self.mailer).send is Mailer.send:
+                record.status = EmailStatus.FAILED
+                record.last_error = "Email delivery is not configured"
+                session.commit()
+                return
+
+            claimed = session.query(EmailRecord).filter_by(
+                id=email_id, status=EmailStatus.DEFERRED, attempt_count=0
+            ).update({EmailRecord.attempt_count: EmailRecord.attempt_count + 1}, synchronize_session=False)
+            session.commit()
+            if not claimed:
+                return
             try:
                 self.mailer.send(record.recipient, record.subject, record.body)
                 record.status = EmailStatus.SENT
                 record.sent_at = datetime.utcnow()
                 log.info(f"Sent email {email_id} to {record.recipient}")
             except Exception as e:
-                record.attempt_count += 1
-                record.last_error = str(e)
-                
-                if record.attempt_count >= max_retries:
-                    record.status = EmailStatus.FAILED
-                    log.error(f"Email {email_id} failed after {max_retries} attempts: {e}")
-                else:
-                    # Exponential backoff: 2^attempt minutes
-                    record.status = EmailStatus.DEFERRED
-                    log.warning(f"Email {email_id} attempt {record.attempt_count} failed: {e}")
-            
+                record.status = EmailStatus.FAILED
+                record.last_error = f"Delivery outcome is unknown; verify provider before sending a replacement: {e}"[:512]
+                log.warning(f"Email {email_id} delivery outcome is unknown: {e}")
+
             session.commit()
         finally:
             session.close()
@@ -291,5 +303,6 @@ def create_mail_app(settings: Settings | None = None, store: Store | None = None
     if settings.service_token is not None and len(settings.service_token) < 32:
         raise RuntimeError("PORTAL_SERVICE_TOKEN must be at least 32 characters")
     
-    mods = (MailModule(mailer or mailer_from_env()),)
-    return build_app(settings, store, mailer or mailer_from_env(), mods, seed=False, ui=False)
+    active_mailer = mailer or mailer_from_env()
+    mods = (MailModule(active_mailer),)
+    return build_app(settings, store, active_mailer, mods, seed=False, ui=False)

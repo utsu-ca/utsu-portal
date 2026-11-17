@@ -1,74 +1,23 @@
+"""Historical SQLite roster adapter; canonical normalization and fuzzy-name helpers live in services."""
 import csv
 import logging
-import re
 import sqlite3
 from dataclasses import dataclass, replace
-from difflib import SequenceMatcher
 from pathlib import Path
 
 from utsu_core.std.csv_safe import open_csv
-from utsu_core.std.parsing_utils import division_code, get_trunc_id
-from utsu_core.std.utils import UOFT_MAIL_DOMAIN, clean_text, normalize_case
+from utsu_core.services.roster import (
+    FUZZY_FLAG, FUZZY_THRESHOLD, MAX_CANDIDATES, METHOD_FUZZY_NAME, METHOD_NAME,
+    division_of, first_name_similarity, is_uoft_email,
+)
+from utsu_core.std.parsing_utils import get_trunc_id
+from utsu_core.std.utils import clean_text, normalize_case
 
 logger = logging.getLogger(__name__)
 
 
-def is_uoft_email(email: str) -> bool:
-    """
-    Whether an address is a UofT student email: only `@mail.utoronto.ca` counts (case and surrounding spaces are
-    ignored). A blank address, another domain (even `@utoronto.ca`) or text that is not an address does not.
-
-    >>> [is_uoft_email(v) for v in ("ann.lee@mail.utoronto.ca", " Ann@MAIL.UTORONTO.CA ", "ann@utoronto.ca",
-    ...                             "ann@gmail.com", "", None, "@mail.utoronto.ca", "a b@mail.utoronto.ca")]
-    [True, True, False, False, False, False, False, False]
-    """
-    local, _, domain = (email or "").strip().lower().rpartition("@")
-    return bool(local) and domain == UOFT_MAIL_DOMAIN and not re.search(r"[\s@]", local)
-
-
-METHOD_NAME = "name only"
-METHOD_FUZZY_NAME = "fuzzy name"
-FUZZY_FLAG = "fuzzy_name_match"
 _CHUNK = 300
 _SQL_VARIABLES = 500
-MAX_CANDIDATES = 3
-# how alike two first names have to be (0 to 1, `difflib` ratio) to be taken as the same name
-FUZZY_THRESHOLD = 0.85
-
-
-def _name_parts(first_name: str) -> list[str]:
-    return [part for part in re.split(r"[\s-]+", first_name.lower()) if part]
-
-
-def _part_similarity(a: str, b: str) -> float:
-    if len(a) == 1 or len(b) == 1:  # an initial stands for the whole name
-        return 1.0 if a[0] == b[0] else 0.0
-    return SequenceMatcher(None, a, b).ratio()
-
-
-def first_name_similarity(given: str, roster: str) -> float:
-    """
-    How alike a first name written on a form and a roster first name are, from 0 to 1; 0 when they are not the same
-    name (below `FUZZY_THRESHOLD`). Students often leave out their middle names, so the first names only have to
-    agree on their first part (allowing a small typo); when both have more parts, each part of the shorter name
-    must be found, as a whole or as an initial, in the longer one. The score is that of the weakest part compared.
-
-    >>> [first_name_similarity(*n) for n in (("Ann", "Ann Marie"), ("Ann Marie", "Ann"), ("Ann M", "Ann Marie"))]
-    [1.0, 1.0, 1.0]
-    >>> round(first_name_similarity("Jon", "John"), 2), first_name_similarity("Mary-Jane", "Mary Jane")
-    (0.86, 1.0)
-    >>> [first_name_similarity(*n) for n in (("Ann Lynn", "Ann Marie"), ("Bo", "Ann"), ("", "Ann"))]
-    [0.0, 0.0, 0.0]
-    """
-    a, b = _name_parts(given), _name_parts(roster)
-    if not a or not b:
-        return 0.0
-    shorter, longer = sorted((a[1:], b[1:]), key=len)
-    scores = [_part_similarity(a[0], b[0])]
-    for part in shorter:
-        scores.append(max(_part_similarity(part, other) for other in longer) if longer else 0.0)
-    score = min(scores)
-    return round(score, 2) if score >= FUZZY_THRESHOLD else 0.0
 
 
 @dataclass(frozen=True)
@@ -103,16 +52,6 @@ class Match:
     def fuzzy_flag(self) -> str:
         """The review flag for a fuzzy verification, `fuzzy_name_match=0.86`; empty for any other outcome."""
         return f"{FUZZY_FLAG}={self.similarity:.2f}" if self.verified and self.similarity is not None else ""
-
-
-def division_of(text: str) -> str:
-    """
-    The division code of a form or roster value: `UC - University College` is `UC`.
-
-    >>> division_of(" uc - University College "), division_of(""), division_of(None)
-    ('UC', '', '')
-    """
-    return division_code(clean_text(text))
 
 
 def decide(name: str, number: str, division: str, by_name: list[tuple[str, int, str]],

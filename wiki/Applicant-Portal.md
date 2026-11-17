@@ -53,7 +53,16 @@ A module is an object with `name` and `router(ctx)`; pass it via `create_app(ext
 the store, settings, mailer (`utsu_core.mailer.Mailer`, override `send` for real mail), event bus and auth
 dependencies (`require_user`, `require_verified`, `require_admin`).
 
-## Clubs (`modules/clubs.py`)
+An optional `configure(ctx)` hook runs for every module before any router is assembled. Register shared services
+and program-owned form policies there; router order must not decide whether a dependency is available. The shared
+bootstrap is separate from the portal, auth and optional mail composition roots.
+
+Use `services.submissions.register_submission_policy` with a `SubmissionPolicy` for program-specific submission
+rules. AGM and Senate register roster requirements; SABP owns its application rollover and review-lock checks.
+`save(previous, candidate)` and `validate_status_change(current)` run inside the atomic submission update and must
+be side-effect free because optimistic retries may call them again. Register each form's policy only once.
+
+## Clubs (`programs/clubs/module.py`)
 - **Registration:** a verified user registers a club (`POST /api/clubs`, unique name) and becomes its owner, who can add
   `treasurer`/`executive` members. Admins approve via `POST /api/admin/clubs/{id}/decision`; it needs
   `club_registration_approvals` (default 2) **distinct** admins, and any rejection is final. Admins who belong to a club
@@ -91,5 +100,9 @@ dependencies (`require_user`, `require_verified`, `require_admin`).
 - **Admin mode.** Staff (anyone with a role) get an "Enter admin mode" button at the bottom of the sidebar. Only in that mode do staff tools appear (SABP review and admin, finance portal, Senate seating, club reviews, form editor, identity checks, roles, roster), and the page switches to the admin colours. It is a client-side convenience: the server still checks the role on every request.
 - **Branding and theme.** `theme.json` and the logos live in `src/utsu_core/branding/` and are served at `/branding`, uncached, so edits show on the next page load without rebuilding. To use your own, point `PORTAL_BRANDING_DIR` at a folder with the same layout. `theme.json` sets `name`, `logo`, `favicon`, `colors.user` (`accent`, `accentHover`, `chrome`, `page`), `colors.admin` (`accent`, `accentHover`, `chrome`) and `copyright` (`holder`, `startYear`). Colours must be hex values and files bare names; anything else is ignored. Every page ends with a copyright line built from it.
 - **Loading.** Every view is a separate lazily loaded chunk with a hashed file name, so a program's code is downloaded when it is first opened and cached independently of the others.
+- **Feature ownership.** Program views, components, state and tests live under `web/src/features/{agm,clubs,sabp,senate}/`.
+  Authentication/session, navigation, layout, branding and generic form rendering remain shared. SABP owns banking
+  status and loads it independently rather than delaying session startup; emailed re-verification links and the
+  action-needed prompt retain their existing workflow.
 - The front end is a Svelte 5 app in `web/` (Vite, Tailwind CSS v4, Vitest). It is built into `src/utsu_core/static` and the build is **committed**, so `pip install` and the Docker image need no Node. Pages: `index.html` (the portal), `checkin.html`, `finance.html` (the financial controller's banking portal) and `sso.html`. After changing anything under `web/`, run `npm install` once, then `npm test` and `npm run build` in `web/`, and commit the result. The CSP forbids CDNs, inline scripts and inline styles; the build emits only same-origin module scripts and a stylesheet. Components: `.card`, `button.primary|secondary|danger`, `.err`, `.ok`, `.badge`, `.row`, `.banner-ok|warn` (check-in result), `.banner-action` (action needed), `.banner-admin`.
 - The front end stays same-origin with the API, which keeps the token/CSP/SSO model simple.

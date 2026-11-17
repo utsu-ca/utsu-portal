@@ -1,5 +1,5 @@
 """
-Student Aid Bursary Program (SABP) application processor.
+Historical Student Aid Bursary Program (SABP) CSV/SQLite application processor.
 
 Stage 1-3 of the SOP: read the form export, keep each student's newest application, verify them against
 uoft_data, score the Weighted Financial Need Index (WFNI), record every application in the student_aid table, and
@@ -11,7 +11,6 @@ import logging
 import math
 import re
 import sqlite3
-import unicodedata
 import zipfile
 from xml.etree import ElementTree
 from datetime import datetime
@@ -24,6 +23,7 @@ from utsu_core.programs.sap.wfni import compute_wfni, current_weights
 from utsu_core.std.csv_safe import SafeDictWriter, open_csv, write_rows
 from utsu_core.std.utils import absfile, application_uuid_for, clean_text, normalize_case, normalize_uoft_email, student_uuid_for, EMAIL_FLAGS
 from utsu_core.std.parsing_utils import get_trunc_id, split_multi
+from .redaction import redact
 
 logger = logging.getLogger(__name__)
 
@@ -63,36 +63,6 @@ def parse_amount(value: str, allow_zero: bool = False) -> float | None:
     except ValueError:
         return None
     return amount if math.isfinite(amount) and (amount > 0 or (allow_zero and amount == 0)) else None
-
-
-def redact(text: str, names: list[str] = ()) -> str:
-    """
-    Remove contact details, student numbers, postal codes, links and the applicant's own name from free text.
-    A name is found however it is spelled (`Jos\u00e9` is the name `Jose`), and short names such as `Li` count too.
-
-    >>> redact("Hi, I'm Ann Lee (ann@mail.utoronto.ca, 416-555-0100, 1001231617). See https://x.co/a", ["Ann", "Lee"])
-    "Hi, I'm [name] [name] ([email], [phone], [student number]). See [link]"
-    >>> redact("Li and Jos\\u00e9 O'Neil-Wu agree", ["Li Wu", "Jose O'Neil"])
-    "[name] and [name] O'[name]-[name] agree"
-    """
-    text = unicodedata.normalize("NFC", text or "")
-    text = re.sub(r"https?://\S+", "[link]", text)
-    text = re.sub(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+", "[email]", text)
-    text = re.sub(r"(?<!\d)\d{7,10}(?!\d)", "[student number]", text)
-    text = re.sub(r"(?<!\d)(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}(?!\d)", "[phone]", text)
-    text = re.sub(r"\b[A-Za-z]\d[A-Za-z][\s-]?\d[A-Za-z]\d\b", "[postal code]", text)
-    def normalize_name(word):
-        return "".join(char for char in unicodedata.normalize("NFKD", word.casefold())
-                       if not unicodedata.category(char).startswith("M"))
-
-    words = {normalize_name(w) for part in names for w in re.findall(r"\w+", unicodedata.normalize("NFC", part))}
-    placeholders = {"[name]", "[email]", "[student number]", "[phone]", "[postal code]", "[link]"}
-
-    def replace_name(match):
-        word = match.group(0)
-        return "[name]" if word not in placeholders and normalize_name(word) in words else word
-
-    return re.sub(r"\[(?:name|email|student number|phone|postal code|link)\]|\w+", replace_name, text)
 
 
 def sap_uuid(app: dict[str, str]) -> str:
