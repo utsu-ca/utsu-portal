@@ -1,11 +1,11 @@
 // The portal's navigation, built from who is signed in. Everything public is always listed; signing in (and, for
 // staff, holding a role) adds the buttons that expose a program's extra functions beneath it.
 //
-// A node is {id, label, view?, props?, href?, action?, items?, program?}:
+// A node is {id, label, view?, props?, href?, action?, items?, program?, relatedViews?}:
 //   view/props open a portal view, href leaves for another page, action runs a named command ("signOut"),
-//   items are children, and program names the public page whose "Your actions" card lists those children.
+//   items are children, program names the public page, and relatedViews associates record detail views with a category.
 
-export function buildMenu({ signedIn = false, verified = false, has = () => false } = {}) {
+export function buildMenu({ signedIn = false, verified = false, has = () => false, enabled = () => false } = {}) {
   const user = (cond, node) => (cond ? [node] : []);
   const apply = (id, label, form) => ({ id, label, view: "form", props: { id: form } });
 
@@ -42,6 +42,14 @@ export function buildMenu({ signedIn = false, verified = false, has = () => fals
     ...user(has("admin"), { id: "admin-roles", label: "Roles", view: "adminRoles" }),
     ...user(has("admin"), { id: "admin-roster", label: "Student roster", view: "adminRoster" }),
   ];
+  // Discussion and voting are opt-in plug-ins; they are listed only where the deployment runs them.
+  const discussionActions = [
+    ...user(enabled("voting") && has("elections_admin"), { id: "elections-admin", label: "Ballots and polls", view: "electionsAdmin" }),
+  ];
+  const discussions = enabled("discussion") && verified
+    ? [{ id: "discussions", label: "Discussions", icon: "\u{1F4AC}", view: "discussions",
+      relatedViews: ["discussionBoard", "discussionTopic", "ballot"], items: discussionActions }]
+    : [];
 
   const page = (id, label, program, items = [], icon) => ({ id, label, icon, view: "program", props: { program }, program, items });
 
@@ -57,6 +65,7 @@ export function buildMenu({ signedIn = false, verified = false, has = () => fals
     ] },
     page("agm", "AGM", "agm", agmActions, "\u{1F5F3}"),
     page("senate", "Senate", "senate", senateActions, "\u{1F3DB}"),
+    ...discussions,
     ...(administration.length ? [{ id: "administration", label: "Administration", items: administration }] : []),
     { id: "profile", label: "Profile", icon: "\u{1F464}", view: "profile", items: signedIn ? [
       { id: "profile-account", label: "Account", view: "account" },
@@ -84,7 +93,8 @@ export function isCurrent(node, current) {
 
 // Whether a node, or anything beneath it, is the view currently shown.
 export function containsCurrent(node, current) {
-  return isCurrent(node, current) || (node.items || []).some(child => containsCurrent(child, current));
+  return isCurrent(node, current) || !!node.relatedViews?.includes(current.name)
+    || (node.items || []).some(child => containsCurrent(child, current));
 }
 
 // The links for the "In this section" panel: the main category the current view belongs to, its pages, and (under the

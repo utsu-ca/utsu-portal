@@ -6,6 +6,9 @@ from test_authsvc import make  # noqa: E402
 from test_portal import activate, login, register  # noqa: E402
 
 from utsu_core.context import ROLES
+from utsu_core.context import roles_of
+from utsu_core.plugin_host import discover_manifests, select_manifests
+from utsu_core.role_catalogue import role_catalogue_for
 
 
 def setup():
@@ -67,6 +70,43 @@ def test_sole_remaining_admin_cannot_demote_self():
     assert put(ac, uh2, "boss", []).status_code == 200
     # ada is now the only admin; boss (no longer admin) cannot act, and ada cannot demote herself
     assert put(ac, uh2, "ada", []).status_code == 403
+
+
+def test_disabled_program_roles_are_ineffective_but_stored_grants_are_preserved():
+    manifests = select_manifests(discover_manifests(), "local", ())
+    active_roles = role_catalogue_for(manifests)
+    account = {"roles": ["checkin", "auditor"]}
+
+    assert "checkin" not in active_roles
+    assert roles_of(account, active_roles) == {"auditor"}
+    assert account["roles"] == ["checkin", "auditor"]
+
+
+def test_role_edit_does_not_drop_disabled_program_grants():
+    from fastapi.testclient import TestClient
+
+    from utsu_core.authsvc import create_auth_app
+    from utsu_core.mailer import OutboxMailer
+    from utsu_core.settings import Settings
+    from utsu_core.store import MemoryStore
+
+    mail, store = OutboxMailer(), MemoryStore()
+    ac = TestClient(create_auth_app(
+        Settings(secret="s" * 40, admin_emails=("boss@x.ca",), enabled_plugins=()),
+        store,
+        mail,
+    ))
+    register(ac, mail, "boss", "boss@x.ca", sn="9999999999", first="Bo", last="Ss")
+    ah = login(ac, mail, "boss")
+    register(ac, mail, "ada", "ada@x.ca")
+    uh = login(ac, mail, "ada")
+    activate(ac, ah, uh)
+
+    uid = ac.app.state.ctx.uid("ada")
+    ac.app.state.ctx.store.update("accounts", uid, lambda account: {**account, "roles": ["checkin"]})
+    assert put(ac, ah, "ada", ["auditor"]).status_code == 200
+    assert ac.app.state.ctx.store.get("accounts", uid)["roles"] == ["auditor", "checkin"]
+    assert ac.get("/api/admin/roles", headers=ah).json().get("checkin") is None
 
 
 def test_service_token_rotation_accepts_old_and_new():

@@ -1,25 +1,17 @@
 <script>
   import { go } from "../lib/nav.svelte.js";
-  import { CONTENT } from "../lib/content.js";
-  import { theme } from "../lib/theme.svelte.js";
-
-  const programs = ["bursaries", "scholarships", "club-registration", "club-finances", "agm", "senate"];
+  import { pages, pageCopy } from "../lib/content.svelte.js";
+  import PageCopy from "../components/PageCopy.svelte";
 </script>
 
-<div class="card">
-  <h2>Learn more about the {theme.name}</h2>
-  <p>
-    The {theme.name} is where UTSU members apply for student aid, register and run clubs, RSVP for the Annual General
-    Meeting and apply for Senate seats. Everything on these pages is public; sign in to apply or manage your own
-    records.
-  </p>
-  <p>Select a program below, or open the menu on the left.</p>
+<PageCopy content={pageCopy("home")}>
   <button class="primary" onclick={() => go("profile")}>Sign in or create an account</button>
-</div>
-{#each programs as key (key)}
+</PageCopy>
+{#each pages.slice(1) as key (key)}
+  {@const content = pageCopy(key)}
   <div class="card">
-    <h3>{CONTENT[key].title}</h3>
-    <p>{CONTENT[key].tagline}</p>
+    <h3>{content.title}</h3>
+    {#if content.tagline}<p>{content.tagline}</p>{/if}
     <button class="secondary" onclick={() => go("program", { program: key })}>Learn more</button>
   </div>
 {/each}

@@ -69,7 +69,7 @@ class SSOProvider:
 
     @property
     def issuer(self) -> str:
-        return self.ctx.settings.sso_issuer
+        return self.ctx.plugin_setting("sso", "sso_issuer")
 
     def register_client(self, client_id: str, secret: str, redirect_uris: tuple[str, ...], eligibility: Eligibility | None = None) -> None:
         self.clients[client_id] = Client(client_id, _sha(secret), tuple(redirect_uris), eligibility or (lambda a, u: None))

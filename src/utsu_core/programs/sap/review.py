@@ -116,11 +116,12 @@ class ReviewModule:
 
     def router(self, ctx: Context) -> APIRouter:
         router = APIRouter(prefix="/api")
+        forms = ctx.forms.for_owner("sap")
         admin = ctx.require_role("sap_admin")
         reviewer = ctx.require_role("sap_reviewer")
 
         def find_review(review_id: str) -> dict:
-            matches = [s for s in ctx.store.list("submissions", form_id="student_aid_bursary")
+            matches = [s for s in forms.submissions("student_aid_bursary")
                        if s.get("sap_review", {}).get("id") == review_id]
             if len(matches) != 1:
                 raise HTTPException(404, "review not found")
@@ -141,7 +142,7 @@ class ReviewModule:
             return bool(applicant_id and applicant_id == (reviewer_check or {}).get("roster_uuid"))
 
         def require_review_enabled() -> None:
-            if not ctx.settings.sap_review_enabled:
+            if not ctx.plugin_setting("sap", "sap_review_enabled"):
                 raise HTTPException(503, "experimental student aid review workflow is disabled")
 
         def reserve(review_id: str, reviewer_id: str, assigned_by: str | None = None) -> dict:
@@ -168,13 +169,12 @@ class ReviewModule:
                 reviews.append({"reviewer": reviewer_id, "claimed_at": now, "lease_until": now + 48 * 3600,
                                 "assigned_by": assigned_by})
                 return {**current, "sap_review": {**review, "reviews": reviews}}
-            return ctx.store.update("submissions", submission["id"], update)
+            return forms.update_submission("student_aid_bursary", submission["uuid"], update)
 
         @router.post("/admin/sap/applications/{uid}/enqueue")
         def enqueue(uid: str, actor: dict = admin):
             require_review_enabled()
-            key = f"student_aid_bursary:{uid}"
-            snapshot = ctx.store.get("submissions", key)
+            snapshot = forms.submission("student_aid_bursary", uid)
             if not snapshot:
                 raise HTTPException(404, "application not found")
             view = application_view(ctx, snapshot)
@@ -190,7 +190,7 @@ class ReviewModule:
                 if current.get("sap_review"):
                     raise HTTPException(409, "application already in review")
                 return {**current, "sap_review": {"id": review_id, "reviews": [], "wfni": view["wfni"]}}
-            ctx.store.update("submissions", key, start)
+            forms.update_submission("student_aid_bursary", uid, start)
             ctx.audit.record(actor["uuid"], "sap.enqueued", f"user:{uid}", None, {"review_id": review_id})
             return {"review_id": review_id}
 
@@ -199,7 +199,7 @@ class ReviewModule:
             require_review_enabled()
             rows = []
             now = ctx.now()
-            for submission in ctx.store.list("submissions", form_id="student_aid_bursary"):
+            for submission in forms.submissions("student_aid_bursary"):
                 review = submission.get("sap_review")
                 if not review or not submission.get("sap_review_hardship") or review.get("decision") or has_conflict(submission, actor["uuid"]):
                     continue
@@ -218,7 +218,7 @@ class ReviewModule:
             require_review_enabled()
             now = ctx.now()
             rows = []
-            for submission in ctx.store.list("submissions", form_id="student_aid_bursary"):
+            for submission in forms.submissions("student_aid_bursary"):
                 review = submission.get("sap_review")
                 if not review or review.get("decision") or not submission.get("sap_review_hardship"):
                     continue
@@ -244,7 +244,6 @@ class ReviewModule:
             if redact(text, names) != text:
                 raise HTTPException(422, "Automatic checks found a name, student number, or contact detail. "
                                         "Remove it and review the statement before confirming.")
-            key = f"student_aid_bursary:{uid}"
             def update(current):
                 if not current or not current.get("sap_review"):
                     raise HTTPException(404, "application not in review")
@@ -254,7 +253,7 @@ class ReviewModule:
                 if review.get("decision") or review["reviews"]:
                     raise HTTPException(409, "hardship statement is locked after reviews begin")
                 return {**current, "sap_review_hardship": text}
-            result = ctx.store.update("submissions", key, update)
+            result = forms.update_submission("student_aid_bursary", uid, update)
             ctx.audit.record(actor["uuid"], "sap.hardship_prepared", f"user:{uid}", None, None)
             return {"revision": result["_rev"], "review_hardship_prepared": True}
 
@@ -270,7 +269,7 @@ class ReviewModule:
             require_review_enabled()
             account = ctx.identity.account(body.reviewer)
             if not account or account.get("status") != "verified" or not account.get("email_verified") or not (
-                    roles_of(account) & {"sap_reviewer", "admin"}):
+                    roles_of(account, ctx.roles) & {"sap_reviewer", "admin"}):
                 raise HTTPException(422, "reviewer must be a verified account with the reviewer role")
             reserve(review_id, body.reviewer, actor["uuid"])
             ctx.audit.record(actor["uuid"], "sap.assigned", f"review:{review_id}", None,
@@ -294,7 +293,7 @@ class ReviewModule:
                 return {**current, "sap_review": {**review,
                     "conflicts": [*conflicts, actor["uuid"]],
                     "reviews": [entry for entry in entries if entry["reviewer"] != actor["uuid"]]}}
-            ctx.store.update("submissions", submission["id"], update)
+            forms.update_submission("student_aid_bursary", submission["uuid"], update)
             ctx.audit.record(actor["uuid"], "sap.conflict_flagged", f"review:{review_id}", None, None)
             return {"status": "conflict"}
 
@@ -337,7 +336,7 @@ class ReviewModule:
                 return {**current, "sap_review": {**review, "reviews": [
                     {**e, "level": body.level, "submitted_at": now} if e["reviewer"] == actor["uuid"] else e
                     for e in entries]}}
-            result = ctx.store.update("submissions", submission["id"], update)
+            result = forms.update_submission("student_aid_bursary", submission["uuid"], update)
             ctx.audit.record(actor["uuid"], "sap.rated", f"review:{review_id}", None, {"level": body.level})
             return reviewer_view(result, ctx.now(), include_hardship=True)
 
@@ -354,7 +353,7 @@ class ReviewModule:
                     raise HTTPException(409, "an unrated claim is required")
                 return {**current, "sap_review": {**review, "reviews": [
                     e for e in review["reviews"] if e["reviewer"] != actor["uuid"]]}}
-            result = ctx.store.update("submissions", submission["id"], update)
+            result = forms.update_submission("student_aid_bursary", submission["uuid"], update)
             ctx.audit.record(actor["uuid"], "sap.released", f"review:{review_id}", None, None)
             return reviewer_view(result, ctx.now())
 
@@ -363,12 +362,11 @@ class ReviewModule:
             return [{"uuid": s["uuid"], "review_id": s["sap_review"]["id"],
                      "stage": review_stage(s["sap_review"], ctx.now()), "reviews": s["sap_review"]["reviews"],
                      "resolution": s["sap_review"].get("resolution"), "decision": s["sap_review"].get("decision")}
-                    for s in ctx.store.list("submissions", form_id="student_aid_bursary") if s.get("sap_review")]
+                    for s in forms.submissions("student_aid_bursary") if s.get("sap_review")]
 
         @router.put("/admin/sap/applications/{uid}/review-count")
         def set_review_count(uid: str, body: ReviewCountIn, actor: dict = admin):
             require_review_enabled()
-            key = f"student_aid_bursary:{uid}"
             def update(current):
                 review = current.get("sap_review") if current else None
                 if not review:
@@ -380,7 +378,7 @@ class ReviewModule:
                 if body.required_reviews <= review.get("required_reviews", 2):
                     raise HTTPException(422, "required review count must increase")
                 return {**current, "sap_review": {**review, "required_reviews": body.required_reviews}}
-            result = ctx.store.update("submissions", key, update)
+            result = forms.update_submission("student_aid_bursary", uid, update)
             ctx.audit.record(actor["uuid"], "sap.review_count_increased", f"user:{uid}", None,
                              {"required_reviews": body.required_reviews})
             return {"required_reviews": result["sap_review"]["required_reviews"]}
@@ -393,8 +391,7 @@ class ReviewModule:
             reason = clean_text(body.reason, 500)
             if not reason:
                 raise HTTPException(422, "a resolution reason is required")
-            key = f"student_aid_bursary:{uid}"
-            snapshot = ctx.store.get("submissions", key)
+            snapshot = forms.submission("student_aid_bursary", uid)
             if not snapshot:
                 raise HTTPException(404, "application not found")
             require_eligible(snapshot)
@@ -412,7 +409,7 @@ class ReviewModule:
                     raise HTTPException(403, "a reviewer cannot resolve their own review")
                 resolution = {"reason": reason, "by": actor["uuid"], "at": ctx.now()}
                 return {**current, "sap_review": {**review, "resolution": resolution}}
-            result = ctx.store.update("submissions", key, update)
+            result = forms.update_submission("student_aid_bursary", uid, update)
             ctx.audit.record(actor["uuid"], "sap.review_resolved", f"user:{uid}", None,
                              result["sap_review"]["resolution"])
             return result["sap_review"]["resolution"]
@@ -422,8 +419,7 @@ class ReviewModule:
             require_review_enabled()
             if uid == actor["uuid"]:
                 raise HTTPException(403, "cannot decide your own application")
-            key = f"student_aid_bursary:{uid}"
-            snapshot = ctx.store.get("submissions", key)
+            snapshot = forms.submission("student_aid_bursary", uid)
             if not snapshot:
                 raise HTTPException(404, "application not found")
             if not application_view(ctx, snapshot)["eligible"]:
@@ -438,7 +434,7 @@ class ReviewModule:
                 decision = {"approved": body.approved, "amount": body.amount, "by": actor["uuid"], "at": ctx.now()}
                 return {**current, "status": status, "sap_review": {**review, "decision": decision},
                         "history": [*current["history"], {"at": ctx.now(), "status": status, "note": ""}]}
-            result = ctx.store.update("submissions", key, update)
+            result = forms.update_submission("student_aid_bursary", uid, update)
             ctx.audit.record(actor["uuid"], "sap.decided", f"user:{uid}", None, result["sap_review"]["decision"])
             return result["sap_review"]["decision"]
 

@@ -104,5 +104,12 @@ def create_auth_app(settings: Settings | None = None, store: Store | None = None
         raise RuntimeError("PORTAL_SERVICE_TOKEN must be at least 32 characters (comma-separate two while rotating)")
     mods = (AuthModule(), AdminModule(), AuditModule("/api/admin/auth-audit"), RolesModule(), InternalModule())
     from dataclasses import replace
+    from ..plugin_host import discover_manifests, select_manifests
+    from ..role_catalogue import role_catalogue_for
+    from ..settings import plugin_settings_for
+
     settings = replace(settings, audit_db_access=True)  # the identity service records every read/write with its requester
-    return build_app(settings, store, mailer or mailer_from_env(), mods, seed=False, ui=False)
+    manifests = select_manifests(discover_manifests(), "local", settings.enabled_plugins)
+    return build_app(settings, store, mailer or mailer_from_env(), mods, seed=False, ui=False,
+                     role_catalogue=role_catalogue_for(manifests),
+                     plugin_settings=plugin_settings_for(manifests, settings))

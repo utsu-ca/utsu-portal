@@ -3,6 +3,7 @@
 **Current web application**
 - [Setup and current functionality](../README.md)
 - [Applicant Portal](Applicant-Portal)
+- [Discussions and Voting](Discussions-and-Voting)
 
 **Historical batch reference (commands removed)**
 - [Getting Started](Getting-Started)

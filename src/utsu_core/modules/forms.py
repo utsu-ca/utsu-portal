@@ -1,7 +1,6 @@
 """Form templates (admin), published static forms (public) and submissions with status pages."""
 from __future__ import annotations
 
-import asyncio
 import json
 
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -41,11 +40,14 @@ class FormsModule:
     def router(self, ctx: Context) -> APIRouter:
         r = APIRouter(prefix="/api")
         S = ctx.store
+        forms = ctx.forms.core_view()
         admin = ctx.require_role("forms_editor")
         admin_q = ctx.require_role("forms_editor", allow_query_token=True)
         verified = ctx.require_verified()
 
         def published(fid: str) -> dict:
+            if ctx.form_registry.owner(fid) is None:
+                raise HTTPException(404, "form not found")
             f = S.get("forms", fid)
             if not f or not f.get("published_version"):
                 raise HTTPException(404, "form not published")
@@ -55,7 +57,10 @@ class FormsModule:
         @r.get("/forms")
         def list_forms():
             out = []
-            for f in S.list("forms"):
+            for fid in ctx.form_registry.form_ids():
+                f = S.get("forms", fid)
+                if not f:
+                    continue
                 if f.get("published_version"):
                     v = S.get("form_versions", f"{f['id']}@{f['published_version']}")
                     out.append({"id": f["id"], "title": v["schema"]["title"], "version": v["version"], "hash": v["hash"]})
@@ -101,7 +106,7 @@ class FormsModule:
                 seen["prev"] = prev
                 return result
 
-            doc = S.update("submissions", key, save)
+            doc = forms.update_submission(fid, acct["uuid"], save)
             prev, hist = seen["prev"], doc["history"]
             ctx.audit.record(acct["uuid"], "submission.saved", f"form:{fid}", (prev or {}).get("data"), data, {"version": v["version"], "revision": len(hist)})
             return {"status": "submitted"}
@@ -109,10 +114,14 @@ class FormsModule:
         @r.get("/me/submissions")
         def my_submissions(acct: dict = ctx.require_user()):
             return [{k: s[k] for k in ("form_id", "version", "status", "updated_at", "history", "data")}
-                    | {"note": s["history"][-1].get("note", "")} for s in S.list("submissions", uuid=acct["uuid"])]
+                    | {"note": s["history"][-1].get("note", "")}
+                    for fid in ctx.form_registry.form_ids()
+                    for s in forms.submissions(fid, uuid=acct["uuid"])]
 
         # ---------- admin: templates ----------
         def _ensure(fid: str) -> dict:
+            if ctx.form_registry.owner(fid) is None:
+                raise HTTPException(404, "unknown form")
             f = S.get("forms", fid)
             if not f:
                 raise HTTPException(404, "unknown form")
@@ -120,7 +129,8 @@ class FormsModule:
 
         @r.get("/admin/forms")
         def admin_list(_: dict = admin):
-            return [{"id": f["id"], "rev": f["rev"], "published_version": f.get("published_version")} for f in S.list("forms")]
+            return [{"id": f["id"], "rev": f["rev"], "published_version": f.get("published_version")}
+                    for fid in ctx.form_registry.form_ids() if (f := S.get("forms", fid))]
 
         @r.get("/admin/forms/{fid}")
         def admin_get(fid: str, _: dict = admin):
@@ -140,6 +150,7 @@ class FormsModule:
 
         @r.put("/admin/forms/{fid}/draft")
         def save_draft(fid: str, b: DraftIn, a: dict = admin):
+            _ensure(fid)
             try:
                 schema = formdef.parse_yaml(b.yaml) if b.yaml is not None else formdef.validate_schema(b.schema_)
             except formdef.FormError as e:
@@ -210,6 +221,8 @@ class FormsModule:
 
         @r.get("/admin/forms/{fid}/events")
         async def events(fid: str, request: Request, _: dict = admin_q):
+            _ensure(fid)
+
             async def gen():
                 yield ": connected\n\n"
                 async for ev in ctx.bus.listen(f"form:{fid}", request.is_disconnected):
@@ -220,8 +233,9 @@ class FormsModule:
         # ---------- admin: submissions ----------
         @r.get("/admin/forms/{fid}/submissions")
         def admin_submissions(fid: str, _: dict = admin):
+            _ensure(fid)
             out = []
-            for s in S.list("submissions", form_id=fid):
+            for s in forms.submissions(fid):
                 u = ctx.identity.user(s["uuid"]) or {}
                 out.append({k: s[k] for k in ("id", "form_id", "uuid", "version", "hash", "data", "status", "updated_at", "history")}
                            | {"applicant": {k: u.get(k) for k in ("preferred_name", "first_name", "last_name", "email", "student_number")}})
@@ -229,6 +243,7 @@ class FormsModule:
 
         @r.post("/admin/submissions/{fid}/{uid}/status")
         def set_status(fid: str, uid: str, b: StatusIn, a: dict = admin):
+            _ensure(fid)
             if b.status not in STATUSES:
                 raise HTTPException(422, f"status must be one of {STATUSES}")
             policy = get_submission_policy(ctx, fid)
@@ -243,7 +258,7 @@ class FormsModule:
                 s["history"].append({"at": ctx.now(), "status": b.status, "note": b.note[:500]})
                 return {**s, "status": b.status, "updated_at": ctx.now()}
 
-            S.update("submissions", f"{fid}:{uid}", setstatus)
+            forms.update_submission(fid, uid, setstatus)
             old_status = seen["old"]
             ctx.audit.record(a["uuid"], "submission.status", f"form:{fid}", {"status": old_status}, {"status": b.status}, {"applicant": uid, "note": b.note[:200]})
             return {"status": b.status}

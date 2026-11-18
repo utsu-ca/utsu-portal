@@ -105,6 +105,20 @@ Both deployments need their own SMTP configuration: auth sends verification code
 program notices and banking re-verification messages. Mount `smtp-url` in each service's separate secret. The portal
 must never receive the auth signing key.
 
+The portal's built-in program plug-ins are enabled by default, except the opt-in `discussion` and `voting`
+plug-ins ([Discussions and Voting](Discussions-and-Voting.md)). Set `PORTAL_ENABLED_PLUGINS` to a comma-separated
+allowlist of program plug-ins to control backend modules (for example, `clubs` or `agm,senate,sap,clubs`; add
+`discussion,voting` to the full list to run them). Core modules are always on and must not be listed. Core authentication,
+forms, and audit modules are not optional. `notices` currently requires `agm`, `senate`, and `sap`; AGM verification
+requires `agm`. Dependencies omitted from the allowlist cause startup to fail. Plug-in discovery reads installed
+metadata before importing implementations, so disabled program modules are not loaded. Disabled program roles are
+removed from the grantable/effective role catalogue, but existing stored grants are retained; retained-data
+encryption policies also remain active independently of the allowlist. This interim backend allowlist does not yet
+filter the bundled full-portal frontend, except that the menu hides Discussions and the ballots tool when those
+plug-ins are off (it reads `GET /api/plugins`). Until the frontend manifest stage is complete, use
+`PORTAL_API_ONLY=1` for a core-only profile and do not use partial allowlists for browser deployments. Changing the
+allowlist requires an application restart.
+
 ## Kubernetes
 `kubectl apply -k deploy/k8s` (after creating the secrets from `secret.example.yaml`). Includes: restricted namespace,
 auth + portal Deployments (non-root UID 10001, read-only root FS, all capabilities dropped, seccomp, no service-account
@@ -148,7 +162,24 @@ The identity service (`utsu_core.authsvc`) records everything in a tamper-eviden
 - **Monthly tables** `audit_YYYY_MM`; one HMAC hash chain spans all months. Registry: `audit_months` (hot → archived → dropped).
 - **DB access is audited per request**, not per query: with `PORTAL_AUDIT_DB_ACCESS=1` (always on in the auth service) one `db.access` entry lists the requester, collections, ops, and capped ids (never values). All state changes carry redacted, compressed, encrypted before/after snapshots, so the log fully reconstructs history.
 - **Nightly checkpoint** (`audit_checkpoints`): an incremental Merkle root over the entries since the last checkpoint, chained to the previous checkpoint digest; skipped when nothing meaningful happened. The checkpoint is also written to the log.
-- **Blockchain anchoring** via a provider submodule, off by default (`PORTAL_ANCHOR=none`). Only the 32-byte checkpoint digest leaves the system. Providers: `local` (dev), `ots` (OpenTimestamps/Bitcoin, no keys/fees; proofs need a later upgrade step), `http` (`PORTAL_ANCHOR_URL`/`PORTAL_ANCHOR_TOKEN` gateway to any chain), or `pkg.module:factory`. Failures leave the checkpoint `pending` and are retried; the service never blocks on the chain.
+- **Blockchain anchoring** via a provider submodule, off by default (`PORTAL_ANCHOR=none`). Only the 32-byte checkpoint digest leaves the system. Providers:
+  - `local` (dev);
+  - `ots` (OpenTimestamps/Bitcoin, no keys or fees; proofs need a later upgrade step);
+  - `http` (a `PORTAL_ANCHOR_URL`/`PORTAL_ANCHOR_TOKEN` gateway to any chain);
+  - `evm` (native Ethereum-compatible JSON-RPC, below);
+  - `pkg.module:factory`.
+
+  Failures leave the checkpoint `pending` and it is retried; the service never blocks on the chain. The same provider anchors plug-in digests such as closed ballots' records, submitting in the background and confirming when the anchor's status is read.
+- **EVM anchoring** (`PORTAL_ANCHOR=evm`, `pip install 'utsu-core[evm]'`) sends a zero-value EIP-1559 transaction from a dedicated wallet to itself, with calldata `UTSU` followed by the digest; no contract is needed. Settings:
+  - `PORTAL_ANCHOR_URL`: the https JSON-RPC endpoint;
+  - `PORTAL_ANCHOR_EVM_KEY_FILE`: a file holding the wallet's private key in hex (never put it in the environment directly);
+  - `PORTAL_ANCHOR_CHAIN_ID`: required; the provider refuses to send if the endpoint reports a different chain;
+  - `PORTAL_ANCHOR_CONFIRMATIONS`: default 12.
+
+  Fund the wallet only with enough for fees. Anchors become `confirmed` after a successful receipt with enough confirmations, and verification re-reads the transaction's sender, recipient and calldata. The EVM provider is tested against a simulated JSON-RPC node, not a live chain.
+  The stock Docker image does not install the optional `evm` extra; include it in a derived image before enabling
+  this provider. In split authentication, enable the same plug-in role catalogue on the auth service and portal
+  so discussion and elections roles can be granted and projected.
 - **Archive after ~90 days**: a month is verified, gzipped into `audit_archive` (sha256, Merkle root, boundary hashes). **Drop after ~180 days** only if the archive re-verifies and an anchored checkpoint covers it. The chain stays verifiable after a drop.
 - **Weekly verify** walks the hot chain, checkpoint chain/roots, and archive checksums; results go to `audit_checks` and the log.
 - **Scheduling**: `python -m utsu_core.authsvc maintain [--force]` (k8s `deploy/k8s/maintenance-cronjob.yaml`, Cloud Scheduler, or `POST /api/admin/audit/maintenance/run`). Jobs claim themselves with optimistic locking, so duplicates are safe.
@@ -169,6 +200,8 @@ The auth service is the only issuer of roles (`modules/roles.py`). They are stor
 | `finance` | club transactions and grants |
 | `clubs` | club registration decisions |
 | `auditor` | read/verify/export the audit log |
+| `discussion_moderator` | discussion boards and moderation (only when the `discussion` plug-in is enabled) |
+| `elections_admin` | ballots, voter rolls and breaking the seal (only when the `voting` plug-in is enabled) |
 
 Manage with `GET /api/admin/roles`, `GET /api/admin/roles/holders`, `PUT /api/admin/roles {username, roles}` (or the "Admin: roles" screen). Rules: admin only; no self-changes; the target must be a verified account; the last admin cannot be removed; each change is audited with before/after. `PORTAL_ADMIN_EMAILS` only bootstraps the first admin. Two admins demoting each other at the same instant could still leave none; recover by editing the account record directly. Legacy `role: admin` accounts keep working.
 

@@ -5,11 +5,10 @@ from fastapi.testclient import TestClient
 from fastapi import HTTPException
 
 from utsu_core import create_app, formdef
+from utsu_core.contracts import SubmissionPolicy
 from utsu_core.mailer import OutboxMailer
 from utsu_core.services.submissions import (
-    SubmissionPolicy,
     get_submission_policy,
-    register_submission_policy,
     validate_submission_eligibility,
 )
 from utsu_core.settings import Settings
@@ -61,9 +60,9 @@ def activate(c, ah, uh):
 
 
 def test_roster_requirement_is_a_neutral_submission_policy():
-    ctx = SimpleNamespace(services={}, identity=SimpleNamespace(roster_check=lambda _: None))
-    register_submission_policy(ctx, "test_form", SubmissionPolicy(require_roster=True))
-    policy = get_submission_policy(ctx, "test_form")
+    ctx = create_app(Settings(secret="s" * 32)).state.ctx
+    ctx.identity = SimpleNamespace(roster_check=lambda _: None)
+    policy = get_submission_policy(ctx, "agm_rsvp")
 
     with pytest.raises(HTTPException) as exc:
         validate_submission_eligibility(ctx, policy, {"uuid": "student"})

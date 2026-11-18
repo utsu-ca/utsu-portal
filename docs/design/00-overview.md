@@ -2,7 +2,9 @@
 
 For the approved current reorganization and implementation status, see
 [06 Architecture implementation](06-architecture-implementation.md). That plan supersedes conflicting structure
-and frontend assumptions below; the current client is Svelte.
+and frontend assumptions below; the current client is Svelte. The plug-in architecture is in
+[07 Plug-in architecture](07-plugin-architecture-plan.md). Live chat and the opt-in discussion and voting plug-ins
+are in [08 Live chat, discussion and voting](08-messaging-discussion-voting-plan.md).
 
 Status: proposed; namespace consolidation is complete, but the live program workflows and retirement of the batch
 tools described below are not complete. Audience: maintainers. Companion documents: [01 Shared services](01-shared-services.md),
@@ -32,8 +34,8 @@ core, adding a front-end framework (same-origin vanilla JS and the CSP model sta
 | Student roster (`uoft_data`) import and matching | `utsu_core.importing_data`, `verification` (exact + fuzzy match, levels) | None. Identity is OTP email + face/ID + admin approval | Roster service (01) |
 | Typed uuids, one binding application per person | `selection.py`, `pipeline.Run` | Per-account submissions only | Selection service (01) |
 | Integrity check (duplicates, logged) | `integrity.py` | None | Selection service (01) |
-| Form definitions | Google Form exports + lookup tables | YAML forms for all three programs (`forms/*.yaml`) | Program-specific fields (WFNI, banking, seat preferences) must be checked against the CSV mapping |
-| Mail-merge, templates | `utsu_core.mail` | `Mailer` (OTP only), `SMTPMailer` | Notice service (01) |
+| Form definitions | Google Form exports + lookup tables | Owner-contributed YAML; core seeds forms only for enabled programs | Program-specific fields (WFNI, banking, seat preferences) must be checked against the CSV mapping |
+| Mail-merge, templates | `utsu_core.mail` | Core `EmailService` for OTP, notices and banking re-verification; separate historical campaign tooling | Notice service (01) |
 | Senate verification + seating | `senate/program.py`, `seating.py` | Form only | Senate module (02) |
 | SAP batches, WFNI, review, decisions, EFT | `sap/*` | Form only | SAP module (03) |
 | AGM verification, QR, check-in, Zoom SSO | `agm/program.py` | `agm.py`, `agm_verify.py`, `sso.py` done | Eligibility from roster, reporting (04) |
@@ -62,7 +64,8 @@ src/utsu_core/
     sap/             module.py, wfni.py, queue.py, review.py, decisions.py, banking.py, eft.py, models.py
     agm/             module.py, verify.py, eligibility.py (proposed)
   modules/                                   existing non-program modules (auth, forms, admin, clubs, ...)
-  forms/                                     bundled YAML definitions
+  mail/templates/live/                       core OTP and account-notice templates
+  programs/{agm,senate,sap}/forms/            owner-specific YAML definitions
 ```
 
 Each program package exposes a single `MODULE` object. `app.py` assembles `CORE_MODULES + PROGRAM_MODULES`;

@@ -67,6 +67,7 @@ class StudentAidSubmissionPolicy:
 
 def applications_router(ctx: Context) -> APIRouter:
     router = APIRouter(prefix="/api")
+    forms = ctx.forms.for_owner("sap")
     admin = ctx.require_role("sap_admin")
 
     @router.get("/admin/sap/applications")
@@ -74,7 +75,7 @@ def applications_router(ctx: Context) -> APIRouter:
         if not 1 <= limit <= 200:
             raise HTTPException(422, "limit must be between 1 and 200")
         submissions = sorted(
-            (s for s in ctx.store.list("submissions", form_id="student_aid_bursary") if s["id"] > cursor),
+            (s for s in forms.submissions("student_aid_bursary") if s["id"] > cursor),
             key=lambda s: s["id"],
         )
         items = [application_view(ctx, s) for s in submissions[:limit]]
@@ -83,7 +84,7 @@ def applications_router(ctx: Context) -> APIRouter:
     @router.get("/admin/sap/applications.csv")
     def export_applications(actor: dict = admin):
         rows = []
-        submissions = sorted(ctx.store.list("submissions", form_id="student_aid_bursary"), key=lambda s: s["id"])
+        submissions = sorted(forms.submissions("student_aid_bursary"), key=lambda s: s["id"])
         for submission in submissions:
             item = application_view(ctx, submission)
             terms = item["data"].get("terms") or []
@@ -106,19 +107,19 @@ def applications_router(ctx: Context) -> APIRouter:
 
     @router.get("/me/sap")
     def my_application(account: dict = ctx.require_verified()):
-        submission = ctx.store.get("submissions", f"student_aid_bursary:{account['uuid']}")
+        submission = forms.submission("student_aid_bursary", account["uuid"])
         return application_view(ctx, submission) if submission else None
 
     @router.get("/me/sap/history")
     def my_history(account: dict = ctx.require_verified()):
-        submission = ctx.store.get("submissions", f"student_aid_bursary:{account['uuid']}")
+        submission = forms.submission("student_aid_bursary", account["uuid"])
         return [{k: item[k] for k in ("version", "status", "updated_at", "data", "history")}
                 | {"decision": {k: item["sap_review"]["decision"][k] for k in ("approved", "amount", "at")}}
                 for item in (submission or {}).get("sap_previous", [])]
 
     @router.get("/admin/sap/applications/{uid}/history")
     def application_history(uid: str, _: dict = admin):
-        submission = ctx.store.get("submissions", f"student_aid_bursary:{uid}")
+        submission = forms.submission("student_aid_bursary", uid)
         if not submission:
             raise HTTPException(404, "application not found")
         return submission.get("sap_previous", [])
@@ -181,7 +182,7 @@ def applications_router(ctx: Context) -> APIRouter:
                 raise HTTPException(409, "historical terms overlap an existing application")
             return {**current, "sap_previous": [*previous, snapshot]}
 
-        result = ctx.store.update("submissions", f"student_aid_bursary:{uid}", save)
+        result = forms.update_submission("student_aid_bursary", uid, save)
         ctx.audit.record(actor["uuid"], "sap.history_imported", f"user:{uid}", None, None,
                          {"source": source, "terms": terms, "revision": result["_rev"]})
         return {"status": "imported", "revision": result["_rev"]}

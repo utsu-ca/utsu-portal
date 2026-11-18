@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from ...context import Context
-from ...mailer import Mailer
+from ...services.email import EmailDeliveryUnknown, EmailNotConfigured
 
 BANKING_FIELDS = ("institution_number", "transit_number", "account_number")
 BANKING_ACTIVE = ("on_file", "reverify_requested", "reverify_received")
@@ -48,7 +48,7 @@ def parse_void_cheque(ctx: Context, data_url: str) -> dict:
         raise HTTPException(422, "the void cheque could not be read") from exc
     if not raw.startswith(b"%PDF-"):
         raise HTTPException(422, "the void cheque must be a PDF file")
-    if len(raw) > ctx.settings.max_cheque_bytes:
+    if len(raw) > ctx.plugin_setting("sap", "max_cheque_bytes"):
         raise HTTPException(413, "the void cheque is too large")
     return {"data_url": data_url, "sha256": hashlib.sha256(raw).hexdigest(), "size": len(raw),
             "uploaded_at": ctx.now()}
@@ -56,12 +56,13 @@ def parse_void_cheque(ctx: Context, data_url: str) -> dict:
 
 def banking_router(ctx: Context) -> APIRouter:
     router = APIRouter(prefix="/api")
+    forms = ctx.forms.for_owner("sap")
     admin = ctx.require_role("sap_admin")
 
     @router.put("/sap/banking")
     def submit_banking(body: BankingIn, actor: dict = ctx.require_verified()):
         uid = actor["uuid"]
-        submission = ctx.store.get("submissions", f"student_aid_bursary:{uid}")
+        submission = forms.submission("student_aid_bursary", uid)
         if not submission or submission["status"] == "rejected":
             raise HTTPException(409, "an active student aid application is required")
         def save(current):
@@ -101,7 +102,7 @@ def banking_router(ctx: Context) -> APIRouter:
 
     def flag_validation_failed(uid: str, actor: dict) -> dict:
         """One click: the applicant is emailed a single-use link to the banking verification page."""
-        if type(ctx.mailer).send is Mailer.send:
+        if not ctx.email.is_configured:
             raise HTTPException(503, "email delivery is not configured")
         user = ctx.identity.user(uid)
         account = ctx.identity.account(uid)
@@ -118,11 +119,14 @@ def banking_router(ctx: Context) -> APIRouter:
         ctx.audit.record(actor["uuid"], "sap.banking_reverify_requested", f"user:{uid}", None,
                          {"expires_at": expires})
         link = f"{ctx.settings.sso_issuer}/static/index.html#sap-banking={token}"
-        ctx.mailer.send(user["email"], "Your UTSU banking information could not be verified",
-                        f"We could not validate the banking information you gave for your UTSU Student Aid "
-                        f"Bursary. Sign in to your UTSU account and use this link to open the banking "
-                        f"information verification page, where you can re-enter your details and upload a PDF "
-                        f"copy of a void cheque. The link expires in 48 hours and can be used once:\n\n{link}")
+        try:
+            ctx.email.send_template(
+                user["email"], "sap_banking_reverify", {"link": link}, actor=actor["uuid"]
+            )
+        except EmailNotConfigured as exc:
+            raise HTTPException(503, "email delivery is not configured") from exc
+        except EmailDeliveryUnknown as exc:
+            raise HTTPException(502, "delivery could not be confirmed; do not retry without checking") from exc
         return {"status": "reverify_requested", "expires_at": expires}
 
     def compare_pending(uid: str, actor: dict) -> dict:
@@ -151,13 +155,12 @@ def banking_router(ctx: Context) -> APIRouter:
         return {"status": "on_file"}
 
     def void_cheque_pdf(uid: str, actor: dict) -> Response:
-        bank = ctx.store.get("sap_banking", uid)
-        cheque = ((bank or {}).get("pending") or {}).get("void_cheque") or (bank or {}).get("void_cheque")
-        if not bank or bank.get("status") not in BANKING_ACTIVE or not cheque:
-            raise HTTPException(404, "no void cheque on file")
-        ctx.audit.record(actor["uuid"], "sap.void_cheque_accessed", f"user:{uid}", None, None,
-                         {"sha256": cheque["sha256"]})
-        raw = base64.b64decode(CHEQUE_DATA_URL.fullmatch(cheque["data_url"]).group(1))
+        try:
+            raw = ctx.files.read("sap_void_cheque", uid, actor["uuid"], uid)
+        except FileNotFoundError as exc:
+            raise HTTPException(404, "no void cheque on file") from exc
+        except PermissionError as exc:
+            raise HTTPException(403, "not permitted to read void cheque") from exc
         return Response(raw, media_type="application/pdf",
                         headers={"Cache-Control": "no-store", "Content-Disposition": 'inline; filename="void-cheque.pdf"',
                                  "X-Content-Type-Options": "nosniff"})
@@ -215,7 +218,7 @@ def banking_router(ctx: Context) -> APIRouter:
         for bank in records[:limit]:
             uid = bank["uuid"]
             user = ctx.identity.user(uid) or {}
-            submission = ctx.store.get("submissions", f"student_aid_bursary:{uid}") or {}
+            submission = forms.submission("student_aid_bursary", uid) or {}
             decision = (submission.get("sap_review") or {}).get("decision") or {}
             items.append({"uuid": uid, "name": f"{user.get('first_name', '')} {user.get('last_name', '')}".strip(),
                           "status": bank["status"], "request_expires": bank.get("request_expires"),

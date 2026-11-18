@@ -8,7 +8,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from ..context import ROLES, Context, roles_of
+from ..context import Context, roles_of
 from ..security import clean_text
 
 name = "roles"
@@ -16,7 +16,7 @@ name = "roles"
 
 class RoleSet(BaseModel):
     username: str = Field(min_length=3, max_length=64)
-    roles: list[str] = Field(max_length=len(ROLES))
+    roles: list[str] = Field(max_length=64)
 
 
 class RolesModule:
@@ -29,13 +29,13 @@ class RolesModule:
 
         @r.get("")
         def catalogue(_: dict = admin):
-            return ROLES
+            return ctx.roles
 
         @r.get("/holders")
         def holders(_: dict = admin):
             out = []
             for a in S.list("accounts"):
-                rs = roles_of(a)
+                rs = roles_of(a, ctx.roles)
                 if rs:
                     u = S.get("users", a["uuid"]) or {}
                     out.append({"uuid": a["uuid"], "preferred_name": u.get("preferred_name", ""), "roles": sorted(rs)})
@@ -44,7 +44,7 @@ class RolesModule:
         @r.put("")
         def set_roles(b: RoleSet, actor: dict = admin):
             new = set(b.roles)
-            if not new <= set(ROLES):
+            if not new <= set(ctx.roles):
                 raise HTTPException(422, "unknown role")
             uid = ctx.uid(clean_text(b.username))
             if uid == actor["uuid"]:
@@ -56,15 +56,16 @@ class RolesModule:
                     raise HTTPException(404, "no such account")
                 if a["status"] != "verified":
                     raise HTTPException(409, "roles can only be granted to verified accounts")
-                seen["before"] = sorted(roles_of(a))
-                if "admin" in roles_of(a) and "admin" not in new:
-                    others = [x for x in S.list("accounts") if x["uuid"] != uid and "admin" in roles_of(x) and x["status"] == "verified"]
+                seen["before"] = sorted(roles_of(a, ctx.roles))
+                if "admin" in roles_of(a, ctx.roles) and "admin" not in new:
+                    others = [x for x in S.list("accounts") if x["uuid"] != uid and "admin" in roles_of(x, ctx.roles) and x["status"] == "verified"]
                     if not others:
                         raise HTTPException(409, "cannot remove the last admin")
-                return {**a, "roles": sorted(new), "role": "admin" if "admin" in new else "applicant"}
+                inactive = set(a.get("roles") or []) - set(ctx.roles)
+                return {**a, "roles": sorted(new | inactive), "role": "admin" if "admin" in new else "applicant"}
 
             after = S.update("accounts", uid, go)  # optimistic lock: concurrent edits retry on fresh data
-            ctx.audit.record(actor["uuid"], "role.set", f"user:{uid}", {"roles": seen["before"]}, {"roles": after["roles"]})
-            return {"uuid": uid, "roles": after["roles"]}
+            ctx.audit.record(actor["uuid"], "role.set", f"user:{uid}", {"roles": seen["before"]}, {"roles": sorted(new)})
+            return {"uuid": uid, "roles": sorted(new)}
 
         return r

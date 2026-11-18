@@ -1,4 +1,4 @@
-// Public copy for each program page. Deadlines are placeholders until the UTSU publishes them: edit them here.
+// Bundled defaults for the public program pages; published edits override these at runtime.
 const TBA = "Dates will be announced by the UTSU. Check back here.";
 
 export const CONTENT = {

@@ -7,8 +7,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from ...context import Context
+from ...contracts import NotificationType, SubmissionPolicy
 from ...services.exports import csv_response
-from ...services.submissions import SubmissionPolicy, register_submission_policy
+from ...services.forms import register_form_resource
+from ...services.submissions import register_submission_policy
 from .verify import has_grant, is_online, rsvp
 
 name = "agm"
@@ -40,16 +42,26 @@ class AgmModule:
     name = name
 
     def configure(self, ctx: Context) -> None:
-        register_submission_policy(ctx, "agm_rsvp", SubmissionPolicy(require_roster=True))
+        register_form_resource(ctx, self.name, "agm_rsvp", __package__)
+        register_submission_policy(ctx, self.name, "agm_rsvp", SubmissionPolicy(require_roster=True))
+        ctx.notification_types.register(
+            self.name, self.name, NotificationType("agm_rsvp", "agm_admin")
+        )
 
     def router(self, ctx: Context) -> APIRouter:
         r = APIRouter(prefix="/api")
-        S, cfg = ctx.store, ctx.settings
+        S = ctx.store
+        submissions_service = ctx.forms.for_owner(self.name)
+        zoom_client_id = ctx.plugin_setting("agm", "zoom_client_id")
+        zoom_client_secret = ctx.plugin_setting("agm", "zoom_client_secret")
+        zoom_redirect_uris = ctx.plugin_setting("agm", "zoom_redirect_uris")
+        zoom_url = ctx.plugin_setting("agm", "zoom_url")
+        zoom_sso_url = ctx.plugin_setting("agm", "zoom_sso_url")
         verified, admin = ctx.require_rostered(), ctx.require_role("checkin")
         agm_admin = ctx.require_role("agm_admin")
 
         sso = ctx.services.get("sso")
-        if sso and cfg.zoom_client_secret:  # Zoom may only sign on registrants who passed the separate online ID check
+        if sso and zoom_client_secret:  # Zoom may only sign on registrants who passed the separate online ID check
             def zoom_ok(acct, user):
                 check = ctx.identity.roster_check(acct["uuid"])
                 if not check or not check.get("rostered"):
@@ -57,7 +69,7 @@ class AgmModule:
                 if not is_online(ctx, acct["uuid"]):
                     return "not registered to attend online"
                 return None if has_grant(ctx, acct["uuid"]) else "online ID verification required"
-            sso.register_client(cfg.zoom_client_id, cfg.zoom_client_secret, cfg.zoom_redirect_uris, zoom_ok)
+            sso.register_client(zoom_client_id, zoom_client_secret, zoom_redirect_uris, zoom_ok)
 
         @r.get("/agm/invitation")
         def invitation(a: dict = verified):
@@ -69,7 +81,7 @@ class AgmModule:
                    "checked_in": S.get("agm_attendance", a["uuid"]) is not None}
             if online:
                 g = has_grant(ctx, a["uuid"])
-                out.update(id_verified=g, zoom_sso_url=cfg.zoom_sso_url if g else "")
+                out.update(id_verified=g, zoom_sso_url=zoom_sso_url if g else "")
             return out
 
         @r.get("/agm/qr")
@@ -84,11 +96,11 @@ class AgmModule:
                 raise HTTPException(409, "you are not registered to attend online")
             if not has_grant(ctx, a["uuid"]):
                 raise HTTPException(403, "complete online ID verification first")
-            if not cfg.zoom_url:
+            if not zoom_url:
                 raise HTTPException(503, "Zoom link not configured")
             if S.create("agm_attendance", a["uuid"], {"uuid": a["uuid"], "mode": "online", "at": ctx.now(), "by": a["uuid"]}):
                 ctx.audit.record(a["uuid"], "agm.online_join", f"user:{a['uuid']}", None, {"mode": "online"})
-            return {"zoom_url": cfg.zoom_url, "sso_url": cfg.zoom_sso_url}
+            return {"zoom_url": zoom_url, "sso_url": zoom_sso_url}
 
         @r.post("/admin/agm/checkin")
         def checkin(b: CheckinIn, a: dict = admin):
@@ -128,7 +140,7 @@ class AgmModule:
             if not 1 <= limit <= 200:
                 raise HTTPException(422, "limit must be between 1 and 200")
             submissions = sorted(
-                (s for s in S.list("submissions", form_id="agm_rsvp") if s["id"] > cursor),
+                (s for s in submissions_service.submissions("agm_rsvp") if s["id"] > cursor),
                 key=lambda s: s["id"],
             )
             result = []

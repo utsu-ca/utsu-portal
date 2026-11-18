@@ -1,30 +1,18 @@
 """Program-owned hooks for submission lifecycle rules."""
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
-
 from fastapi import HTTPException
 
 from ..context import Context
+from ..contracts import SubmissionPolicy
 
 
-@dataclass(frozen=True)
-class SubmissionPolicy:
-    require_roster: bool = False
-    save: Callable[[dict | None, dict], dict] | None = None
-    validate_status_change: Callable[[dict], None] | None = None
-
-
-def register_submission_policy(ctx: Context, form_id: str, policy: SubmissionPolicy) -> None:
-    policies = ctx.services.setdefault("submission_policies", {})
-    if form_id in policies:
-        raise ValueError(f"a submission policy is already registered for {form_id}")
-    policies[form_id] = policy
+def register_submission_policy(ctx: Context, owner: str, form_id: str, policy: SubmissionPolicy) -> None:
+    ctx.form_registry.register_policy(owner, form_id, policy)
 
 
 def get_submission_policy(ctx: Context, form_id: str) -> SubmissionPolicy | None:
-    return ctx.services.get("submission_policies", {}).get(form_id)
+    return ctx.form_registry.policy(form_id)
 
 
 def validate_submission_eligibility(ctx: Context, policy: SubmissionPolicy | None, account: dict) -> None:

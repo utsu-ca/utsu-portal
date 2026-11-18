@@ -355,10 +355,10 @@ def test_banking_reverification_is_single_use_encrypted_and_requires_acceptance(
     uid = c.get("/api/me", headers=user).json()["user"]["uuid"]
     path = f"/api/admin/sap/applications/{uid}/banking"
     assert c.post(path + "/reverify", headers=user).status_code == 403
-    c.app.state.ctx.mailer = Mailer()
+    c.app.state.ctx.email.transport = Mailer()
     assert c.post(path + "/reverify", headers=admin).status_code == 503
     assert c.get("/api/sap/banking", headers=user).json() == {"status": "on_file"}
-    c.app.state.ctx.mailer = mail
+    c.app.state.ctx.email.transport = mail
     assert c.post(path + "/reverify", headers=admin).status_code == 200
     link = mail.outbox[-1][2].splitlines()[-1]
     token = parse_qs(urlsplit(link).fragment)["sap-banking"][0]

@@ -14,6 +14,7 @@ const staff = { ...member, roles: ["sap_admin", "senate_admin"] };
 
 function serve(me) {
   api.mockImplementation(async path => {
+    if (path === "/plugins") return { enabled: [] };
     if (path === "/me") return me;
     if (path === "/sap/banking") return { status: "on_file" };
     if (path === "/senate/current") return null;
@@ -34,6 +35,7 @@ beforeEach(() => {
   clearBankingStatus();
   setAdminMode(false);
   go("home");
+  api.mockResolvedValue({ enabled: [] });
 });
 afterEach(() => { cleanup(); api.mockReset(); });
 
@@ -125,11 +127,31 @@ describe("menu behaviour", () => {
 });
 
 describe("signed in", () => {
+  it("keeps the page usable and offers a retry when program discovery fails", async () => {
+    session.token = "t";
+    let attempts = 0;
+    api.mockImplementation(async path => {
+      if (path === "/me") return member;
+      if (path === "/plugins") {
+        if (++attempts === 1) throw new Error("Program service unavailable.");
+        return { enabled: ["discussion"] };
+      }
+      return {};
+    });
+    render(App);
+    expect(await screen.findByText("Program service unavailable.")).toBeInTheDocument();
+    expect(await screen.findByText(/Learn more about the/)).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole("button", { name: "Retry program links" }));
+    expect(await within(menu()).findByRole("button", { name: "Discussions" })).toBeInTheDocument();
+    expect(screen.queryByText("Program service unavailable.")).not.toBeInTheDocument();
+  });
+
   it("keeps the portal usable after a banking failure and offers a working retry", async () => {
     sessionStorage.setItem("token", "t");
     session.token = "t";
     let bankingCalls = 0;
     api.mockImplementation(async path => {
+      if (path === "/plugins") return { enabled: [] };
       if (path === "/me") return member;
       if (path === "/sap/banking") {
         if (++bankingCalls === 1) throw new Error("Banking service unavailable.");
@@ -154,6 +176,7 @@ describe("signed in", () => {
     history.replaceState(null, "", "/#sap-banking=tok123");
     const resolveBanking = [];
     api.mockImplementation(path => {
+      if (path === "/plugins") return Promise.resolve({ enabled: [] });
       if (path === "/me") return Promise.resolve(member);
       if (path === "/sap/banking") return new Promise(resolve => { resolveBanking.push(resolve); });
       return Promise.resolve({});
@@ -189,6 +212,7 @@ describe("signed in", () => {
     session.token = "t";
     let resolveBanking;
     api.mockImplementation(path => {
+      if (path === "/plugins") return Promise.resolve({ enabled: [] });
       if (path === "/me") return Promise.resolve(member);
       if (path === "/sap/banking") return new Promise(resolve => { resolveBanking = resolve; });
       return Promise.resolve({});

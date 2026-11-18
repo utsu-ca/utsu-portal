@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
 from ...context import Context, roles_of
+from ...contracts import FileKind
 from ...security import clean_text
 
 name = "clubs"
@@ -85,9 +86,46 @@ class ReceiptIn(BaseModel):
 class ClubsModule:
     name = name
 
+    def configure(self, ctx: Context) -> None:
+        def authorized(_action: str, actor: str, club_id: str, receipt_id: str) -> bool:
+            account = ctx.identity.account(actor)
+            club = ctx.store.get("clubs", club_id)
+            receipt = ctx.store.get("receipts", receipt_id)
+            return bool(
+                account
+                and club
+                and receipt
+                and receipt["club_id"] == club_id
+                and (actor in club["members"] or "admin" in roles_of(account, ctx.roles))
+            )
+
+        def read(reference: str, resource: str) -> bytes | None:
+            receipt = ctx.store.get("receipts", reference)
+            if not receipt or receipt["club_id"] != resource:
+                return None
+            return receipt["data_url"].encode()
+
+        ctx.files.register_kind(
+            "clubs",
+            "club_receipt",
+            FileKind(
+                authorize=authorized,
+                read=read,
+                audit_action="file.read",
+                audit_target=lambda resource, _reference: f"club:{resource}",
+                audit_extra=lambda _resource, reference, _content: {"receipt": reference},
+            ),
+        )
+
     def router(self, ctx: Context) -> APIRouter:
         r = APIRouter(prefix="/api")
-        S, cfg = ctx.store, ctx.settings
+        S = ctx.store
+        club_registration_approvals = ctx.plugin_setting("clubs", "club_registration_approvals")
+        expense_approvals_small = ctx.plugin_setting("clubs", "expense_approvals_small")
+        expense_approvals_large = ctx.plugin_setting("clubs", "expense_approvals_large")
+        expense_large_cents = ctx.plugin_setting("clubs", "expense_large_cents")
+        default_tax_bps = ctx.plugin_setting("clubs", "default_tax_bps")
+        max_receipt_bytes = ctx.plugin_setting("clubs", "max_receipt_bytes")
         verified, admin = ctx.require_verified(), ctx.require_role("clubs")
         finance = ctx.require_role("finance")
 
@@ -128,7 +166,7 @@ class ClubsModule:
         @r.get("/clubs/{cid}")
         def get_club(cid: str, a: dict = ctx.require_user()):
             c = club(cid)
-            if a["uuid"] not in c["members"] and "admin" not in roles_of(a):
+            if a["uuid"] not in c["members"] and "admin" not in roles_of(a, ctx.roles):
                 raise HTTPException(403, "not permitted for this club")
             return {**c, "balance_cents": balance(cid)}
 
@@ -165,7 +203,8 @@ class ClubsModule:
                 if cur["status"] != "pending":
                     raise HTTPException(409, f"club is already {cur['status']}")
                 conflict(cur, a["uuid"])
-                cur["status"] = record_decision(cur, a["uuid"], b.approve, b.note, cfg.club_registration_approvals, ctx.now())
+                cur["status"] = record_decision(cur, a["uuid"], b.approve, b.note,
+                                                club_registration_approvals, ctx.now())
                 return cur
 
             c = S.update("clubs", cid, vote)
@@ -181,7 +220,7 @@ class ClubsModule:
             if not m:
                 raise HTTPException(422, "receipt must be a base64 jpeg/png/webp/pdf data URL")
             raw = base64.b64decode(m.group(3), validate=True)
-            if len(raw) > cfg.max_receipt_bytes:
+            if len(raw) > max_receipt_bytes:
                 raise HTTPException(413, "receipt too large")
             digest = hashlib.sha256(raw).hexdigest()
             for old in S.list("receipts", club_id=cid, sha256=digest):
@@ -195,11 +234,17 @@ class ClubsModule:
         @r.get("/clubs/{cid}/receipts/{rid}")
         def get_receipt(cid: str, rid: str, a: dict = ctx.require_user()):
             c, rc = club(cid), S.get("receipts", rid)
-            if a["uuid"] not in c["members"] and "admin" not in roles_of(a):
+            if a["uuid"] not in c["members"] and "admin" not in roles_of(a, ctx.roles):
                 raise HTTPException(403, "not permitted for this club")
             if not rc or rc["club_id"] != cid:
                 raise HTTPException(404, "unknown receipt")
-            return rc
+            try:
+                data_url = ctx.files.read("club_receipt", rid, a["uuid"], cid).decode()
+            except FileNotFoundError as exc:
+                raise HTTPException(404, "unknown receipt") from exc
+            except PermissionError as exc:
+                raise HTTPException(403, "not permitted for this club") from exc
+            return {**rc, "data_url": data_url}
 
         # ---------------- ledger ----------------
         @r.post("/clubs/{cid}/transactions", status_code=201)
@@ -210,7 +255,7 @@ class ClubsModule:
                 raise HTTPException(409, "club is not approved")
             if b.kind not in ("expense", "income"):
                 raise HTTPException(422, "kind must be expense or income")
-            bps = cfg.default_tax_bps if b.tax_bps is None else b.tax_bps
+            bps = default_tax_bps if b.tax_bps is None else b.tax_bps
             net, tax, gross = split_tax(b.amount_cents, bps, b.tax_inclusive)
             rcpts = []
             for rid in dict.fromkeys(b.receipt_ids):
@@ -225,7 +270,7 @@ class ClubsModule:
                    "tax_bps": bps, "category": clean_text(b.category, 50), "description": clean_text(b.description, 500),
                    "date": b.date, "receipt_ids": [x["id"] for x in rcpts], "created_by": a["uuid"], "created_at": ctx.now(),
                    "approvals": [], "status": "pending" if b.kind == "expense" else "approved",
-                   "required_approvals": (cfg.expense_approvals_large if gross >= cfg.expense_large_cents else cfg.expense_approvals_small)
+                   "required_approvals": (expense_approvals_large if gross >= expense_large_cents else expense_approvals_small)
                    if b.kind == "expense" else 0}
             claimed = []
 
@@ -249,7 +294,7 @@ class ClubsModule:
         @r.get("/clubs/{cid}/transactions")
         def list_tx(cid: str, a: dict = ctx.require_user()):
             c = club(cid)
-            if a["uuid"] not in c["members"] and "admin" not in roles_of(a):
+            if a["uuid"] not in c["members"] and "admin" not in roles_of(a, ctx.roles):
                 raise HTTPException(403, "not permitted for this club")
             return sorted(S.list("transactions", club_id=cid), key=lambda t: (t["date"], t["created_at"]))
 
@@ -293,7 +338,7 @@ class ClubsModule:
         def summary(cid: str, a: dict = ctx.require_user()):
             """Tax summary: tax paid on approved expenses (input tax credit eligible) and tax collected on income."""
             c = club(cid)
-            if a["uuid"] not in c["members"] and "admin" not in roles_of(a):
+            if a["uuid"] not in c["members"] and "admin" not in roles_of(a, ctx.roles):
                 raise HTTPException(403, "not permitted for this club")
             totals = defaultdict(int)
             by_cat: dict[str, int] = defaultdict(int)

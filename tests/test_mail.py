@@ -11,7 +11,16 @@ from utsu_core.mail.recipients import read_csv as read_csv_rows, read_sql, split
 from utsu_core.mailer import SMTPMailer
 from utsu_core.resources import package_text, schema_dirs
 from utsu_core.mail.schema import schema_fields
-from utsu_core.mail.templates import RenderedMessage, Template, TemplateError, list_templates, load_template, parse_template
+from utsu_core.mail.templates import (
+    RenderedMessage,
+    Template,
+    TemplateError,
+    list_live_templates,
+    list_templates,
+    load_live_template,
+    load_template,
+    parse_template,
+)
 from utsu_core.std.utils import student_uuid_for
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,6 +60,16 @@ def test_packaged_historical_templates_load_outside_the_repository(monkeypatch, 
     assert "application_uuid" in template.fields
     assert "Please reply to this email" in template.text
     assert "senate_more_info" in list_templates()
+
+
+def test_live_email_templates_are_separate_from_historical_campaign_templates():
+    assert "verification_code" in list_live_templates()
+    assert "verification_code" not in list_templates()
+    rendered = load_live_template("verification_code").render(
+        {"code": "123456", "expires_minutes": 10}
+    )
+    assert rendered.subject == "Your UTSU verification code"
+    assert rendered.text == "Your code is 123456. It expires in 10 minutes.\n"
 
 
 def test_notice_templates_are_tracked_and_use_known_fields():

@@ -1,13 +1,13 @@
 <script>
   import { go, nav } from "../lib/nav.svelte.js";
-  import { CONTENT } from "../lib/content.js";
+  import { pageCopy } from "../lib/content.svelte.js";
   import { sectionFor } from "../lib/menu.js";
   import { currentMenu } from "../lib/appmenu.svelte.js";
 
   // A second sidecar for wide screens, like a wiki's contents box: the other pages of the section being read, the
   // actions of the current page, and links to the parts of a program's page.
   const section = $derived(sectionFor(currentMenu(), nav));
-  const content = $derived(nav.name === "program" ? CONTENT[nav.props.program] : null);
+  const content = $derived(nav.name === "program" ? pageCopy(nav.props.program) : null);
   const parts = $derived(content ? [
     ["Overview", "overview", true],
     ["Eligibility", "eligibility", content.eligibility.length > 0],

@@ -1,6 +1,7 @@
 <script>
   import { go } from "../lib/nav.svelte.js";
-  import { CONTENT } from "../lib/content.js";
+  import { pageCopy } from "../lib/content.svelte.js";
+  import PageCopy from "../components/PageCopy.svelte";
   import { findNode } from "../lib/menu.js";
   import { currentMenu } from "../lib/appmenu.svelte.js";
   import { session } from "../lib/session.svelte.js";
@@ -8,7 +9,7 @@
 
   // A program's public page. Signing in adds buttons for what the program lets you do; staff tools appear in admin mode.
   let { program } = $props();
-  const content = $derived(CONTENT[program]);
+  const content = $derived(pageCopy(program));
   const actions = $derived(findNode(currentMenu(), n => n.program === program)?.items || []);
   const signedIn = $derived(!!session.token && !!session.me);
   const verified = $derived(session.me?.status === "verified");
@@ -16,31 +17,7 @@
   const open = action => (action.href ? (location.href = action.href) : go(action.view, action.props || {}));
 </script>
 
-<div class="card" id="overview">
-  <h2>{content.title}</h2>
-  <p>{content.tagline}</p>
-  {#if content.comingSoon}<span class="badge">Coming soon</span>{/if}
-  {#each content.summary as paragraph}<p>{paragraph}</p>{/each}
-</div>
-
-{#if content.eligibility.length}
-  <div class="card" id="eligibility">
-    <h3>Eligibility</h3>
-    <ul>{#each content.eligibility as line}<li>{line}</li>{/each}</ul>
-  </div>
-{/if}
-{#if content.steps.length}
-  <div class="card" id="how-to-apply">
-    <h3>How to apply</h3>
-    <ol>{#each content.steps as line}<li>{line}</li>{/each}</ol>
-  </div>
-{/if}
-{#if content.deadlines.length}
-  <div class="card" id="key-dates">
-    <h3>Key dates</h3>
-    <ul>{#each content.deadlines as line}<li>{line}</li>{/each}</ul>
-  </div>
-{/if}
+<PageCopy {content} />
 
 {#if !content.comingSoon}
   <div class="card" id="your-actions">

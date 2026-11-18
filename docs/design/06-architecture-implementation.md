@@ -2,6 +2,10 @@
 
 Status: approved; all five structural implementation steps completed and verified.
 
+Follow-on: [plug-in architecture plan](07-plugin-architecture-plan.md) proposes independently installable programs
+and a core limited to auth, audit, files, forms, notifications, messaging and email. Its expanded scope is not part
+of this completed structural pass.
+
 This plan follows the November 2026 architecture audit. It supersedes conflicting structural proposals in
 00-05, which describe earlier migration designs rather than the current application.
 

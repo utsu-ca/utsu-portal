@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import os
 import secrets
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, Iterable, Mapping
 
-FORMS_DIR = Path(__file__).parent / "forms"
-
+if TYPE_CHECKING:
+    from .contracts import PluginManifest
 
 def env_secret(name: str, default: str | None = None) -> str | None:
     """Read NAME, or the file named by NAME_FILE (Kubernetes/Docker secret mounts keep values out of env and manifests)."""
@@ -32,6 +34,10 @@ class Settings:
     max_image_bytes: int = 1_500_000
     division_codes: tuple[str, ...] = ("UTSG", "UTM", "UTSC")
     seed_forms: bool = True
+    enabled_plugins: tuple[str, ...] | None = None  # optional program plug-ins; None enables the full portal profile
+    api_only: bool = False  # serve API routes without the bundled full-portal UI
+    # Program settings stay as compatibility fields for direct Settings(...) callers and existing environment variables.
+    # Runtime module access is scoped through the selected manifest's plugin_settings view.
     club_registration_approvals: int = 2  # distinct admins needed to approve a club
     expense_approvals_small: int = 1
     expense_approvals_large: int = 2
@@ -56,9 +62,12 @@ class Settings:
     rate_window: int = 60
     max_body_bytes: int = 8_000_000
     hsts: bool = True
-    anchor: str = "none"  # none | local | ots | http | pkg.module:factory (see anchor.py)
+    anchor: str = "none"  # none | local | ots | http | evm | pkg.module:factory (see anchor.py)
     anchor_url: str | None = None
     anchor_token: str | None = None
+    anchor_evm_key: str | None = None  # anchoring wallet private key (hex) for the evm provider; use the _FILE form
+    anchor_chain_id: int | None = None  # required for evm: refuses to send if the RPC reports a different chain
+    anchor_confirmations: int = 12
     audit_db_access: bool = False  # record every store read/write with the requester (one digest entry per request)
     auth_signing_key: str | None = None  # Ed25519 PEM held ONLY by the auth service (derived from secret when unset)
     auth_url: str | None = None  # set => portal runs against a separate auth service
@@ -74,7 +83,13 @@ class Settings:
         if len(secret) < 32:
             raise RuntimeError("PORTAL_SECRET must be at least 32 characters (e.g. `openssl rand -hex 32`)")
         admin_emails = tuple(a.strip().lower() for a in (env("PORTAL_ADMIN_EMAILS") or "").split(",") if a.strip())
+        raw_plugins = env("PORTAL_ENABLED_PLUGINS")
+        enabled_plugins = None if raw_plugins is None else tuple(
+            item.strip() for item in raw_plugins.split(",") if item.strip()
+        )
         return cls(secret=secret, admin_emails=admin_emails, store=env("PORTAL_STORE", "memory"),
+                   enabled_plugins=enabled_plugins,
+                   api_only=env("PORTAL_API_ONLY", "0") == "1",
                    sso_issuer=env("PORTAL_BASE_URL", "http://localhost:8000").rstrip("/"), sso_key_pem=env("PORTAL_SSO_KEY"),
                    zoom_client_secret=env("PORTAL_ZOOM_CLIENT_SECRET"), zoom_url=env("PORTAL_ZOOM_URL", ""),
                    zoom_sso_url=env("PORTAL_ZOOM_SSO_URL", ""),
@@ -87,5 +102,27 @@ class Settings:
                    redis_url=env("PORTAL_REDIS_URL"), data_key=env("PORTAL_DATA_KEY"),
                    rate_limit_auth=int(env("PORTAL_RATE_LIMIT_AUTH", "30")), hsts=env("PORTAL_HSTS", "1") != "0",
                    anchor=env("PORTAL_ANCHOR", "none"), anchor_url=env("PORTAL_ANCHOR_URL"), anchor_token=env("PORTAL_ANCHOR_TOKEN"),
+                   anchor_evm_key=env("PORTAL_ANCHOR_EVM_KEY"),
+                   anchor_chain_id=int(env("PORTAL_ANCHOR_CHAIN_ID") or 0) or None,
+                   anchor_confirmations=int(env("PORTAL_ANCHOR_CONFIRMATIONS", "12")),
                    audit_db_access=env("PORTAL_AUDIT_DB_ACCESS", "0") == "1",
                    branding_dir=env("PORTAL_BRANDING_DIR"))
+
+
+def plugin_settings_for(manifests: Iterable["PluginManifest"], settings: Settings) -> Mapping[str, Mapping[str, Any]]:
+    """Expose only declared setting fields to each selected plug-in."""
+    available = {item.name for item in fields(settings)}
+    result: dict[str, Mapping[str, Any]] = {}
+    owners: dict[str, str] = {}
+    for manifest in manifests:
+        values: dict[str, Any] = {}
+        for key in manifest.settings:
+            if key not in available:
+                raise RuntimeError(f"plug-in {manifest.id} declares unknown setting {key}")
+            owner = owners.get(key)
+            if owner is not None:
+                raise RuntimeError(f"setting {key} is declared by both {owner} and {manifest.id}")
+            owners[key] = manifest.id
+            values[key] = getattr(settings, key)
+        result[manifest.id] = MappingProxyType(values)
+    return MappingProxyType(result)

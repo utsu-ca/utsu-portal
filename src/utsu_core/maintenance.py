@@ -62,11 +62,23 @@ def anchor(ctx, cid: str) -> None:
 
 
 def retry_anchors(ctx) -> int:
+    """Resubmit pending checkpoints and upgrade submitted ones (e.g. EVM confirmations)."""
     n = 0
     for c in ctx.store.list("audit_checkpoints"):
-        if ctx.anchor.enabled and c["anchor"]["status"] in ("pending", "disabled"):
+        if not ctx.anchor.enabled:
+            break
+        if c["anchor"]["status"] in ("pending", "disabled"):
             anchor(ctx, c["id"])
             n += 1
+        elif c["anchor"]["status"] == "submitted":
+            try:
+                res = ctx.anchor.confirm(c["anchor"])
+            except Exception:
+                log.exception("anchor confirmation failed; will retry")
+                continue
+            if res:
+                ctx.store.update("audit_checkpoints", c["id"], lambda d, res=res: {**d, "anchor": {**d["anchor"], **res, "at": ctx.now()}})
+                n += 1
     return n
 
 
@@ -157,6 +169,9 @@ def run_due(ctx, force: bool = False) -> dict:
     if _claim(ctx, "checkpoint", force):
         out["checkpoint"] = (checkpoint(ctx, force) or {}).get("id")
         out["anchors_retried"] = retry_anchors(ctx)
+        anchors = getattr(ctx, "anchors", None)
+        if anchors is not None:
+            out["plugin_anchors"] = anchors.sweep()
     if _claim(ctx, "archive", force):
         out["archive"] = archive(ctx)
     if _claim(ctx, "verify", force):

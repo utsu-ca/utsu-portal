@@ -1,6 +1,7 @@
 """Database-agnostic document store. Implement `Store` to add a backend."""
 from __future__ import annotations
 
+import contextlib
 import contextvars
 import json
 import sqlite3
@@ -9,7 +10,7 @@ import secrets
 import threading
 import time
 from abc import ABC, abstractmethod
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
 
 Doc = dict[str, Any]
 REV = "_rev"  # optimistic-lock revision carried by every document written through create()/replace()/update()
@@ -373,6 +374,17 @@ class AccessLog:
 
 
 ACCESS: contextvars.ContextVar[AccessLog | None] = contextvars.ContextVar("portal_access", default=None)
+_UNLINKED: contextvars.ContextVar[bool] = contextvars.ContextVar("portal_unlinked", default=False)
+
+
+@contextlib.contextmanager
+def unlinked_access() -> Iterator[None]:
+    """Store calls inside are counted in the access log without document ids (e.g. secret ballots)."""
+    token = _UNLINKED.set(True)
+    try:
+        yield
+    finally:
+        _UNLINKED.reset(token)
 
 
 class AuditedStore(Store):
@@ -385,7 +397,7 @@ class AuditedStore(Store):
     def _note(self, op: str, col: str, ident: str | None = None) -> None:
         a = ACCESS.get()
         if a is not None and not col.startswith("audit"):
-            a.add(op, col, ident)
+            a.add(op, col, None if _UNLINKED.get() else ident)
 
     def get(self, col, id):
         self._note("read", col, id)

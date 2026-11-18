@@ -1,0 +1,227 @@
+{
+  "schema_version": 1,
+  "plugins": [
+    {
+      "id": "sso",
+      "version": "0.1.0",
+      "core_api_major": 1,
+      "factory": "utsu_core.modules.sso:SSOModule",
+      "kind": "core",
+      "auth_modes": ["local", "remote"],
+      "settings": ["sso_issuer"],
+      "order": 10
+    },
+    {
+      "id": "auth",
+      "version": "0.1.0",
+      "core_api_major": 1,
+      "factory": "utsu_core.modules.auth:AuthModule",
+      "kind": "core",
+      "auth_modes": ["local"],
+      "protection": {
+        "media": ["face", "id_card"],
+        "roster_identifiers": ["digits"]
+      },
+      "settings": ["max_image_bytes", "division_codes"],
+      "order": 20
+    },
+    {
+      "id": "admin",
+      "version": "0.1.0",
+      "core_api_major": 1,
+      "factory": "utsu_core.modules.admin:AdminModule",
+      "kind": "core",
+      "auth_modes": ["local"],
+      "order": 90
+    },
+    {
+      "id": "forms",
+      "version": "0.1.0",
+      "core_api_major": 1,
+      "factory": "utsu_core.modules.forms:FormsModule",
+      "kind": "core",
+      "auth_modes": ["local", "remote"],
+      "protection": {
+        "submissions": ["data"]
+      },
+      "json_protection": {
+        "submissions": ["data"]
+      },
+      "order": 70
+    },
+    {
+      "id": "audit",
+      "version": "0.1.0",
+      "core_api_major": 1,
+      "factory": "utsu_core.modules.audit:AuditModule",
+      "kind": "core",
+      "auth_modes": ["local", "remote"],
+      "order": 110
+    },
+    {
+      "id": "roles",
+      "version": "0.1.0",
+      "core_api_major": 1,
+      "factory": "utsu_core.modules.roles:RolesModule",
+      "kind": "core",
+      "auth_modes": ["local"],
+      "order": 120
+    },
+    {
+      "id": "agm",
+      "version": "0.1.0",
+      "core_api_major": 1,
+      "factory": "utsu_core.programs.agm.module:AgmModule",
+      "kind": "program",
+      "dependencies": ["forms"],
+      "form_ids": ["agm_rsvp"],
+      "protection": {
+        "agm_media": ["face", "id_card"]
+      },
+      "settings": [
+        "zoom_client_id", "zoom_client_secret", "zoom_redirect_uris", "zoom_url", "zoom_sso_url",
+        "agm_verify_mode", "agm_grant_ttl"
+      ],
+      "roles": {
+        "checkin": "AGM check-in and attendance",
+        "agm_admin": "view AGM registrations and verify roster matches"
+      },
+      "order": 40
+    },
+    {
+      "id": "agm_verify",
+      "version": "0.1.0",
+      "core_api_major": 1,
+      "factory": "utsu_core.programs.agm.verify:AgmVerifyModule",
+      "kind": "program",
+      "dependencies": ["agm"],
+      "order": 30
+    },
+    {
+      "id": "senate",
+      "version": "0.1.0",
+      "core_api_major": 1,
+      "factory": "utsu_core.programs.senate.module:SenateModule",
+      "kind": "program",
+      "dependencies": ["forms"],
+      "form_ids": ["senate_application"],
+      "roles": {
+        "senate_admin": "view Senate applications"
+      },
+      "order": 50
+    },
+    {
+      "id": "sap",
+      "version": "0.1.0",
+      "core_api_major": 1,
+      "factory": "utsu_core.programs.sap.module:SapModule",
+      "kind": "program",
+      "dependencies": ["forms"],
+      "form_ids": ["student_aid_bursary"],
+      "settings": ["sap_review_enabled", "max_cheque_bytes"],
+      "protection": {
+        "submissions": ["sap_review", "sap_review_hardship", "sap_previous"],
+        "sap_banking": ["institution_number", "transit_number", "account_number", "pending", "void_cheque"]
+      },
+      "json_protection": {
+        "submissions": ["sap_review", "sap_previous"],
+        "sap_banking": ["pending", "void_cheque"]
+      },
+      "roles": {
+        "sap_admin": "view student aid applications",
+        "sap_finance": "student aid banking: flag details that fail validation, review void cheques",
+        "sap_reviewer": "review student aid applications"
+      },
+      "order": 60
+    },
+    {
+      "id": "clubs",
+      "version": "0.1.0",
+      "core_api_major": 1,
+      "factory": "utsu_core.programs.clubs.module:ClubsModule",
+      "kind": "program",
+      "protection": {
+        "receipts": ["data_url"]
+      },
+      "settings": [
+        "club_registration_approvals", "expense_approvals_small", "expense_approvals_large",
+        "expense_large_cents", "default_tax_bps", "max_receipt_bytes"
+      ],
+      "roles": {
+        "finance": "club transactions and grants",
+        "clubs": "club registration decisions"
+      },
+      "order": 100
+    },
+    {
+      "id": "notices",
+      "version": "0.1.0",
+      "core_api_major": 1,
+      "factory": "utsu_core.modules.notices:NoticesModule",
+      "kind": "core",
+      "order": 80
+    },
+    {
+      "id": "messaging",
+      "version": "0.1.0",
+      "core_api_major": 1,
+      "factory": "utsu_core.modules.messaging:MessagingModule",
+      "kind": "core",
+      "auth_modes": ["local", "remote"],
+      "protection": {
+        "messages": ["body"]
+      },
+      "order": 75
+    },
+    {
+      "id": "content",
+      "version": "0.1.0",
+      "core_api_major": 1,
+      "factory": "utsu_core.modules.content:ContentModule",
+      "kind": "core",
+      "auth_modes": ["local", "remote"],
+      "order": 76
+    },
+    {
+      "id": "discussion",
+      "version": "0.1.0",
+      "core_api_major": 1,
+      "factory": "utsu_core.programs.discussion.plugin:DiscussionPlugin",
+      "kind": "program",
+      "interface": "plugin",
+      "default_enabled": false,
+      "dependencies": ["messaging"],
+      "services": ["audit", "auth", "messaging", "now", "store"],
+      "collections": ["discussion_boards", "discussion_topics"],
+      "provides": ["discussion"],
+      "roles": {
+        "discussion_moderator": "moderate discussions: boards, locking, pinning and redaction"
+      },
+      "order": 130
+    },
+    {
+      "id": "voting",
+      "version": "0.1.0",
+      "core_api_major": 1,
+      "factory": "utsu_core.programs.voting.plugin:VotingPlugin",
+      "kind": "program",
+      "interface": "plugin",
+      "default_enabled": false,
+      "dependencies": ["discussion"],
+      "services": ["anchor", "audit", "auth", "integrity", "now", "provided", "store"],
+      "collections": ["ballot_receipts", "ballot_votes", "ballots"],
+      "unlinkable": ["ballot_votes"],
+      "provides": ["voting"],
+      "protection": {
+        "ballot_votes": ["salt", "selection", "voter"]
+      },
+      "json_protection": {
+        "ballot_votes": ["selection"]
+      },
+      "roles": {
+        "elections_admin": "run ballots and polls, and break the seal on sealed ballots (every opening is logged)"
+      },
+      "order": 140
+    }
+  ]
+}

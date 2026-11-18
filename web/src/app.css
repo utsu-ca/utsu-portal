@@ -73,14 +73,26 @@
   .actions { @apply flex flex-wrap gap-2; }
   .actions button.primary, .actions a.primary { @apply mt-0; }
   a.primary { @apply inline-flex min-h-11 items-center rounded-md bg-accent px-4 py-2 font-medium text-white no-underline hover:bg-accent-hover; }
+  /* discussion threads and ballots */
+  button.link { @apply cursor-pointer border-0 bg-transparent p-0 text-left font-semibold text-accent underline underline-offset-2 hover:opacity-80; }
+  .meta { @apply text-sm text-slate-600; }
+  .thread-list { @apply m-0 list-none space-y-3 p-0; }
+  .thread-post { @apply rounded-md bg-slate-50 p-3 ring-1 ring-slate-200; }
+  .thread-post.mine { @apply bg-white ring-accent; }
+  .thread-post.internal { @apply bg-amber-50 ring-amber-700; }
+  .thread-body { @apply mt-1 mb-0 whitespace-pre-wrap break-words; }
+  .notice { @apply mb-3 rounded-md bg-slate-100 p-3 text-sm text-slate-900 ring-1 ring-slate-300; }
+  .receipt { @apply font-mono text-sm break-all; }
+  .ranking { @apply m-0 list-decimal space-y-1 pl-6; }
 }
 
 /* Sidebar shell. Below 48rem the sidebar is a full-screen overlay opened from the top bar; from 48rem it is fixed to
-   the left and collapses to a narrow rail that keeps the menu button. The sidebar has a border on each side in its own colour, a
+   the right and collapses to a narrow rail that keeps the menu button. The sidebar has a border on each side in its own colour, a
    share of the viewport width (--column-border, default 1vw), between 5px and 15px; the collapsed rail keeps a fixed 5px. */
 @layer components {
-  .topbar { @apply sticky top-0 z-30 flex items-center gap-3 bg-chrome px-3 py-2 text-white md:hidden; }
-  .sidebar { @apply invisible fixed inset-y-0 left-0 z-40 flex w-full -translate-x-full flex-col overflow-y-auto bg-chrome text-white md:visible md:w-64 md:translate-x-0; border-inline: clamp(5px, var(--column-border, 1vw), 15px) solid var(--color-chrome); }
+  .topbar { @apply sticky top-0 z-30 flex items-center justify-between gap-3 bg-chrome px-3 py-2 text-white md:hidden; }
+  .topbar .hamburger, .side-head .hamburger { @apply order-last ml-auto; }
+  .sidebar { @apply invisible fixed inset-y-0 right-0 z-40 flex w-full translate-x-full flex-col overflow-y-auto bg-chrome text-white md:visible md:w-64 md:translate-x-0; border-inline: clamp(5px, var(--column-border, 1vw), 15px) solid var(--color-chrome); }
   .sidebar.open { @apply visible translate-x-0; }
   .side-head { @apply flex items-center gap-3 px-2 py-2; }
   .hamburger { @apply min-h-11 min-w-11 cursor-pointer rounded-md border-0 bg-transparent text-2xl leading-none text-white hover:bg-white/15 focus-visible:outline-white; }
@@ -100,12 +112,13 @@
   .side-logo img { @apply block h-full w-full object-cover; }
   .side-name { @apply min-w-0 leading-tight; }
   .side-foot button { @apply min-h-11 w-full cursor-pointer rounded-md border border-white/60 bg-transparent px-3 py-2 font-medium text-white hover:bg-white/15; }
-  .content { @apply md:ml-64; }
-  .content.collapsed { @apply md:ml-16; }
+  .content { @apply md:mr-64; }
+  .content.collapsed { @apply md:mr-16; }
   .sidebar.collapsed { @apply md:w-16; border-inline-width: 5px; }
     .sidebar.collapsed .side-bottom, .sidebar.collapsed .side-name, .sidebar.collapsed .side-label,
   .sidebar.collapsed .side-fold, .sidebar.collapsed .side-nav ul ul { @apply md:hidden; }
   .sidebar.collapsed .side-link { @apply md:justify-center md:px-0; }
+  .sidebar.collapsed .side-head { @apply md:px-0; }
   .sidebar.collapsed .side-link[data-active] { @apply md:bg-white/25 md:ring-1 md:ring-white/60; }
   /* Noto Emoji (monochrome, subset to the menu icons, SIL OFL) so icons take the menu's text colour */
   .side-icon { @apply inline-block w-6 shrink-0 text-center text-xl normal-case leading-none; font-family: "Noto Emoji Menu", "Noto Emoji", sans-serif; font-weight: 400; }

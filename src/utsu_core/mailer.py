@@ -11,6 +11,10 @@ log = logging.getLogger("utsu_core.mail")
 class Mailer:
     """Mail delivery interface. Override `send` to deliver mail; the base is a logging stub."""
 
+    @property
+    def is_configured(self) -> bool:
+        return type(self).send is not Mailer.send
+
     def send(self, to: str, subject: str, body: str) -> None:
         log.info("mail to %s: %s", to, subject)
 

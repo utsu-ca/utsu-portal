@@ -1,0 +1,5 @@
+Subject: Your UTSU banking information could not be verified
+
+We could not validate the banking information you gave for your UTSU Student Aid Bursary. Sign in to your UTSU account and use this link to open the banking information verification page, where you can re-enter your details and upload a PDF copy of a void cheque. The link expires in 48 hours and can be used once:
+
+{{ link }}

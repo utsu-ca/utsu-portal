@@ -46,6 +46,11 @@ def test_program_notice_requires_preview_and_sends_only_once(program, form_id):
     assert sorted(result.status_code for result in results) == [200, 409]
     assert len(mail.outbox) == before + 1
     assert mail.outbox[-1] == (preview["to"], preview["subject"], preview["body"])
+    notice = store.get("notice_delivery", preview["preview_hash"])
+    email_delivery = store.get("email_delivery", notice["email_delivery"])
+    assert email_delivery["status"] == "sent"
+    assert email_delivery["recipient_hash"] != preview["to"]
+    assert not {"recipient", "to", "body"} & email_delivery.keys()
     assert c.post(base + "/preview", json={"uid": uid}, headers=admin).json()["delivery_status"] == "sent"
     assert "notice.sent" in {e["action"] for e in c.get("/api/admin/audit?limit=200", headers=admin).json()["entries"]}
 
@@ -63,14 +68,17 @@ def test_notice_delivery_failure_is_unresolved_and_not_retried():
     c.app.state.ctx.store.update("submissions", key, lambda _: {"id": key, "uuid": uid, "status": "submitted"})
     preview = c.post("/api/admin/notices/agm/preview", json={"uid": uid}, headers=admin).json()
     payload = {"uid": uid, "confirm": True, "preview_hash": preview["preview_hash"]}
-    c.app.state.ctx.mailer = Mailer()
+    c.app.state.ctx.email.transport = Mailer()
     assert c.post("/api/admin/notices/agm/send", json=payload, headers=admin).status_code == 503
 
     class UncertainMailer(Mailer):
         def send(self, to, subject, body):
             raise OSError("delivery unknown")
 
-    c.app.state.ctx.mailer = UncertainMailer()
+    c.app.state.ctx.email.transport = UncertainMailer()
     assert c.post("/api/admin/notices/agm/send", json=payload, headers=admin).status_code == 502
     assert c.post("/api/admin/notices/agm/send", json=payload, headers=admin).status_code == 409
     assert c.post("/api/admin/notices/agm/preview", json={"uid": uid}, headers=admin).json()["delivery_status"] == "unknown"
+    notice_deliveries = [item for item in c.app.state.ctx.store.list("email_delivery")
+                         if item["template"] == "portal_status"]
+    assert len(notice_deliveries) == 1 and notice_deliveries[0]["status"] == "unknown"

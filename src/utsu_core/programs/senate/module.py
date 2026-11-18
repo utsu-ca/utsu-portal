@@ -8,8 +8,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from ...context import Context
+from ...contracts import NotificationType, SubmissionPolicy
 from ...services.exports import csv_response
-from ...services.submissions import SubmissionPolicy, register_submission_policy
+from ...services.forms import register_form_resource
+from ...services.submissions import register_submission_policy
 from .seating import FACULTY, assign_seats, tier_index
 
 PREFERENCES = {
@@ -47,7 +49,7 @@ def compute_seating(ctx: Context, seed: int) -> dict:
     if not config:
         raise HTTPException(409, "configure the Senate seats before seating")
     applicants = []
-    for submission in ctx.store.list("submissions", form_id="senate_application"):
+    for submission in ctx.forms.for_owner("senate").submissions("senate_application"):
         view = application_view(ctx, submission)
         if not view["eligible"]:
             continue
@@ -101,10 +103,15 @@ class SenateModule:
     name = "senate"
 
     def configure(self, ctx: Context) -> None:
-        register_submission_policy(ctx, "senate_application", SubmissionPolicy(require_roster=True))
+        register_form_resource(ctx, self.name, "senate_application", __package__)
+        register_submission_policy(ctx, self.name, "senate_application", SubmissionPolicy(require_roster=True))
+        ctx.notification_types.register(
+            self.name, self.name, NotificationType("senate_application", "senate_admin")
+        )
 
     def router(self, ctx: Context) -> APIRouter:
         router = APIRouter(prefix="/api")
+        forms = ctx.forms.for_owner(self.name)
         admin = ctx.require_role("senate_admin")
 
         @router.get("/admin/senate/applications")
@@ -112,7 +119,7 @@ class SenateModule:
             if not 1 <= limit <= 200:
                 raise HTTPException(422, "limit must be between 1 and 200")
             submissions = sorted(
-                (s for s in ctx.store.list("submissions", form_id="senate_application") if s["id"] > cursor),
+                (s for s in forms.submissions("senate_application") if s["id"] > cursor),
                 key=lambda s: s["id"],
             )
             items = [application_view(ctx, s) for s in submissions[:limit]]
@@ -120,7 +127,7 @@ class SenateModule:
 
         @router.get("/me/senate")
         def my_application(account: dict = ctx.require_verified()):
-            submission = ctx.store.get("submissions", f"senate_application:{account['uuid']}")
+            submission = forms.submission("senate_application", account["uuid"])
             return application_view(ctx, submission) if submission else None
 
         @router.get("/admin/senate/seats")

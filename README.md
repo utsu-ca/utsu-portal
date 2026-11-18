@@ -67,6 +67,11 @@ Secrets can also be supplied via the corresponding `_FILE` environment variable.
   and source. Overlaps are refused and source references are deduplicated within that account only. Dates are stored
   at midnight UTC because the historical time is unknown; this is not a bulk database import or payment record. Only one application can
   be in progress at a time, and banking information is shared by the account rather than versioned per application.
+- **Discussions and voting (opt-in):** enable with `PORTAL_ENABLED_PLUGINS` (they are not in the default profile).
+  Members on the roster read and start topics on discussion boards, with live replies. Elections officials run
+  yes/no motions, single-choice, approval, ranked-choice and multi-seat STV ballots. Each ballot is sealed,
+  recorded (open) or secret. Voters get a receipt they can check against the published, optionally anchored
+  record. See [Discussions and Voting](wiki/Discussions-and-Voting.md).
 
 Roster matching uses the four digits immediately before the final digit, as in the historical masked roster.
 The account's last four digits remain separate for recovery. Existing accounts must confirm their registered
@@ -88,15 +93,18 @@ notice. SMTP must be configured. This is individual messaging, not the historica
 
 - `src/utsu_core/app.py` assembles the portal; `bootstrap.py` constructs shared application infrastructure without
   importing program routers. A module's optional `configure(ctx)` runs before any module's routers are assembled.
-- `src/utsu_core/programs/` contains the AGM, Senate, SABP and clubs modules. Historical CSV/SQLite processors remain
+- `src/utsu_core/programs/` contains the AGM, Senate, SABP and clubs modules, plus the opt-in `discussion` and
+  `voting` typed plug-ins. Historical CSV/SQLite processors remain
   available for compatibility but are not loaded by live application assembly.
 - `src/utsu_core/modules/` and `src/utsu_core/services/` contain shared web modules and services.
-- `src/utsu_core/forms/` contains bundled form definitions; `src/utsu_core/static/` contains the web client.
+- `src/utsu_core/programs/{agm,senate,sap}/forms/` contains owner-contributed form definitions;
+  `src/utsu_core/static/` contains the built web client.
 - `src/utsu_core/mail/transport.py` owns SMTP delivery for both historical tooling and the live `Mailer` interface.
   Bundled reply-based correspondence lives in `src/utsu_core/mail/templates/historical/` and loads from installed
   package resources, not the working directory. Live generic notices keep their separate content and confirmation flow.
-- `web/src/features/` groups AGM, clubs, SABP and Senate code and tests. Session, layout, navigation and generic
-  forms remain shared; banking status belongs to SABP and does not block general session startup.
+- `web/src/features/` groups AGM, clubs, discussion, SABP, Senate and voting code and tests. Session, layout,
+  navigation, generic forms and the live thread panel remain shared; banking status belongs to SABP and does not block
+  general session startup.
 - `testing/generate_fake_*.py` generates synthetic historical-form and roster data for testing. Run
   `python testing/generate_fake_data.py` or use `--help` for generator options. Generated exports are not direct
   portal-import files; some required portal fields have no historical equivalent.

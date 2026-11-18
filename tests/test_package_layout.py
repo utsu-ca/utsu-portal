@@ -47,7 +47,12 @@ def test_packaged_program_schemas_and_portal_assets():
         ("utsu_core.programs.agm", "schema.sql"),
         ("utsu_core.programs.sap", "schema.sql"),
         ("utsu_core.programs.senate", "schema.sql"),
-        ("utsu_core", "forms/agm_rsvp.yaml"),
+        ("utsu_core.programs.agm", "forms/agm_rsvp.yaml"),
+        ("utsu_core.programs.senate", "forms/senate_application.yaml"),
+        ("utsu_core.programs.sap", "forms/student_aid_bursary.yaml"),
+        ("utsu_core.mail", "templates/live/verification_code.txt"),
+        ("utsu_core", "plugin_manifests/builtin.json"),
+        ("utsu_core", "plugin_manifests/protection.json"),
         ("utsu_core", "static/index.html"),
         ("utsu_core", "static/finance.html"),
     ):

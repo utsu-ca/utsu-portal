@@ -186,7 +186,8 @@ class AuthModule:
         @r.get("/me")
         def me(acct: dict = user_dep):
             u = S.get("users", acct["uuid"])
-            return {"user": u, "status": acct["status"], "role": acct["role"], "roles": sorted(roles_of(acct))}
+            return {"user": u, "status": acct["status"], "role": acct["role"],
+                    "roles": sorted(roles_of(acct, ctx.roles))}
 
         @r.patch("/me")
         def update_me(b: Preferred, acct: dict = user_dep):

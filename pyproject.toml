@@ -12,11 +12,12 @@ requires-python = ">=3.12"
 dependencies = ["fastapi>=0.110", "pydantic>=2", "uvicorn", "pyyaml", "cryptography>=50", "segno>=1.6.6", "redis>=5", "google-re2>=1.1"]
 
 [project.optional-dependencies]
-dev = ["pytest", "httpx", "fakeredis", "sqlalchemy>=2", "email-validator>=2"]
+dev = ["pytest", "httpx", "fakeredis", "sqlalchemy>=2", "email-validator>=2", "eth-account>=0.13"]
 portal = []  # retained for existing deployment configurations
 firestore = ["google-cloud-firestore"]
 sql = ["sqlalchemy>=2"]  # + a driver: psycopg (PostgreSQL/Supabase), pyodbc (Azure SQL), pymysql
 mailsvc = ["sqlalchemy>=2", "email-validator>=2"]
+evm = ["eth-account>=0.13"]  # PORTAL_ANCHOR=evm: sign anchor transactions locally
 observability = [
     "opentelemetry-api>=1.20",
     "opentelemetry-sdk>=1.20",
@@ -45,10 +46,10 @@ where = ["src"]
 include = ["utsu_core", "utsu_core.*"]
 
 [tool.setuptools.package-data]
-utsu_core = ["schema/*.sql", "static/*", "static/assets/*", "branding/*", "forms/*.yaml", "mail/templates/historical/*.txt", "mail/templates/historical/*.html"]
-"utsu_core.programs.senate" = ["*.sql"]
-"utsu_core.programs.sap" = ["*.sql"]
-"utsu_core.programs.agm" = ["*.sql"]
+utsu_core = ["schema/*.sql", "static/*", "static/assets/*", "branding/*", "plugin_manifests/*.json", "mail/templates/historical/*.txt", "mail/templates/historical/*.html", "mail/templates/live/*.txt"]
+"utsu_core.programs.senate" = ["*.sql", "forms/*.yaml"]
+"utsu_core.programs.sap" = ["*.sql", "forms/*.yaml"]
+"utsu_core.programs.agm" = ["*.sql", "forms/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -8,7 +8,8 @@ from utsu_core.settings import Settings
 
 
 def test_seed_upgrade_preserves_drafts_and_never_downgrades(tmp_path):
-    source = (Path(__file__).resolve().parents[1] / "src/utsu_core/forms/student_aid_bursary.yaml").read_text()
+    source = (Path(__file__).resolve().parents[1]
+              / "src/utsu_core/programs/sap/forms/student_aid_bursary.yaml").read_text()
     bundled = tmp_path / "student_aid_bursary.yaml"
     bundled.write_text(source.replace("version: 3", "version: 2", 1))
     app = create_app(Settings(secret="s" * 32, seed_forms=False))

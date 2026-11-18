@@ -3,11 +3,13 @@
   import Footer from "./components/Footer.svelte";
   import RelatedPanel from "./components/RelatedPanel.svelte";
   import Sidebar from "./components/Sidebar.svelte";
+  import Status from "./components/Status.svelte";
   import BankingStatus from "./features/sabp/components/BankingStatus.svelte";
   import { currentMenu } from "./lib/appmenu.svelte.js";
   import { start } from "./lib/boot.js";
   import { layout } from "./lib/layout.svelte.js";
   import { go, nav } from "./lib/nav.svelte.js";
+  import { loadPlugins, pluginLoad } from "./lib/plugins.svelte.js";
   import { applyMode, session, setAdminMode, signOut } from "./lib/session.svelte.js";
   import { theme } from "./lib/theme.svelte.js";
   import { views } from "./lib/views.js";
@@ -43,6 +45,13 @@
       <div class="banner-admin" role="status">Admin mode: staff tools are shown. Actions here affect real records.</div>
     {/if}
     <BankingStatus />
+    {#if pluginLoad.error}
+      <div class="card">
+        <p>Some program links could not be loaded.</p>
+        <Status action={pluginLoad} />
+        <button class="secondary" disabled={pluginLoad.busy} onclick={loadPlugins}>Retry program links</button>
+      </div>
+    {/if}
     {#key nav.seq}
       {#if loader}
         {#await loader() then module}

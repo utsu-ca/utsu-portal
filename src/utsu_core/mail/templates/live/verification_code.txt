@@ -1,0 +1,3 @@
+Subject: Your UTSU verification code
+
+Your code is {{ code }}. It expires in {{ expires_minutes }} minutes.

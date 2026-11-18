@@ -54,6 +54,36 @@ describe("signing in exposes program functions", () => {
   });
 });
 
+describe("opt-in plug-ins", () => {
+  const on = ids => id => ids.includes(id);
+
+  it("lists Discussions only where the deployment runs it, for verified members", () => {
+    expect(findNode(buildMenu({ signedIn: true, verified: true }), n => n.id === "discussions")).toBeUndefined();
+    expect(findNode(buildMenu({ signedIn: true, verified: false, enabled: on(["discussion"]) }), n => n.id === "discussions")).toBeUndefined();
+    const menu = buildMenu({ signedIn: true, verified: true, enabled: on(["discussion"]) });
+    expect(labels(menu)).toEqual(["Home", "Student Aid", "Clubs", "AGM", "Senate", "Discussions", "Profile"]);
+    expect(findNode(menu, n => n.id === "discussions").icon).toBeTruthy();
+  });
+
+  it("adds the ballots tool for elections officials only when voting runs", () => {
+    const official = { signedIn: true, verified: true, has: role => role === "elections_admin" };
+    expect(actions(buildMenu({ ...official, enabled: on(["discussion"]) }), "discussions")).toEqual([]);
+    expect(actions(buildMenu({ ...official, enabled: on(["discussion", "voting"]) }), "discussions")).toEqual(["Ballots and polls"]);
+    expect(actions(buildMenu({ signedIn: true, verified: true, enabled: on(["discussion", "voting"]) }), "discussions")).toEqual([]);
+  });
+
+  it("keeps the discussion category selected on boards, topics and ballots", () => {
+    const menu = buildMenu({ signedIn: true, verified: true, enabled: on(["discussion", "voting"]), has: () => true });
+    const category = findNode(menu, node => node.id === "discussions");
+    for (const name of ["discussionBoard", "discussionTopic", "ballot"]) {
+      const current = { name, props: { id: "record-1" } };
+      expect(containsCurrent(category, current)).toBe(true);
+      expect(isCurrent(category, current)).toBe(false);
+      expect(sectionFor(menu, current).title).toBe("Discussions");
+    }
+  });
+});
+
 it("recognises the current view, including its props", () => {
   const node = { view: "form", props: { id: "agm_rsvp" } };
   expect(isCurrent(node, { name: "form", props: { id: "agm_rsvp" } })).toBe(true);

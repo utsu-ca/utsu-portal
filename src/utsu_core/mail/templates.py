@@ -13,6 +13,7 @@ from typing import Mapping
 
 PLACEHOLDER = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
 DEFAULT_TEMPLATE_DIR = "templates/email"
+LIVE_TEMPLATE_DIR = "templates/live"
 
 
 class TemplateError(ValueError):
@@ -120,3 +121,15 @@ def load_template(name: str, template_dir: str | Path | Traversable | None = Non
     html_path = directory.joinpath(f"{name}.html")
     return parse_template(name, text_path.read_text(encoding="utf-8"),
                           html_path.read_text(encoding="utf-8") if html_path.is_file() else None)
+
+
+def list_live_templates() -> list[str]:
+    directory = files(__package__).joinpath(*LIVE_TEMPLATE_DIR.split("/"))
+    return list_templates(directory)
+
+
+def load_live_template(name: str) -> Template:
+    directory = files(__package__).joinpath(*LIVE_TEMPLATE_DIR.split("/"))
+    if name not in list_templates(directory):
+        raise TemplateError(f"Live email template '{name}' is not registered")
+    return load_template(name, directory)
