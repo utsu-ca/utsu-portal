@@ -42,15 +42,19 @@
   {@const user = session.me.user}
   <div class="card">
     <h2>Account</h2>
-    <p>{user.first_name} {user.last_name} · {user.email} · ID ending {user.student_number} · <span class="badge">{session.me.status}</span></p>
+    <p>{user.first_name} {user.last_name} · {user.email}{#if user.student_number} · ID ending {user.student_number}{/if} · <span class="badge">{session.me.status}</span></p>
     <label for="preferred">Preferred name</label>
     <input id="preferred" bind:value={preferred} />
     <button class="primary" onclick={savePreferred} disabled={save.busy}>Save</button>
     <Status action={save} />
-    <label for="roster-number">Confirm student number for roster matching</label>
-    <input id="roster-number" inputmode="numeric" autocomplete="off" maxlength="10" bind:value={rosterNumber} />
-    <button class="secondary" onclick={confirmRoster} disabled={confirmNumber.busy}>Confirm student number</button>
-    <Status action={confirmNumber} />
+    {#if session.me.staff_sso}
+      <p>Signed in with a staff work account. This does not verify student status.</p>
+    {:else}
+      <label for="roster-number">Confirm student number for roster matching</label>
+      <input id="roster-number" inputmode="numeric" autocomplete="off" maxlength="10" bind:value={rosterNumber} />
+      <button class="secondary" onclick={confirmRoster} disabled={confirmNumber.busy}>Confirm student number</button>
+      <Status action={confirmNumber} />
+    {/if}
   </div>
   {#if session.me.status === "pending_review" || session.me.status === "pending_email"}
     <div class="card">

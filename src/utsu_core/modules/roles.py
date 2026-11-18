@@ -36,9 +36,12 @@ class RolesModule:
             out = []
             for a in S.list("accounts"):
                 rs = roles_of(a, ctx.roles)
-                if rs:
+                if rs or a.get("google_staff_username"):
                     u = S.get("users", a["uuid"]) or {}
-                    out.append({"uuid": a["uuid"], "preferred_name": u.get("preferred_name", ""), "roles": sorted(rs)})
+                    holder = {"uuid": a["uuid"], "preferred_name": u.get("preferred_name", ""), "roles": sorted(rs)}
+                    if a.get("google_staff_username"):
+                        holder.update(username=a["google_staff_username"], email=u.get("email", ""))
+                    out.append(holder)
             return out
 
         @r.put("")

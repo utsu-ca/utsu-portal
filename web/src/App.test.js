@@ -14,6 +14,7 @@ const staff = { ...member, roles: ["sap_admin", "senate_admin"] };
 
 function serve(me) {
   api.mockImplementation(async path => {
+    if (path === "/content") return { pages: {} };
     if (path === "/plugins") return { enabled: [] };
     if (path === "/me") return me;
     if (path === "/sap/banking") return { status: "on_file" };
@@ -35,7 +36,7 @@ beforeEach(() => {
   clearBankingStatus();
   setAdminMode(false);
   go("home");
-  api.mockResolvedValue({ enabled: [] });
+  api.mockImplementation(async path => path === "/content" ? { pages: {} } : { enabled: [] });
 });
 afterEach(() => { cleanup(); api.mockReset(); });
 
@@ -127,10 +128,39 @@ describe("menu behaviour", () => {
 });
 
 describe("signed in", () => {
+  it("previews public copy as text and updates the site after publishing", async () => {
+    session.token = "t";
+    setAdminMode(true);
+    api.mockImplementation(async (path, opts) => {
+      if (path === "/me") return { ...member, roles: ["admin"] };
+      if (path === "/plugins") return { enabled: [] };
+      if (path === "/content") return { pages: {} };
+      if (path === "/admin/content/bursaries") return { rev: 1, copy: opts.body.copy };
+      return {};
+    });
+    render(App);
+    await fireEvent.click(await within(menu()).findByRole("button", { name: "Page content" }));
+    await fireEvent.change(await screen.findByLabelText("Page"), { target: { value: "bursaries" } });
+    const literal = "<b>Applications open soon.</b>";
+    await fireEvent.input(screen.getByLabelText("Short blurb (optional)"), { target: { value: literal } });
+    expect(within(screen.getByRole("region", { name: "Public copy preview" })).getByText(literal)).toBeInTheDocument();
+    expect(api.mock.calls.some(([, opts]) => opts?.method === "PUT")).toBe(false);
+    await fireEvent.click(screen.getByRole("button", { name: "Publish to site" }));
+    await screen.findByText(/Published\. Visitors/);
+    expect(api).toHaveBeenCalledWith("/admin/content/bursaries", {
+      method: "PUT", body: { base_rev: 0, copy: expect.objectContaining({ tagline: literal }) },
+    });
+    await fireEvent.click(within(menu()).getByRole("button", { name: "Bursaries" }));
+    expect(await screen.findByText(literal)).toBeInTheDocument();
+    await fireEvent.click(within(menu()).getByRole("button", { name: "Home" }));
+    expect(await screen.findByText(literal)).toBeInTheDocument();
+  });
+
   it("keeps the page usable and offers a retry when program discovery fails", async () => {
     session.token = "t";
     let attempts = 0;
     api.mockImplementation(async path => {
+      if (path === "/content") return { pages: {} };
       if (path === "/me") return member;
       if (path === "/plugins") {
         if (++attempts === 1) throw new Error("Program service unavailable.");
@@ -151,6 +181,7 @@ describe("signed in", () => {
     session.token = "t";
     let bankingCalls = 0;
     api.mockImplementation(async path => {
+      if (path === "/content") return { pages: {} };
       if (path === "/plugins") return { enabled: [] };
       if (path === "/me") return member;
       if (path === "/sap/banking") {
@@ -176,6 +207,7 @@ describe("signed in", () => {
     history.replaceState(null, "", "/#sap-banking=tok123");
     const resolveBanking = [];
     api.mockImplementation(path => {
+      if (path === "/content") return Promise.resolve({ pages: {} });
       if (path === "/plugins") return Promise.resolve({ enabled: [] });
       if (path === "/me") return Promise.resolve(member);
       if (path === "/sap/banking") return new Promise(resolve => { resolveBanking.push(resolve); });
@@ -212,6 +244,7 @@ describe("signed in", () => {
     session.token = "t";
     let resolveBanking;
     api.mockImplementation(path => {
+      if (path === "/content") return Promise.resolve({ pages: {} });
       if (path === "/plugins") return Promise.resolve({ enabled: [] });
       if (path === "/me") return Promise.resolve(member);
       if (path === "/sap/banking") return new Promise(resolve => { resolveBanking = resolve; });

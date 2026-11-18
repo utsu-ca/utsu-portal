@@ -11,6 +11,7 @@ from .. import security
 from ..context import Context, roles_of
 from ..security import clean_text
 from ..services.account_check import check_one
+from ..services.google_staff import register_routes as register_google_routes
 from ..services.roster import get_trunc_id
 
 name = "auth"
@@ -112,6 +113,7 @@ class AuthModule:
         r = APIRouter(prefix="/api")
         S = ctx.store
         user_dep = ctx.require_user()
+        register_google_routes(r, ctx)
 
         @r.post("/auth/register", status_code=201)
         def register(b: Register):
@@ -162,7 +164,7 @@ class AuthModule:
         def login(b: Username):
             uid = ctx.uid(b.username)
             user, acct = S.get("users", uid), S.get("accounts", uid)
-            if user and acct:  # identical response either way: no account enumeration
+            if user and acct and not acct.get("google_staff_username"):  # no account enumeration
                 ctx.send_otp("login", uid, user["email"])
             return {"detail": "if the account exists, a code was emailed"}
 
@@ -170,7 +172,7 @@ class AuthModule:
         def token(b: CodeIn):
             uid = ctx.uid(b.username)
             acct = S.get("accounts", uid)
-            if acct is None or ctx.check_otp("login", uid, b.code) is None:
+            if acct is None or acct.get("google_staff_username") or ctx.check_otp("login", uid, b.code) is None:
                 raise HTTPException(400, "invalid or expired code")
             if not acct["email_verified"]:
                 def mark(ac):  # the login code proves control of the registered email
@@ -186,8 +188,11 @@ class AuthModule:
         @r.get("/me")
         def me(acct: dict = user_dep):
             u = S.get("users", acct["uuid"])
-            return {"user": u, "status": acct["status"], "role": acct["role"],
-                    "roles": sorted(roles_of(acct, ctx.roles))}
+            result = {"user": u, "status": acct["status"], "role": acct["role"],
+                      "roles": sorted(roles_of(acct, ctx.roles))}
+            if acct.get("google_staff_username"):
+                result["staff_sso"] = True
+            return result
 
         @r.patch("/me")
         def update_me(b: Preferred, acct: dict = user_dep):
@@ -199,6 +204,8 @@ class AuthModule:
 
         @r.post("/me/roster-number")
         def confirm_roster_number(body: ConfirmRosterNumber, acct: dict = user_dep):
+            if acct.get("google_staff_username"):
+                raise HTTPException(403, "Staff sign-in does not verify student status")
             uid = acct["uuid"]
             if not ctx.limiter.allow(f"roster-number:{uid}", ctx.settings.recovery_attempts, ctx.settings.recovery_window):
                 raise HTTPException(429, "too many attempts; try again later")

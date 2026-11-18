@@ -4,9 +4,7 @@
   import { Action } from "../lib/action.svelte.js";
   import Status from "../components/Status.svelte";
 
-  // `kind` is "portal" (account identity checks) or "agm" (online-attendance ID checks).
-  let { kind = "portal" } = $props();
-  const base = $derived(kind === "agm" ? "/admin/agm/verifications" : "/admin/verifications");
+  const base = "/admin/verifications";
   const load = new Action(), act = new Action();
   let list = $state([]), scans = $state({});
 
@@ -24,13 +22,9 @@
 {#if !list.length && !load.busy}<div class="card"><p>Nothing pending.</p></div>{/if}
 {#each list as v (v.id)}
   <div class="card">
-    {#if kind === "agm"}
-      <strong>{v.first_name} {v.last_name} ***{v.student_number}</strong>
-    {:else}
-      <strong>{v.kind}: {v.first_name} {v.last_name}</strong>
-      <p>Divisions: {v.division_codes.join(", ")}</p>
-      <pre>{JSON.stringify(v.changes)}</pre>
-    {/if}
+    <strong>{v.kind}: {v.first_name} {v.last_name}</strong>
+    <p>Divisions: {v.division_codes.join(", ")}</p>
+    <pre>{JSON.stringify(v.changes)}</pre>
     {#if scans[v.id]}
       <div class="row">
         <img class="shot" alt="Face scan" src={scans[v.id].face} />

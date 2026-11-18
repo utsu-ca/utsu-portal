@@ -9,6 +9,7 @@
   import { start } from "./lib/boot.js";
   import { layout } from "./lib/layout.svelte.js";
   import { go, nav } from "./lib/nav.svelte.js";
+  import { contentLoad, loadContent } from "./lib/content.svelte.js";
   import { loadPlugins, pluginLoad } from "./lib/plugins.svelte.js";
   import { applyMode, session, setAdminMode, signOut } from "./lib/session.svelte.js";
   import { theme } from "./lib/theme.svelte.js";
@@ -45,6 +46,13 @@
       <div class="banner-admin" role="status">Admin mode: staff tools are shown. Actions here affect real records.</div>
     {/if}
     <BankingStatus />
+    {#if contentLoad.error && ["home", "program"].includes(nav.name)}
+      <div class="card">
+        <p>The latest page copy could not be loaded.</p>
+        <Status action={contentLoad} />
+        <button class="secondary" onclick={loadContent}>Retry loading page copy</button>
+      </div>
+    {/if}
     {#if pluginLoad.error}
       <div class="card">
         <p>Some program links could not be loaded.</p>
@@ -56,7 +64,7 @@
       {#if loader}
         {#await loader() then module}
           {@const View = module.default}
-          {#if nav.name === "auth"}<View onsignin={start} />{:else}<View {...nav.props} />{/if}
+          {#if nav.name === "auth"}<View onsignin={start} {...nav.props} />{:else}<View {...nav.props} />{/if}
         {:catch}
           <p class="err" role="alert">This page could not be loaded. Check your connection and try again.</p>
         {/await}

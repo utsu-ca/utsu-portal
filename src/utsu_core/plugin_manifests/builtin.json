@@ -80,7 +80,7 @@
       },
       "settings": [
         "zoom_client_id", "zoom_client_secret", "zoom_redirect_uris", "zoom_url", "zoom_sso_url",
-        "agm_verify_mode", "agm_grant_ttl"
+        "agm_grant_ttl"
       ],
       "roles": {
         "checkin": "AGM check-in and attendance",
@@ -95,6 +95,9 @@
       "factory": "utsu_core.programs.agm.verify:AgmVerifyModule",
       "kind": "program",
       "dependencies": ["agm"],
+      "roles": {
+        "agm_id_reviewer": "review AGM online ID scans and approve Zoom sign-on"
+      },
       "order": 30
     },
     {

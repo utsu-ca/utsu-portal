@@ -11,8 +11,11 @@ let pending;
 export function loadContent() {
   if (!pending) {
     pending = contentLoad.run(async () => {
-      const { pages } = await api("/content");
-      published = pages;
+      const data = await api("/content");
+      if (!data?.pages || typeof data.pages !== "object" || Array.isArray(data.pages)) {
+        throw new Error("The portal returned an invalid page list. Try loading it again.");
+      }
+      published = data.pages;
       return true;
     }).finally(() => { pending = undefined; });
   }

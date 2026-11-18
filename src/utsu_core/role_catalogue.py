@@ -8,6 +8,7 @@ from typing import Iterable, cast
 from .contracts import PluginManifest
 
 CORE_ROLES = {
+    "staff": "staff account; no operational or administration permissions",
     "admin": "everything, including granting roles",
     "verifier": "review identity (face + ID) verifications, portal and AGM",
     "forms_editor": "create/edit/publish forms; view and set submission statuses",

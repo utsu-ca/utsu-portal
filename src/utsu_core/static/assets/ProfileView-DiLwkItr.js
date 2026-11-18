@@ -1,0 +1,1 @@
+import{K as e,M as t,N as n,O as r,l as i,nt as a,tt as o}from"./api-BN_o_mOo.js";import{a as s}from"./session.svelte-BNPqhuWX.js";import c from"./AccountView-B3l2mJAD.js";import l from"./AuthView-Pc62CKh-.js";function u(u,d){a(d,!1),i();var f=n(),p=e(f),m=e=>{c(e,{})},h=e=>{l(e,{})};r(p,e=>{s.token&&s.me?e(m):e(h,-1)}),t(u,f),o()}export{u as default};

@@ -28,7 +28,8 @@ export function buildMenu({ signedIn = false, verified = false, has = () => fals
     ...user(verified, apply("agm-rsvp", "RSVP for the AGM", "agm_rsvp")),
     ...user(verified, { id: "agm-invitation", label: "My invitation", view: "agm" }),
     ...user(has("agm_admin"), { id: "agm-admin", label: "Registrations and roster", view: "agmAdmin" }),
-    ...user(has("verifier"), { id: "agm-verifications", label: "Online ID checks", view: "adminVerifications", props: { kind: "agm" } }),
+    ...user(enabled("agm_verify") && has("agm_id_reviewer"),
+      { id: "agm-verifications", label: "Online ID review queue", view: "agmIdQueue" }),
     ...user(has("checkin"), { id: "agm-checkin", label: "Check-in desk", href: "/static/checkin.html" }),
   ];
   const senateActions = [
@@ -41,6 +42,7 @@ export function buildMenu({ signedIn = false, verified = false, has = () => fals
     ...user(has("verifier"), { id: "admin-verifications", label: "Identity checks", view: "adminVerifications" }),
     ...user(has("admin"), { id: "admin-roles", label: "Roles", view: "adminRoles" }),
     ...user(has("admin"), { id: "admin-roster", label: "Student roster", view: "adminRoster" }),
+    ...user(has("admin"), { id: "admin-content", label: "Page content", view: "adminContent" }),
   ];
   // Discussion and voting are opt-in plug-ins; they are listed only where the deployment runs them.
   const discussionActions = [

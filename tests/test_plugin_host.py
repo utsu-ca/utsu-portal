@@ -75,7 +75,7 @@ def test_builtin_full_profile_preserves_order_and_form_ownership():
     manifests, modules = load_modules("local")
     assert [module.name for module in modules] == [
         "sso", "auth", "forms", "agm", "agm_verify", "senate", "sap",
-        "messaging", "notices", "admin", "clubs", "audit", "roles",
+        "messaging", "content", "notices", "admin", "clubs", "audit", "roles",
     ]
     assert {form_id for manifest in manifests for form_id in manifest.form_ids} == {
         "agm_rsvp", "senate_application", "student_aid_bursary",

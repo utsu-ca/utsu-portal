@@ -50,7 +50,7 @@ generated once into Secret Manager and mounted as env vars. **Never rotate `PORT
 | `PORTAL_ADMIN_EMAILS` | emails that become admin once verified by OTP |
 | `PORTAL_BASE_URL`, `PORTAL_SSO_KEY` | SSO issuer URL and RSA private key (PEM) |
 | `PORTAL_SMTP_URL`, `PORTAL_MAIL_FROM` | OTP, program notices, and banking re-verification. Without it only recipient and subject are logged, not codes. `smtp://` requires STARTTLS except on a loopback host that doesn't offer it (e.g. `testing/mail_sink.py`) |
-| `PORTAL_ZOOM_*`, `PORTAL_AGM_VERIFY_MODE` | see the AGM section of [Applicant portal](Applicant-Portal.md) |
+| `PORTAL_ZOOM_*` | see the AGM section of [Applicant portal](Applicant-Portal.md); the former `PORTAL_AGM_VERIFY_MODE=auto` setting no longer bypasses human review |
 
 `GET /healthz` is the liveness probe. The container listens on `$PORT`.
 
@@ -197,6 +197,7 @@ The auth service is the only issuer of roles (`modules/roles.py`). They are stor
 | `verifier` | review face + ID verifications (portal and AGM) |
 | `forms_editor` | form drafts, publish/unpublish, submissions |
 | `checkin` | AGM check-in and attendance |
+| `agm_id_reviewer` | view the AGM online ID queue and photos, and decide Zoom sign-in; does not grant account-verification access |
 | `finance` | club transactions and grants |
 | `clubs` | club registration decisions |
 | `auditor` | read/verify/export the audit log |

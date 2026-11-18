@@ -37,7 +37,8 @@ def test_agm_client_registration_does_not_depend_on_router_order():
 def env():
     mail = OutboxMailer()
     c = TestClient(create_app(Settings(secret="s" * 32, admin_emails=("boss@x.ca",), zoom_client_secret="zsecret", zoom_redirect_uris=(REDIR,),
-                                       zoom_url="https://zoom.example/j/1", zoom_sso_url="https://zoom.example/sso"), mailer=mail))
+                                       zoom_url="https://zoom.example/j/1", zoom_sso_url="https://zoom.example/sso",
+                                       agm_verify_mode="auto"), mailer=mail))
     register(c, mail, "boss", "boss@x.ca", sn="9999999999", first="Bo", last="Ss")
     h = {"boss": login(c, mail, "boss")}
     for u, sn in (("ada", "1234567890"), ("bob", "2234567890")):
@@ -61,7 +62,8 @@ def test_roster_removal_blocks_checkin_and_zoom_sso(env):
     c, h = env
     rsvp(c, h, "bob", "Online")
     bob = uid(c, h, "bob")
-    c.app.state.ctx.store.put("agm_grants", bob, {"uuid": bob, "exp": c.app.state.ctx.now() + 600})
+    cid = submit_check(c, h, "bob")["id"]
+    assert c.post(f"/api/admin/agm/verifications/{cid}/decision", json={"approve": True}, headers=h["boss"]).status_code == 200
     roster = "First Name,Last Name,Truncated Student Number,Faculty,Division\nAda,Test,xxxxx6789x,ARTSC,UC\n"
     assert c.post("/api/admin/roster", json={"csv": roster}, headers=h["boss"]).status_code == 200
     rsvps = c.get("/api/admin/agm/rsvps", headers=h["boss"]).json()["items"]
@@ -87,8 +89,8 @@ def test_admin_registration_report_and_standalone_verification(env):
     assert export.headers["cache-control"] == "no-store"
     assert "agm.rsvps_exported" in {e["action"] for e in c.get("/api/admin/audit?limit=200", headers=h["boss"]).json()["entries"]}
     assert c.get("/api/agm/invitation", headers=h["bob"]).json()["id_verified"] is False  # applicant is told what is left
-    bob = uid(c, h, "bob")
-    c.app.state.ctx.store.put("agm_grants", bob, {"uuid": bob, "exp": c.app.state.ctx.now() + 600})
+    cid = submit_check(c, h, "bob")["id"]
+    assert c.post(f"/api/admin/agm/verifications/{cid}/decision", json={"approve": True}, headers=h["boss"]).status_code == 200
     assert c.get("/api/agm/invitation", headers=h["bob"]).json()["id_verified"] is True
     first = c.get("/api/admin/agm/rsvps?limit=1", headers=h["boss"]).json()
     assert len(first["items"]) == 1 and first["items"][0]["eligible"]
@@ -116,6 +118,49 @@ def uid(c, h, who):
     return c.get("/api/me", headers=h[who]).json()["user"]["uuid"]
 
 
+def submit_check(c, h, who):
+    chal = c.get("/api/agm/verify/challenge", headers=h[who]).json()["challenge"]
+    response = c.post("/api/agm/verify", json={"face": IMG, "id_card": IMG, "challenge": chal}, headers=h[who])
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def test_online_review_queue_roles_position_and_resubmission(env, monkeypatch):
+    c, h = env
+    ctx = c.app.state.ctx
+    c.put("/api/admin/roles", json={"username": "bob", "roles": ["verifier"]}, headers=h["boss"]).raise_for_status()
+    base = "/api/admin/agm/verifications"
+    assert c.get(base, headers=h["bob"]).status_code == 403
+    assert c.get(base, headers=h["ada"]).status_code == 403
+    c.put("/api/admin/roles", json={"username": "bob", "roles": ["agm_id_reviewer"]}, headers=h["boss"]).raise_for_status()
+    assert c.get("/api/admin/verifications", headers=h["bob"]).status_code == 403
+    rsvp(c, h, "ada", "Online")
+    rsvp(c, h, "bob", "Online")
+    now = ctx.now()
+    monkeypatch.setattr(ctx, "now", lambda: now)
+    ada = submit_check(c, h, "ada")
+    now += 1
+    bob = submit_check(c, h, "bob")
+    assert ada["position"] == 1 and bob["position"] == 2 and bob["queue_length"] == 2
+    assert 8 <= ada["wait_after"] < bob["wait_after"] <= 60
+    queue = c.get(base, headers=h["bob"]).json()
+    assert [(row["id"], row["position"], row["can_review"]) for row in queue] == [
+        (ada["id"], 1, True), (bob["id"], 2, False),
+    ]
+    assert c.get(f"{base}/{ada['id']}/media", headers=h["bob"]).json()["id_card"] == IMG
+    assert c.get(f"{base}/{ada['id']}/media", headers=h["ada"]).status_code == 403
+    assert c.get(f"{base}/{bob['id']}/media", headers=h["bob"]).status_code == 403
+    assert c.post(f"{base}/{bob['id']}/decision", json={"approve": True}, headers=h["bob"]).status_code == 403
+    decision = f"{base}/{ada['id']}/decision"
+    assert c.post(decision, json={"approve": False}, headers=h["bob"]).status_code == 422
+    c.post(decision, json={"approve": False, "note": "The ID is blurry."}, headers=h["bob"]).raise_for_status()
+    assert c.get("/api/agm/verify", headers=h["ada"]).json() == {"status": "rejected", "note": "The ID is blurry."}
+    first = c.get("/api/agm/verify", headers=h["bob"]).json()
+    assert first["position"] == first["queue_length"] == 1 and first["wait_after"] < bob["wait_after"]
+    now += 1
+    assert submit_check(c, h, "ada")["position"] == 2
+
+
 def test_in_person_qr_and_checkin(env):
     c, h = env
     assert c.get("/api/agm/invitation", headers=h["ada"]).json() == {"registered": False, "form": "agm_rsvp"}
@@ -138,19 +183,23 @@ def pkce():
     return v, base64.urlsafe_b64encode(hashlib.sha256(v.encode()).digest()).rstrip(b"=").decode()
 
 
-def test_online_verifier_gates_zoom_sso(env):
+def test_online_verifier_gates_zoom_sso(env, monkeypatch):
     c, h = env
     rsvp(c, h, "ada", "Online")
     assert c.post("/api/agm/zoom/join", headers=h["ada"]).status_code == 403
     v, ch = pkce()
     body = {"client_id": "zoom", "redirect_uri": REDIR, "state": "st", "nonce": "n1", "code_challenge": ch}
     assert c.post("/api/sso/authorize", json=body, headers=h["ada"]).status_code == 403  # no ID check yet
-    chal = c.get("/api/agm/verify/challenge", headers=h["ada"]).json()["challenge"]
-    r = c.post("/api/agm/verify", json={"face": IMG, "id_card": IMG, "challenge": chal}, headers=h["ada"])
-    assert r.json()["status"] == "pending"
+    ctx = c.app.state.ctx
+    ada = uid(c, h, "ada")
+    ctx.store.put("agm_grants", ada, {"uuid": ada, "exp": ctx.now() + 600, "at": ctx.now()})
+    r = submit_check(c, h, "ada")
+    assert r["status"] == "pending"
+    assert c.post("/api/agm/zoom/join", headers=h["ada"]).status_code == 403
     assert c.get("/api/agm/verify", headers=h["ada"]).json()["status"] == "pending"
-    assert c.post("/api/admin/agm/verifications/%s/decision" % r.json()["id"], json={"approve": True}, headers=h["boss"]).status_code == 200
-    assert c.get(f"/api/admin/agm/verifications/{r.json()['id']}/media", headers=h["boss"]).status_code == 404  # purged
+    assert c.post("/api/admin/agm/verifications/%s/decision" % r["id"], json={"approve": True}, headers=h["boss"]).status_code == 200
+    assert c.get(f"/api/admin/agm/verifications/{r['id']}/media", headers=h["boss"]).status_code == 404
+    assert ctx.store.get("agm_media", r["id"]) is None
     inv = c.get("/api/agm/invitation", headers=h["ada"]).json()
     assert inv["id_verified"] and inv["zoom_sso_url"] == "https://zoom.example/sso"
     assert c.post("/api/agm/zoom/join", headers=h["ada"]).json()["zoom_url"] == "https://zoom.example/j/1"
@@ -182,6 +231,10 @@ def test_online_verifier_gates_zoom_sso(env):
     assert ui["sub"] == payload["sub"]
     assert c.get("/sso/.well-known/openid-configuration").json()["jwks_uri"].endswith("/sso/jwks")
     assert c.get("/sso/authorize").status_code == 200
+    approved_check = ctx.store.get("agm_checks", r["id"])
+    monkeypatch.setattr(ctx, "now", lambda: approved_check["admitted_until"])
+    assert c.get("/api/agm/verify", headers=h["ada"]).json() == {"status": "none"}
+    assert c.post("/api/sso/authorize", json=body, headers=h["ada"]).status_code == 403
 
 
 def test_in_person_registrant_cannot_use_online_flow(env):

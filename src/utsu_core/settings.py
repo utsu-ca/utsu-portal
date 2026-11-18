@@ -22,6 +22,9 @@ def env_secret(name: str, default: str | None = None) -> str | None:
 class Settings:
     secret: str = field(default_factory=lambda: secrets.token_hex(32))
     admin_emails: tuple[str, ...] = ()  # only an account whose OTP-verified email is listed here becomes admin (usernames are never trusted)
+    google_staff_domains: tuple[str, ...] = ()
+    google_client_id: str | None = None
+    google_client_secret: str | None = field(default=None, repr=False)
     store: str = "memory"  # memory | sqlite:<path> | firestore
     token_ttl: int = 8 * 3600
     otp_ttl: int = 600
@@ -53,7 +56,7 @@ class Settings:
     zoom_redirect_uris: tuple[str, ...] = ()
     zoom_url: str = ""  # meeting link handed to verified online attendees
     zoom_sso_url: str = ""  # Zoom vanity-URL SSO start (SP-initiated login)
-    agm_verify_mode: str = "manual"  # manual (admin reviews scan) | auto
+    agm_verify_mode: str = "manual"  # deprecated; AGM review is always manual
     agm_grant_ttl: int = 12 * 3600
     sap_review_enabled: bool = False  # experimental review; not a substitute for the committee process
     redis_url: str | None = None  # shared realtime bus + rate limits across replicas; in-process when unset
@@ -88,6 +91,8 @@ class Settings:
             item.strip() for item in raw_plugins.split(",") if item.strip()
         )
         return cls(secret=secret, admin_emails=admin_emails, store=env("PORTAL_STORE", "memory"),
+                   google_staff_domains=tuple(a.strip().lower() for a in (env("PORTAL_GOOGLE_STAFF_DOMAINS") or "").split(",") if a.strip()),
+                   google_client_id=env("PORTAL_GOOGLE_CLIENT_ID"), google_client_secret=env("PORTAL_GOOGLE_CLIENT_SECRET"),
                    enabled_plugins=enabled_plugins,
                    api_only=env("PORTAL_API_ONLY", "0") == "1",
                    sso_issuer=env("PORTAL_BASE_URL", "http://localhost:8000").rstrip("/"), sso_key_pem=env("PORTAL_SSO_KEY"),

@@ -34,6 +34,13 @@
   <div class="card">
     <strong>{holder.preferred_name || holder.uuid}</strong>
     <p>{holder.roles.join(", ")}</p>
+    {#if holder.username}
+      <p class="help">{holder.email}</p>
+      <button class="secondary" disabled={save.busy} onclick={() => {
+        username = holder.username;
+        chosen = Object.fromEntries(holder.roles.map(role => [role, true]));
+      }}>Load roles for {holder.preferred_name || holder.email}</button>
+    {/if}
     <p class="help">{holder.uuid}</p>
   </div>
 {/each}

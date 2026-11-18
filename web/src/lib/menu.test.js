@@ -50,7 +50,7 @@ describe("signing in exposes program functions", () => {
     expect(actions(admin, "senate")).toContain("Administer seating");
     expect(actions(admin, "club-registration")).toContain("Review registrations");
     expect(actions(admin, "club-finances")).toContain("Approve expenses and grants");
-    expect(labels(findNode(admin, n => n.id === "administration").items)).toEqual(["Forms", "Identity checks", "Roles", "Student roster"]);
+    expect(labels(findNode(admin, n => n.id === "administration").items)).toEqual(["Forms", "Identity checks", "Roles", "Student roster", "Page content"]);
   });
 });
 
