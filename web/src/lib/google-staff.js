@@ -3,6 +3,10 @@ import { signIn } from "./session.svelte.js";
 
 const KEY = "google-staff-login";
 
+export function isGoogleStaffCallback() {
+  return new URLSearchParams(location.search).get("state")?.startsWith("google.") === true;
+}
+
 export async function beginGoogleStaffLogin() {
   const { url, state, verifier } = await api("/auth/google/start", { method: "POST" });
   sessionStorage.setItem(KEY, JSON.stringify({ state, verifier }));

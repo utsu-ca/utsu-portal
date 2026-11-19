@@ -51,7 +51,8 @@ class InternalModule:
             if not a or not u:
                 return None
             # minimal projection: no hashes, no email/student-id lookup keys
-            return {"account": {k: a.get(k) for k in ("uuid", "status", "role", "roles", "email_verified")}, "user": u}
+            return {"account": {k: a.get(k) for k in ("uuid", "status", "role", "roles", "email_verified", "recovery_version")},
+                    "user": u}
 
         @r.get("/ping")
         def ping(authorization: str | None = Header(None)):

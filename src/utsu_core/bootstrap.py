@@ -28,6 +28,7 @@ from .role_catalogue import ROLES
 from .services.account_check import check_accounts
 from .settings import Settings
 from .store import ACCESS, AccessLog, AuditedStore, Store, open_store
+from .version import server_version
 from .services.anchors import AnchorRuntime
 from .services.email import EmailDeliveryService
 from .services.files import DocumentService
@@ -93,6 +94,7 @@ def _module_routers(modules: tuple[Module, ...], ctx: Context, ui: bool) -> tupl
         ("GET", "/healthz"): "core",
         ("GET", "/readyz"): "core",
         ("GET", "/api/plugins"): "core",
+        ("GET", "/api/version"): "core",
     }
     if ui:
         owners[("GET", "/")] = "core"
@@ -309,6 +311,12 @@ def build_app(settings: Settings, store: Store | None, mailer: Mailer | None, mo
     def plugins():
         """Enabled module ids, so the UI can hide navigation for opt-in plug-ins that are not deployed."""
         return {"enabled": enabled_modules}
+
+    build = server_version(settings.commit)
+
+    @app.get("/api/version", include_in_schema=False)
+    def version():
+        return build
 
     @app.get("/readyz", include_in_schema=False)
     def readyz():

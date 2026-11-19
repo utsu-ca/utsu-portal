@@ -171,6 +171,75 @@ def test_recovery_flow(env):
     assert c.get(f"/api/admin/verifications/{r.json()['id']}/media", headers=ah).status_code == 404  # images purged
 
 
+def test_backup_email_signin_and_primary_change(env):
+    c, mail = env
+    c.app.state.ctx.settings.otp_cooldown = 0
+    ah, uh = setup_admin_and_user(c, mail)
+    activate(c, ah, uh)
+    initial = c.get("/api/me", headers=uh).json()
+    assert initial["backup_email"] is None
+    enroll = "/api/auth/backup/enroll"
+    confirm = "/api/auth/backup/confirm"
+    assert c.post(enroll, headers=ah, json={"email": "other@outside.ca"}).status_code == 403
+    assert c.post(enroll, headers=uh, json={"email": "ADA@X.CA"}).status_code == 422
+
+    def establish(address):
+        assert c.post(enroll, headers=uh, json={"email": address}).status_code == 200
+        assert [msg[0] for msg in mail.outbox[-2:]] == ["ada@x.ca", address]
+        proof = {"email": address, "primary_code": mail.outbox[-2][2].split("code is ")[1][:6],
+                 "backup_code": code(mail)}
+        wrong = "000000" if proof["primary_code"] != "000000" else "111111"
+        assert c.post(confirm, headers=uh, json=proof | {"primary_code": wrong}).status_code == 400
+        assert c.post(confirm, headers=uh, json=proof | {"email": "unverified@outside.ca"}).status_code == 400
+        assert c.post(confirm, headers=uh, json=proof).json() == {"backup_email": address}
+        assert c.post(confirm, headers=uh, json=proof).status_code == 400
+
+    establish("one@outside.ca")
+    start = "/api/recovery/backup/start"
+    token = "/api/recovery/backup/token"
+    count = len(mail.outbox)
+    nonmatch = c.post(start, json={"username": "ada", "email": "wrong@outside.ca"})
+    assert len(mail.outbox) == count
+    assert c.post(start, json={"username": "ada", "email": "ONE@outside.ca"}).json() == nonmatch.json()
+    credentials = {"username": "ada", "code": code(mail)}
+    backup_session = c.post(token, json=credentials)
+    assert backup_session.status_code == 200
+    assert c.post(token, json=credentials).status_code == 400
+    bh = {"Authorization": f"Bearer {backup_session.json()['token']}"}
+    me = c.get("/api/me", headers=bh).json()
+    assert me["backup_session"] is True and me["user"] == initial["user"]
+    assert c.post(enroll, headers=bh, json={"email": "other@outside.ca"}).status_code == 403
+
+    establish("two@outside.ca")
+    assert c.get("/api/me", headers=bh).status_code == 401
+    c.post(start, json={"username": "ada", "email": "two@outside.ca"})
+    bh = {"Authorization": "Bearer " + c.post(token, json={"username": "ada", "code": code(mail)}).json()["token"]}
+    change = {"username": "ada", "student_number_trunc": "7890", "new_email": "new@x.ca"}
+    assert c.post("/api/recovery/email-otp", headers=bh, json=change).status_code == 200
+    request = c.post("/api/recovery/request", headers=bh, json=scan(c, bh, otp=code(mail), **change))
+    assert request.status_code == 201
+    assert c.post(f"/api/admin/verifications/{request.json()['id']}/decision", headers=ah, json={"approve": True}).status_code == 200
+    me = c.get("/api/me", headers=bh).json()
+    assert me["user"]["uuid"] == initial["user"]["uuid"] and me["user"]["email"] == "new@x.ca"
+    assert me["backup_email"] == "two@outside.ca"
+    assert c.put("/api/admin/roles", headers=ah, json={"username": "ada", "roles": ["admin"]}).status_code == 200
+    assert c.get("/api/me", headers=bh).status_code == 401
+
+
+def test_configured_applicant_primary_email_domains():
+    mail = OutboxMailer()
+    settings = Settings(secret="s" * 32, applicant_email_domains=("school.example.ca",))
+    c = TestClient(create_app(settings, mailer=mail))
+    body = {"username": "ada", "first_name": "Ada", "last_name": "Lovelace", "student_number": "1234567890"}
+    for rejected in ("ada@sub.school.example.ca", "ada@example.ca"):
+        assert c.post("/api/auth/register", json=body | {"email": rejected}).status_code == 422
+    assert not mail.outbox
+    register(c, mail, "ada", "ada@school.example.ca")
+    change = {"username": "ada", "student_number_trunc": "7890", "new_email": "ada@example.ca"}
+    assert c.post("/api/recovery/email-otp", json=change).status_code == 422
+    assert c.post("/api/recovery/request", json=scan(c, {}, **change)).status_code == 422
+
+
 def test_duplicates_and_otp_lockout(env):
     c, mail = env
     setup_admin_and_user(c, mail)

@@ -3,6 +3,8 @@
 # Run from Google Cloud Shell in a billing-enabled project:  ./deploy/gcp/deploy.sh
 # Preset any answer via env var to skip its prompt:
 #   DOMAIN_NAME, PORTAL_ADMIN_EMAILS, ZOOM_URL, ZOOM_SSO_URL, ZOOM_REDIRECT_URIS, SMTP_URL, MAIL_FROM, ADMIN_IPS
+#   GOOGLE_STAFF_SSO (yes/no), PORTAL_GOOGLE_STAFF_DOMAINS, PORTAL_GOOGLE_BOOTSTRAP_ADMIN_EMAIL,
+#   PORTAL_GOOGLE_CLIENT_ID, PORTAL_GOOGLE_CLIENT_SECRET (prefer Secret Manager)
 # GCP-specific pieces live ONLY in this script. The app itself just reads PORTAL_* env vars, so to move to another
 # platform/database keep the image and change PORTAL_STORE (e.g. sql:postgresql+psycopg://...); see wiki/Deployment.md.
 set -euo pipefail
@@ -15,9 +17,8 @@ SA_NAME="portal-sa"
 POLICY="portal-waf"
 exists() { "$@" >/dev/null 2>&1; }
 
-ask() {  # ask VAR "Question" REGEX "hint" [default]
-    local var="$1" question="$2" regex="$3" hint="$4" default="${5:-}" answer
-    answer="${!var:-}"
+ask() {  # ask VAR "Question" REGEX "hint" [default] [preset]
+    local var="$1" question="$2" regex="$3" hint="$4" default="${5:-}" answer="${6:-}"
     while :; do
         if [ -z "$answer" ]; then
             read -r -p "$question${default:+ [$default]}: " answer
@@ -40,8 +41,33 @@ SA_EMAIL="${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 echo "Deploying to project: $PROJECT_ID in $REGION"
 
 HOST_RE='^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$'
-ask DOMAIN_NAME "Website address people will visit (e.g. portal.example.com)" "$HOST_RE" "enter a hostname like portal.example.com"
-ask PORTAL_ADMIN_EMAILS "Bootstrap admin email addresses, comma-separated" '^[^@ ,]+@[^@ ,]+(,[^@ ,]+@[^@ ,]+)*$' "comma-separated email addresses" 
+ask DOMAIN_NAME "Website address people will visit (e.g. portal.example.com)" "$HOST_RE" "enter a hostname like portal.example.com" "" "${DOMAIN_NAME:-}"
+ask GOOGLE_STAFF_SSO "Enable Google Workspace sign-in for staff and administrators?" '^(yes|no)$' "enter yes or no" "no" "${GOOGLE_STAFF_SSO:-}"
+EMAIL_RE='[A-Za-z0-9._+%-]+@[A-Za-z0-9.-]+'
+if [ "$GOOGLE_STAFF_SSO" = yes ]; then
+    LABEL_RE='[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?'
+    DOMAIN_RE="($LABEL_RE\\.)+$LABEL_RE"
+    ask PORTAL_GOOGLE_STAFF_DOMAINS "Approved Google Workspace staff domains, comma-separated" \
+        "^$DOMAIN_RE(,$DOMAIN_RE)*$" "enter exact lowercase domains, without spaces or wildcards" "" "${PORTAL_GOOGLE_STAFF_DOMAINS:-}"
+    ask PORTAL_GOOGLE_BOOTSTRAP_ADMIN_EMAIL "Initial Google administrator's exact work email (none if already set up)" \
+        "^(none|$EMAIL_RE)$" "enter one email or none; domains never grant admin" "" "${PORTAL_GOOGLE_BOOTSTRAP_ADMIN_EMAIL:-}"
+    PORTAL_GOOGLE_BOOTSTRAP_ADMIN_EMAIL="${PORTAL_GOOGLE_BOOTSTRAP_ADMIN_EMAIL,,}"
+    if [ "$PORTAL_GOOGLE_BOOTSTRAP_ADMIN_EMAIL" = none ]; then
+        PORTAL_GOOGLE_BOOTSTRAP_ADMIN_EMAIL=""
+    elif [[ ",$PORTAL_GOOGLE_STAFF_DOMAINS," != *",${PORTAL_GOOGLE_BOOTSTRAP_ADMIN_EMAIL##*@},"* ]]; then
+        echo "ERROR: the initial administrator's email must be in an approved staff domain." >&2
+        exit 1
+    fi
+    echo "Register this exact Google OAuth web redirect URI: https://$DOMAIN_NAME/"
+    ask PORTAL_GOOGLE_CLIENT_ID "Google OAuth web client ID" '^[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$' \
+        "enter the OAuth web client ID ending in .apps.googleusercontent.com" "" "${PORTAL_GOOGLE_CLIENT_ID:-}"
+    OTP_DEFAULT=none
+else
+    OTP_DEFAULT=""
+fi
+ask PORTAL_ADMIN_EMAILS "Legacy email-code bootstrap admins (comma-separated, or none)" \
+    "^(none|$EMAIL_RE(,$EMAIL_RE)*)$" "enter comma-separated email addresses or none" "$OTP_DEFAULT" "${PORTAL_ADMIN_EMAILS:-}"
+[ "$PORTAL_ADMIN_EMAILS" != none ] || PORTAL_ADMIN_EMAILS=""
 SMTP_URL="${SMTP_URL-}"
 if [ -z "$SMTP_URL" ]; then
     read -r -p "SMTP URL for OTP email, e.g. smtps://USER:PASS@HOST:465 (blank = log only, NOT for production)" SMTP_URL
@@ -84,6 +110,21 @@ echo "--> Ensuring secrets..."
 ensure_secret portal-secret openssl rand -hex 32
 ensure_secret portal-sso-key openssl genpkey -algorithm RSA -pkeyopt rsa_key_bits:2048
 SECRETS="PORTAL_SECRET=portal-secret:latest,PORTAL_SSO_KEY=portal-sso-key:latest"
+if [ "$GOOGLE_STAFF_SSO" = yes ]; then
+    if ! exists gcloud secrets describe portal-google-client-secret; then
+        if [ -z "${PORTAL_GOOGLE_CLIENT_SECRET:-}" ]; then
+            read -rs -p "Google OAuth web client secret (hidden): " PORTAL_GOOGLE_CLIENT_SECRET
+            printf '\n'
+        fi
+        if [ -z "$PORTAL_GOOGLE_CLIENT_SECRET" ]; then
+            echo "ERROR: Google OAuth web client secret is required." >&2
+            exit 1
+        fi
+    fi
+    ensure_secret portal-google-client-secret printf '%s' "${PORTAL_GOOGLE_CLIENT_SECRET:-}"
+    unset PORTAL_GOOGLE_CLIENT_SECRET
+    SECRETS="$SECRETS,PORTAL_GOOGLE_CLIENT_SECRET=portal-google-client-secret:latest"
+fi
 if [ -n "$SMTP_URL" ]; then
     ensure_secret portal-smtp-url printf '%s' "$SMTP_URL"
     SECRETS="$SECRETS,PORTAL_SMTP_URL=portal-smtp-url:latest"
@@ -95,6 +136,16 @@ fi
 
 echo "--> Deploying Cloud Run service (a few minutes)..."
 ENV_VARS="^|^PORTAL_STORE=firestore|PORTAL_ADMIN_EMAILS=$PORTAL_ADMIN_EMAILS|PORTAL_BASE_URL=https://$DOMAIN_NAME|PORTAL_MAIL_FROM=$MAIL_FROM"
+ENV_VARS="$ENV_VARS|PORTAL_APPLICANT_EMAIL_DOMAINS=${PORTAL_APPLICANT_EMAIL_DOMAINS:-}"
+# The image has no .git, so record the deployed revision for the footer (warns when uncommitted changes ship).
+PORTAL_COMMIT="${PORTAL_COMMIT:-$(git rev-parse HEAD 2>/dev/null || true)}"
+if [ -n "$PORTAL_COMMIT" ]; then
+    git diff --quiet HEAD 2>/dev/null || echo "WARNING: deploying uncommitted changes; the footer shows commit ${PORTAL_COMMIT:0:12}."
+    ENV_VARS="$ENV_VARS|PORTAL_COMMIT=$PORTAL_COMMIT"
+fi
+if [ "$GOOGLE_STAFF_SSO" = yes ]; then
+    ENV_VARS="$ENV_VARS|PORTAL_GOOGLE_STAFF_DOMAINS=$PORTAL_GOOGLE_STAFF_DOMAINS|PORTAL_GOOGLE_CLIENT_ID=$PORTAL_GOOGLE_CLIENT_ID|PORTAL_GOOGLE_BOOTSTRAP_ADMIN_EMAIL=$PORTAL_GOOGLE_BOOTSTRAP_ADMIN_EMAIL"
+fi
 ENV_VARS="$ENV_VARS|PORTAL_ZOOM_URL=$ZOOM_URL|PORTAL_ZOOM_SSO_URL=$ZOOM_SSO_URL"
 [ -n "$ZOOM_REDIRECT_URIS" ] && ENV_VARS="$ENV_VARS|PORTAL_ZOOM_REDIRECT_URIS=$ZOOM_REDIRECT_URIS"
 # max-instances=1 by default: without PORTAL_REDIS_URL (e.g. Memorystore) the realtime bus and rate limits are per-instance.
@@ -163,7 +214,8 @@ DEPLOYED!   https://$DOMAIN_NAME   (static IP: $IP_ADDRESS)
 ======================================================
 NEXT STEPS:
 1. Create a DNS A record: $DOMAIN_NAME -> $IP_ADDRESS (the managed certificate is issued once DNS propagates).
-2. Register with PORTAL_ADMIN_EMAILS, sign in (the OTP is emailed), and publish/edit forms from the admin screens.
+2. With Google staff sign-in enabled, sign in as the configured initial Google administrator and manage roles from
+   Administration. Otherwise, register with a configured legacy admin email and sign in with its emailed code.
 3. Zoom SSO (if used): issuer https://$DOMAIN_NAME ; discovery https://$DOMAIN_NAME/sso/.well-known/openid-configuration ;
    client id "zoom"; read the secret with:  gcloud secrets versions access latest --secret=portal-zoom-client-secret
 MSG

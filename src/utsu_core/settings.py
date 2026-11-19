@@ -22,9 +22,11 @@ def env_secret(name: str, default: str | None = None) -> str | None:
 class Settings:
     secret: str = field(default_factory=lambda: secrets.token_hex(32))
     admin_emails: tuple[str, ...] = ()  # only an account whose OTP-verified email is listed here becomes admin (usernames are never trusted)
+    applicant_email_domains: tuple[str, ...] = ()
     google_staff_domains: tuple[str, ...] = ()
     google_client_id: str | None = None
     google_client_secret: str | None = field(default=None, repr=False)
+    google_bootstrap_admin_email: str | None = None
     store: str = "memory"  # memory | sqlite:<path> | firestore
     token_ttl: int = 8 * 3600
     otp_ttl: int = 600
@@ -47,6 +49,7 @@ class Settings:
     expense_large_cents: int = 50_000  # expenses at/above this need the larger approval count
     default_tax_bps: int = 1300  # Ontario HST 13%
     max_receipt_bytes: int = 3_000_000
+    commit: str | None = None  # source revision of this deployment, shown in the footer (git checkout is used when unset)
     branding_dir: str | None = None  # folder holding theme.json and logos, served at /branding (default: the bundled one)
     max_cheque_bytes: int = 3_000_000
     sso_issuer: str = "http://localhost:8000"
@@ -91,8 +94,11 @@ class Settings:
             item.strip() for item in raw_plugins.split(",") if item.strip()
         )
         return cls(secret=secret, admin_emails=admin_emails, store=env("PORTAL_STORE", "memory"),
+                   applicant_email_domains=tuple(a.strip().lower() for a in (env("PORTAL_APPLICANT_EMAIL_DOMAINS") or "").split(",") if a.strip()),
                    google_staff_domains=tuple(a.strip().lower() for a in (env("PORTAL_GOOGLE_STAFF_DOMAINS") or "").split(",") if a.strip()),
                    google_client_id=env("PORTAL_GOOGLE_CLIENT_ID"), google_client_secret=env("PORTAL_GOOGLE_CLIENT_SECRET"),
+                   google_bootstrap_admin_email=env("PORTAL_GOOGLE_BOOTSTRAP_ADMIN_EMAIL"),
+                   commit=env("PORTAL_COMMIT"),
                    enabled_plugins=enabled_plugins,
                    api_only=env("PORTAL_API_ONLY", "0") == "1",
                    sso_issuer=env("PORTAL_BASE_URL", "http://localhost:8000").rstrip("/"), sso_key_pem=env("PORTAL_SSO_KEY"),

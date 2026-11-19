@@ -144,6 +144,14 @@ def test_security_headers_and_readyz_and_body_limit():
     assert c.post("/api/auth/login", content=b"x" * 500, headers={"content-type": "application/json"}).status_code == 413
 
 
+def test_version_reports_configured_commit_and_ignores_junk():
+    from utsu_core.version import package_version
+    c, *_ = boot(commit="3D1F3C5ABCDEF0123456")
+    assert c.get("/api/version").json() == {"version": package_version(), "commit": "3d1f3c5abcde"}
+    c, *_ = boot(commit="<script>")
+    assert c.get("/api/version").json()["commit"] is None
+
+
 def test_secret_must_be_strong(monkeypatch):
     monkeypatch.setenv("PORTAL_SECRET", "short")
     with pytest.raises(RuntimeError):

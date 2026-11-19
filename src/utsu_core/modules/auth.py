@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hmac
+import logging
 import re
 
 from fastapi import APIRouter, HTTPException
@@ -9,6 +10,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from .. import security
 from ..context import Context, roles_of
+from ..identity import permits_backup_signin
 from ..security import clean_text
 from ..services.account_check import check_one
 from ..services.google_staff import register_routes as register_google_routes
@@ -17,6 +19,7 @@ from ..services.roster import get_trunc_id
 name = "auth"
 USERNAME = re.compile(r"^[A-Za-z0-9._-]{3,64}$")
 EMAIL = re.compile(r"^[^@\s<>]{1,64}@[^@\s<>]{1,255}\.[^@\s<>]{2,}$")
+log = logging.getLogger(__name__)
 
 
 class Name(BaseModel):
@@ -45,6 +48,19 @@ class Recover(Username):
 
 class CodeIn(Username):
     code: str
+
+
+class BackupAddress(BaseModel):
+    email: str = Field(max_length=320)
+
+
+class BackupEnrollment(BackupAddress):
+    primary_code: str = Field(pattern=r"^\d{6}$")
+    backup_code: str = Field(pattern=r"^\d{6}$")
+
+
+class BackupLogin(Username, BackupAddress):
+    pass
 
 
 class Preferred(Name):
@@ -114,6 +130,10 @@ class AuthModule:
         S = ctx.store
         user_dep = ctx.require_user()
         register_google_routes(r, ctx)
+        domains = {d.strip().lower() for d in ctx.settings.applicant_email_domains}
+
+        def school_email(email: str) -> bool:
+            return bool(EMAIL.fullmatch(email) and (not domains or email.lower().rsplit("@", 1)[1] in domains))
 
         @r.post("/auth/register", status_code=201)
         def register(b: Register):
@@ -121,6 +141,10 @@ class AuthModule:
                 raise HTTPException(422, "username must be 3-64 chars of letters, digits . _ -")
             if not EMAIL.match(b.email):
                 raise HTTPException(422, "invalid email")
+            if b.email.lower() not in ctx.settings.admin_emails and not school_email(b.email):
+                raise HTTPException(422, "Use a primary email address from an approved school domain")
+            if b.email.lower() == (ctx.settings.google_bootstrap_admin_email or "").strip().lower():
+                raise HTTPException(409, "Use Google sign-in for this work account")
             uid = ctx.uid(b.username)
             sid = security.student_id_uuid(ctx.settings.secret, b.student_number)
             ekey = ctx.email_key(b.email)
@@ -192,7 +216,51 @@ class AuthModule:
                       "roles": sorted(roles_of(acct, ctx.roles))}
             if acct.get("google_staff_username"):
                 result["staff_sso"] = True
+            if permits_backup_signin(acct):
+                result["backup_email"] = acct.get("recovery_email")
+                result["backup_session"] = bool(acct.get("backup_session"))
             return result
+
+        def backup_enrollment(body: BackupAddress, acct: dict) -> tuple[str, str, dict]:
+            if not permits_backup_signin(acct) or acct.get("backup_session"):
+                raise HTTPException(403, "Sign in with your primary email to manage your backup email")
+            primary = S.get("users", acct["uuid"])["email"]
+            backup = body.email.strip().lower()
+            if not EMAIL.fullmatch(backup) or backup == primary.lower():
+                raise HTTPException(422, "Enter a valid backup email different from your primary email")
+            binding = {"primary": acct["email_key"], "backup": ctx.email_key(backup),
+                       "version": acct.get("recovery_version")}
+            return primary, backup, binding
+
+        @r.post("/auth/backup/enroll")
+        def enroll_backup(body: BackupAddress, acct: dict = user_dep):
+            primary, backup, binding = backup_enrollment(body, acct)
+            uid = acct["uuid"]
+            sent_primary = ctx.send_otp("backup-primary", uid, primary, binding)
+            sent_backup = ctx.send_otp("backup-enroll", uid, backup, binding)
+            if not sent_primary or not sent_backup:
+                raise HTTPException(429, "A code was requested recently. Check both inboxes or wait before requesting new codes.")
+            return {"detail": "Codes sent to your primary and backup addresses"}
+
+        @r.post("/auth/backup/confirm")
+        def confirm_backup(body: BackupEnrollment, acct: dict = user_dep):
+            _, backup, binding = backup_enrollment(body, acct)
+            uid = acct["uuid"]
+            checks = (("backup-primary", body.primary_code), ("backup-enroll", body.backup_code))
+            for consume in (False, True):
+                if not all(ctx.check_otp(purpose, uid, code, consume=consume) == binding for purpose, code in checks):
+                    raise HTTPException(400, "The email codes are invalid or expired")
+
+            def save(current):
+                if (not current or not permits_backup_signin(current)
+                        or current.get("recovery_version") != binding["version"]
+                        or current.get("email_key") != binding["primary"]):
+                    raise HTTPException(409, "Your account changed; request new codes and try again")
+                return {**current, "recovery_email": backup, "recovery_version": security.secrets.token_hex(16)}
+
+            S.update("accounts", uid, save)
+            ctx.audit.record(uid, "account.backup_email_verified", f"user:{uid}")
+            return {"backup_email": backup}
 
         @r.patch("/me")
         def update_me(b: Preferred, acct: dict = user_dep):
@@ -242,6 +310,41 @@ class AuthModule:
                     for v in S.list("verifications", uuid=acct["uuid"])]
 
         # ---- account recovery -------------------------------------------------
+        def backup_match(body: BackupLogin) -> tuple[str, str, str] | None:
+            uid = ctx.uid(body.username)
+            acct = S.get("accounts", uid)
+            if acct and permits_backup_signin(acct):
+                email, version = acct.get("recovery_email"), acct.get("recovery_version")
+                if (email and version and ctx.email_key(email) != acct.get("email_key")
+                        and hmac.compare_digest(ctx.email_key(email), ctx.email_key(body.email.strip()))):
+                    return uid, email, version
+            return None
+
+        @r.post("/recovery/backup/start")
+        def send_backup_login(body: BackupLogin):
+            match = backup_match(body)
+            if match:
+                uid, email, version = match
+                try:
+                    ctx.send_otp("backup-login", uid, email, {"version": version})
+                except HTTPException as exc:
+                    if exc.status_code not in (502, 503):
+                        raise
+                    log.warning("Backup sign-in code delivery failed (HTTP %d)", exc.status_code)
+            return {"detail": "If the details match, a code was sent to your backup email"}
+
+        @r.post("/recovery/backup/token")
+        def backup_token(body: CodeIn):
+            uid = ctx.uid(body.username)
+            proof = ctx.check_otp("backup-login", uid, body.code)
+            acct = S.get("accounts", uid)
+            if (not proof or not acct or not permits_backup_signin(acct)
+                    or not acct.get("recovery_version") or proof.get("version") != acct["recovery_version"]
+                    or not acct.get("recovery_email") or ctx.email_key(acct["recovery_email"]) == acct.get("email_key")):
+                raise HTTPException(400, "The backup email code is invalid or expired")
+            ctx.audit.record(uid, "auth.backup_login", f"user:{uid}")
+            return {"token": ctx.identity.issue_backup(uid, acct["recovery_version"]), "status": acct["status"]}
+
         def _guard(uid: str) -> None:
             """Per-username budget (not per-IP): 10^4 student-number guesses cannot be spread across addresses."""
             st = ctx.settings
@@ -267,13 +370,15 @@ class AuthModule:
 
         @r.post("/recovery/email-otp")
         def recovery_email_otp(b: RecoveryOtp):
+            if not school_email(b.new_email):
+                raise HTTPException(422, "Use a primary email address from an approved school domain")
             try:
                 u, a = _recoverable(b)
             except HTTPException as e:
                 if e.status_code != 400:
                     raise
                 return {"detail": "if the details match, a code was sent to the new address"}  # uniform: no guessing oracle
-            if EMAIL.match(b.new_email) and not S.get("emails", ctx.email_key(b.new_email)):
+            if b.new_email.lower() != a.get("recovery_email") and not S.get("emails", ctx.email_key(b.new_email)):
                 ctx.send_otp("newemail", a["uuid"], b.new_email, {"email": b.new_email.lower()})
             return {"detail": "if the details match, a code was sent to the new address"}
 
@@ -284,6 +389,10 @@ class AuthModule:
             if (b.first_name, b.last_name) != (u["first_name"], u["last_name"]):
                 changes["first_name"], changes["last_name"] = b.first_name, b.last_name
             if b.new_email:
+                if not school_email(b.new_email):
+                    raise HTTPException(422, "Use a primary email address from an approved school domain")
+                if b.new_email.lower() == a.get("recovery_email"):
+                    raise HTTPException(422, "The primary and backup addresses must be different")
                 p = ctx.check_otp("newemail", a["uuid"], b.otp or "")
                 if not p or p["email"] != b.new_email.lower():
                     raise HTTPException(400, "new email not verified")

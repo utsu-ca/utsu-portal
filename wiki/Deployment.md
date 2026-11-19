@@ -48,11 +48,44 @@ generated once into Secret Manager and mounted as env vars. **Never rotate `PORT
 | `PORTAL_SECRET` (required) | stable pepper for username/student-id hashes and tokens |
 | `PORTAL_STORE` | `memory`, `sqlite:<path>`, `sql:<url>` (or `sql` + `DATABASE_URL`), `firestore`, or `pkg.module:factory` |
 | `PORTAL_ADMIN_EMAILS` | emails that become admin once verified by OTP |
+| `PORTAL_APPLICANT_EMAIL_DOMAINS` | optional comma-separated exact primary email domains (e.g. `mail.utoronto.ca`); applies to new applicants and primary email changes, not backup emails, existing sign-ins, or new legacy bootstrap admins |
+| `PORTAL_COMMIT` | source revision shown with the package version in the site footer (from `GET /api/version`); `deploy.sh` sets it from `git rev-parse HEAD`, and a development checkout falls back to git when unset |
 | `PORTAL_BASE_URL`, `PORTAL_SSO_KEY` | SSO issuer URL and RSA private key (PEM) |
+| `PORTAL_GOOGLE_STAFF_DOMAINS` | comma-separated exact Workspace domains eligible for staff accounts |
+| `PORTAL_GOOGLE_CLIENT_ID`, `PORTAL_GOOGLE_CLIENT_SECRET` | optional Google OAuth web credentials; mount the secret or use its `_FILE` variant |
+| `PORTAL_GOOGLE_BOOTSTRAP_ADMIN_EMAIL` | optional exact Workspace email eligible for the one-time initial `admin` grant |
 | `PORTAL_SMTP_URL`, `PORTAL_MAIL_FROM` | OTP, program notices, and banking re-verification. Without it only recipient and subject are logged, not codes. `smtp://` requires STARTTLS except on a loopback host that doesn't offer it (e.g. `testing/mail_sink.py`) |
 | `PORTAL_ZOOM_*` | see the AGM section of [Applicant portal](Applicant-Portal.md); the former `PORTAL_AGM_VERIFY_MODE=auto` setting no longer bypasses human review |
 
 `GET /healthz` is the liveness probe. The container listens on `$PORT`.
+
+Leave `PORTAL_APPLICANT_EMAIL_DOMAINS` unset to allow any valid applicant primary address. In split mode set this
+on the authentication service. The backup email uses the same OTP mail transport as primary sign-in and is encrypted
+in the auth datastore; it does not replace the primary address for program communications.
+
+### Staff and administrator sign-in
+
+The GCP deploy script asks whether to enable Google Workspace, which domains may sign in, and which **one exact
+work email** should receive initial admin access. It prints the OAuth redirect URI and prompts for the web client
+credentials (the client secret is stored in Secret Manager). For non-interactive GCP deploys, preset
+`GOOGLE_STAFF_SSO=yes` and the variables above, including the initial email or `none` if already set up. Set
+`PORTAL_ADMIN_EMAILS=none` to skip legacy bootstrap; this does not remove any existing admins.
+
+Create a Google OAuth **Web application** and register the exact redirect URI `https://<portal-host>/`, including
+the trailing slash. `PORTAL_BASE_URL` must be the public portal origin, even when the auth service runs elsewhere.
+Set the Google credentials, domain list and initial email on the auth issuer only (the auth Deployment in split
+mode); mount the client secret from that platform's secret store. The browser returns to the portal and completes
+sign-in through the existing `/api/auth` ingress. Both applicant email codes and outgoing AGM Zoom SSO remain
+independent.
+
+The initial address must be in an allowed domain, must sign in with Google, and must not already belong to a
+portal account. Once used, the grant is recorded in the auth datastore; changing the configured address cannot
+grant a second admin, and later sign-ins do not restore revoked roles. Remove the bootstrap setting after setup.
+Everyone else starts with baseline `staff` and no operational or administration privileges. An administrator
+can grant additional roles under **Administration → Role Management**. The portal never links accounts by email:
+if an existing email-code admin's address already belongs to that account, keep using it to grant roles to a
+separately provisioned Workspace account. Removing a domain blocks new sign-ins; for immediate offboarding,
+revoke privileged portal roles as well, since existing sessions otherwise remain valid until expiry.
 
 ## Database portability
 Everything goes through the six-method `Store` interface (`get/put/delete/list/create/replace`; `create` and `replace` must be atomic). Built in:

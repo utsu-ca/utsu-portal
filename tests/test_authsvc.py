@@ -65,6 +65,31 @@ def test_split_deployment_roundtrip():
     assert pc.put("/api/forms/agm_rsvp/submission", json=body, headers=uh).status_code == 422  # now only the form is wrong
 
 
+def test_backup_session_roundtrip_in_split_deployment():
+    from test_portal import code
+
+    ac, pc, mail, _, pstore = make()
+    register(ac, mail, "boss", "boss@x.ca", sn="9999999999")
+    ah = login(ac, mail, "boss")
+    register(ac, mail, "ada", "ada@x.ca")
+    uh = login(ac, mail, "ada")
+    activate(ac, ah, uh)
+    address = {"email": "backup@example.ca"}
+    assert ac.post("/api/auth/backup/enroll", headers=uh, json=address).status_code == 200
+    proof = address | {"primary_code": mail.outbox[-2][2].split("code is ")[1][:6], "backup_code": code(mail)}
+    assert ac.post("/api/auth/backup/confirm", headers=uh, json=proof).status_code == 200
+    ac.post("/api/recovery/backup/start", json=address | {"username": "ada"})
+    result = ac.post("/api/recovery/backup/token", json={"username": "ada", "code": code(mail)})
+    assert result.status_code == 200
+    bh = {"Authorization": "Bearer " + result.json()["token"]}
+    assert pc.get("/api/me/submissions", headers=bh).status_code == 200
+    assert pc.get("/api/admin/audit", headers=bh).status_code == 403
+    assert not pstore.list("accounts")
+    assert ac.put("/api/admin/roles", headers=ah, json={"username": "ada", "roles": ["admin"]}).status_code == 200
+    pc.app.state.ctx.identity._cache.clear()
+    assert pc.get("/api/admin/audit", headers=bh).status_code == 401
+
+
 def test_portal_cannot_mint_or_replay_tokens():
     ac, pc, mail, *_ = make()
     register(ac, mail, "ada", "ada@x.ca")

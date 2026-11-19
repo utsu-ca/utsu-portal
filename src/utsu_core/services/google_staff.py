@@ -24,6 +24,7 @@ JWKS = "https://www.googleapis.com/oauth2/v3/certs"
 ISSUERS = ("https://accounts.google.com", "accounts.google.com")
 SCOPE = "google-staff"
 DOMAIN = re.compile(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
+EMAIL = re.compile(r"[^@\s]+@[^@\s]+")
 
 
 class Completion(BaseModel):
@@ -77,10 +78,21 @@ def _provision(ctx: Context, claims: dict, subject: str, email: str) -> str:
                                 "last_name": last, "preferred_name": first, "student_number": ""})
     if (store.get("users", uid) or {}).get("email") != email:
         raise HTTPException(403, "This staff account cannot sign in. Contact your administrator.")
+    roles = ["staff"]
+    bootstrap = {"uuid": uid, "completed": False}
+    if email == (ctx.settings.google_bootstrap_admin_email or "").strip().lower():
+        # Reserve the one-time grant before creating the account; only this identity can retry an interrupted write.
+        created = store.create("auth_bootstrap", "google-admin", bootstrap)
+        grant = store.get("auth_bootstrap", "google-admin") or {}
+        if created or (grant.get("uuid") == uid and grant.get("completed") is False):
+            roles.append("admin")
     # A concurrent first login can finish provisioning but cannot replace roles on an existing account.
-    if store.create("accounts", uid, {"uuid": uid, "status": "verified", "role": "applicant", "roles": ["staff"],
+    if store.create("accounts", uid, {"uuid": uid, "status": "verified", "role": "applicant", "roles": roles,
                                       "email_verified": True, "email_key": ekey, "google_staff_username": username}):
-        ctx.audit.record(uid, "account.staff_provisioned", f"user:{uid}", None, {"roles": ["staff"]}, {"provider": "google"})
+        if "admin" in roles:
+            store.update("auth_bootstrap", "google-admin", lambda current: {**(current or bootstrap), "completed": True})
+        ctx.audit.record(uid, "account.staff_provisioned", f"user:{uid}", None, {"roles": roles},
+                         {"provider": "google", "bootstrap_admin": "admin" in roles})
     else:
         saved = store.get("accounts", uid) or {}
         if (saved.get("email_key") != ekey or saved.get("status") != "verified"
@@ -95,6 +107,10 @@ def register_routes(router: APIRouter, ctx: Context) -> None:
     client_id, secret = cfg.google_client_id, cfg.google_client_secret
     enabled = bool(domains and client_id and secret)
     redirect_uri = cfg.sso_issuer.rstrip("/") + "/"
+    bootstrap_email = (cfg.google_bootstrap_admin_email or "").strip().lower()
+    if bootstrap_email and (not enabled or not EMAIL.fullmatch(bootstrap_email)
+                            or bootstrap_email.rsplit("@", 1)[1] not in domains):
+        raise RuntimeError("The Google bootstrap admin must be one exact email in an approved Workspace domain")
     if domains or client_id or secret:
         if not enabled or any(not DOMAIN.fullmatch(domain) for domain in domains):
             raise RuntimeError("Google staff sign-in requires a client ID, secret and exact Workspace domains")
@@ -145,7 +161,7 @@ def register_routes(router: APIRouter, ctx: Context) -> None:
         if (not isinstance(subject, str) or not subject or claims["nonce"] != _nonce(body.verifier)
                 or claims.get("azp", client_id) != client_id):
             raise HTTPException(403, "Google could not verify this sign-in. Start again.")
-        if (not isinstance(email, str) or not re.fullmatch(r"[^@\s]+@[^@\s]+", email)
+        if (not isinstance(email, str) or not EMAIL.fullmatch(email)
                 or claims.get("email_verified") is not True or not isinstance(hosted, str)
                 or hosted.lower() not in domains or email.lower().rsplit("@", 1)[1] != hosted.lower()):
             raise HTTPException(403, "Use a verified Google Workspace account in an approved staff domain.")

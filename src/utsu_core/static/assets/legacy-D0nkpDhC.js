@@ -1,0 +1,1 @@
+import{it as e}from"./api-BDLAxc-C.js";e();

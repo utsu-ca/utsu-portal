@@ -34,6 +34,8 @@ services:
       PORTAL_REDIS_URL: redis://redis:6379
       PORTAL_BASE_URL: "${PORTAL_BASE_URL:-http://127.0.0.1:8000}"
       PORTAL_ADMIN_EMAILS: "${PORTAL_ADMIN_EMAILS:-}"
+      PORTAL_APPLICANT_EMAIL_DOMAINS: "${PORTAL_APPLICANT_EMAIL_DOMAINS:-}"
+      PORTAL_COMMIT: "${PORTAL_COMMIT:-}"  # e.g. PORTAL_COMMIT=$(git rev-parse HEAD) docker compose up
       PORTAL_SMTP_URL: "${PORTAL_SMTP_URL:-}"
       PORTAL_MAIL_FROM: "${PORTAL_MAIL_FROM:-no-reply@localhost}"
       PORTAL_HSTS: "0"

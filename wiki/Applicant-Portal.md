@@ -21,9 +21,13 @@ hashes, so it must stay stable.
 - Activation: email OTP, then a live face + ID capture (browser camera, server-issued challenge phrase), current
   division codes and legal names, then **manual admin approval**. Only `verified` accounts can submit forms. Images are
   deleted as soon as a decision is made. Accounts whose OTP-verified email is listed in `PORTAL_ADMIN_EMAILS` are admins and skip review (usernames are never trusted). Re-sent OTPs have a cooldown, a per-window cap and a carried-over guess budget; recovery endpoints are limited per username and answer uniformly. Form `pattern`s are restricted to a backtracking-safe regex subset.
-- Only `preferred_name` is user-mutable (`PATCH /api/me`). Recovery (`/api/recovery/*`): username + last 4 digits
-  emails a sign-in code to the address on file; email or legal-name changes need the new-email OTP plus a full
-  face + ID request approved by an admin.
+- Verified applicants can add or replace a separate **backup email** on the Account screen. The portal verifies both
+  the primary and proposed backup inboxes before saving it. When locked out, use **Account recovery** with your
+  username and backup address to receive a one-time sign-in code. This does not change the primary address or grant
+  staff permissions. Google Workspace and accounts with staff or administrative roles cannot use backup sign-in.
+- The legacy username + last four student digits option still sends a code to the primary address. A primary email
+  change requires a code sent to the new address plus an administrator-approved face and ID request; legal-name
+  changes also require review. The portal ID stays the same when either email address changes.
 - Note: a camera capture plus challenge phrase is not cryptographic proof of liveness; admins make the final decision.
 - In a split deployment the authentication service owns the roster. Program eligibility and standalone AGM roster
   checks query its service-token-protected internal API; roster details are not copied into the portal store.

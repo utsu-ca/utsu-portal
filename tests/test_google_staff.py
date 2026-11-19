@@ -105,9 +105,10 @@ def test_staff_provisioning_promotion_and_replay(workspace):
     again = client.post(BASE + "/complete", json=attempt()).json()
     assert client.get("/api/me", headers={"Authorization": f"Bearer {again['token']}"}).json()["roles"] == []
 
+    mail_count = len(mail.outbox)
     client.post("/api/auth/login", json={"username": username})
     client.post("/api/recovery/start", json={"username": username, "student_number_trunc": "0000"})
-    assert not store.list("otps", uuid=holder["uuid"])
+    assert len(mail.outbox) == mail_count
     assert client.post("/api/auth/token", json={"username": username, "code": "000000"}).status_code == 400
 
 
@@ -125,3 +126,31 @@ def test_workspace_requires_signed_approved_identity_and_never_links_email(works
     assert result.status_code == 409
     accounts = store.list("accounts")
     assert len(accounts) == 1 and not accounts[0].get("google_staff_username")
+
+
+def test_google_bootstrap_is_exact_and_only_used_once(workspace):
+    client, store, mail, attempt = workspace
+    settings = client.app.state.ctx.settings
+    settings.google_bootstrap_admin_email = "first@example.ca"
+    ordinary = client.post(BASE + "/complete", json=attempt())
+    assert ordinary.status_code == 200 and not store.list("auth_bootstrap")
+    first = {"email": "first@example.ca", "sub": "first-sub"}
+    result = client.post(BASE + "/complete", json=attempt(first))
+    assert result.status_code == 200, result.text
+    auth = {"Authorization": f"Bearer {result.json()['token']}"}
+    assert client.get("/api/me", headers=auth).json()["roles"] == ["admin", "staff"]
+    assert client.get("/api/admin/roles", headers=auth).status_code == 200
+    assert store.get("auth_bootstrap", "google-admin")["completed"] is True
+    settings.google_bootstrap_admin_email = "second@example.ca"
+    result = client.post(BASE + "/complete", json=attempt({"email": "second@example.ca", "sub": "second-sub"}))
+    auth = {"Authorization": f"Bearer {result.json()['token']}"}
+    assert client.get("/api/me", headers=auth).json()["roles"] == ["staff"]
+
+
+def test_initial_admin_configuration_disallows_domains_and_unapproved_addresses():
+    settings = Settings(secret="a" * 40, google_staff_domains=("example.ca",),
+                        google_client_id="portal-client", google_client_secret="client-secret")
+    for invalid in ("example.ca", "admin@other.example.ca"):
+        settings.google_bootstrap_admin_email = invalid
+        with pytest.raises(RuntimeError, match="one exact email"):
+            create_app(settings, MemoryStore(), OutboxMailer())

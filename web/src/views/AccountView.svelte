@@ -2,13 +2,16 @@
   import { onMount } from "svelte";
   import { api } from "../lib/api.js";
   import { Action } from "../lib/action.svelte.js";
+  import { go } from "../lib/nav.svelte.js";
   import { refreshMe, session } from "../lib/session.svelte.js";
   import Status from "../components/Status.svelte";
   import ScanWidget from "../components/ScanWidget.svelte";
 
   let preferred = $state(""), rosterNumber = $state(""), divisions = $state(""), first = $state(""), last = $state("");
   let scan = $state(null);
+  let backup = $state(""), primaryCode = $state(""), backupCode = $state(""), codeAddress = $state("");
   const save = new Action(), confirmNumber = new Action(), verify = new Action(), load = new Action();
+  const sendBackupCodes = new Action(), confirmBackup = new Action();
 
   onMount(() => load.run(async () => {
     await refreshMe();
@@ -27,6 +30,20 @@
     rosterNumber = "";
   }, "Student number confirmed for roster matching.");
 
+  const requestBackup = () => sendBackupCodes.run(async () => {
+    const email = backup.trim();
+    await api("/auth/backup/enroll", { method: "POST", body: { email } });
+    codeAddress = email;
+  }, "Check your primary and backup inboxes for separate codes.");
+
+  const saveBackup = () => confirmBackup.run(async () => {
+    await api("/auth/backup/confirm", { method: "POST", body: {
+      email: codeAddress, primary_code: primaryCode, backup_code: backupCode
+    } });
+    backup = primaryCode = backupCode = codeAddress = "";
+    await refreshMe();
+  }, "Backup email verified.");
+
   const submitVerification = () => verify.run(async () => {
     if (!scan?.shots.face || !scan?.shots.id_card) throw new Error("Capture your face and your student ID first.");
     await api("/verification", { method: "POST", body: {
@@ -42,7 +59,11 @@
   {@const user = session.me.user}
   <div class="card">
     <h2>Account</h2>
-    <p>{user.first_name} {user.last_name} · {user.email}{#if user.student_number} · ID ending {user.student_number}{/if} · <span class="badge">{session.me.status}</span></p>
+    <p>{user.first_name} {user.last_name}{#if user.student_number} · ID ending {user.student_number}{/if} · <span class="badge">{session.me.status}</span></p>
+    <p>Primary email: {user.email}</p>
+    {#if session.me.backup_session}
+      <button class="secondary" onclick={() => go("recovery")}>Request a primary email change</button>
+    {/if}
     <label for="preferred">Preferred name</label>
     <input id="preferred" bind:value={preferred} />
     <button class="primary" onclick={savePreferred} disabled={save.busy}>Save</button>
@@ -56,6 +77,29 @@
       <Status action={confirmNumber} />
     {/if}
   </div>
+  {#if "backup_email" in session.me}
+    <div class="card">
+      <h2>Backup email</h2>
+      <p>{session.me.backup_email || "No verified backup email."}</p>
+      {#if session.me.backup_session}
+        <p>You signed in with your backup email. Sign in with your primary email to change the backup address.</p>
+      {:else}
+        <p>Use a separate address you can access if you lose access to your primary inbox.</p>
+        <label for="backup-email">New backup email</label>
+        <input id="backup-email" type="email" autocomplete="email" bind:value={backup} />
+        <button class="secondary" onclick={requestBackup} disabled={sendBackupCodes.busy || confirmBackup.busy || !backup.trim()}>Send verification codes</button>
+        <Status action={sendBackupCodes} />
+        {#if codeAddress && codeAddress === backup.trim()}
+          <label for="backup-primary-code">Code sent to your primary email</label>
+          <input id="backup-primary-code" inputmode="numeric" maxlength="6" bind:value={primaryCode} />
+          <label for="backup-email-code">Code sent to your backup email</label>
+          <input id="backup-email-code" inputmode="numeric" maxlength="6" bind:value={backupCode} />
+          <button class="primary" onclick={saveBackup} disabled={confirmBackup.busy || sendBackupCodes.busy || primaryCode.length !== 6 || backupCode.length !== 6}>Verify backup email</button>
+        {/if}
+        <Status action={confirmBackup} />
+      {/if}
+    </div>
+  {/if}
   {#if session.me.status === "pending_review" || session.me.status === "pending_email"}
     <div class="card">
       <h2>Verify your identity</h2>

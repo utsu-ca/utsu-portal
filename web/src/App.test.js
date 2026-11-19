@@ -41,6 +41,101 @@ beforeEach(() => {
 afterEach(() => { cleanup(); api.mockReset(); });
 
 describe("signed out", () => {
+  it("offers staff Google sign-in after the email-code and recovery options", async () => {
+    api.mockImplementation(async path => {
+      if (path === "/auth/google") return { enabled: true };
+      if (path === "/content") return { pages: {} };
+      return { enabled: [] };
+    });
+    render(App);
+    await screen.findByText(/Learn more about the/);
+    go("auth");
+    const google = await screen.findByRole("button", { name: "Continue with Google" });
+    const otp = screen.getByRole("button", { name: "Email me a code" });
+    const recovery = screen.getByRole("button", { name: "Account recovery" });
+    expect(otp.compareDocumentPosition(google) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(recovery.compareDocumentPosition(google) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Staff? Log in here!" })).toContainElement(google);
+    await waitFor(() => expect(google.disabled).toBe(false));
+  });
+
+  it("shows a disabled SSO box when Google sign-in is not configured", async () => {
+    api.mockImplementation(async path => {
+      if (path === "/auth/google") return { enabled: false };
+      if (path === "/content") return { pages: {} };
+      return { enabled: [] };
+    });
+    render(App);
+    await screen.findByText(/Learn more about the/);
+    go("auth");
+    await screen.findByText(/Single sign-on is not set up/);
+    expect(screen.getByRole("button", { name: "Continue with Google" }).disabled).toBe(true);
+  });
+
+  it("asks for the email code only after the username is sent", async () => {
+    api.mockImplementation(async (path, opts) => {
+      if (path === "/content") return { pages: {} };
+      if (path === "/auth/login") return {};
+      if (path === "/auth/token") return { token: "t1" };
+      if (path === "/me") return member;
+      return { enabled: [] };
+    });
+    render(App);
+    await screen.findByText(/Learn more about the/);
+    go("auth");
+    await fireEvent.input(await screen.findByLabelText("Username"), { target: { value: "ada" } });
+    expect(screen.queryByLabelText("Email code")).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "Email me a code" }));
+    expect(api).toHaveBeenCalledWith("/auth/login", { method: "POST", body: { username: "ada" } });
+    const code = await screen.findByLabelText("Email code");
+    await waitFor(() => expect(document.activeElement).toBe(code));
+    await fireEvent.input(code, { target: { value: "123456" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Sign in with code" }));
+    await waitFor(() => expect(session.me).toEqual(member));
+    expect(api).toHaveBeenCalledWith("/auth/token", { method: "POST", body: { username: "ada", code: "123456" } });
+  });
+
+  it("requests and exchanges a backup code from account recovery", async () => {
+    serve(member);
+    const normalResponse = api.getMockImplementation();
+    api.mockImplementation(async (path, opts) => {
+      if (path === "/recovery/backup/start") return {};
+      if (path === "/recovery/backup/token") return { token: "backup-session" };
+      return normalResponse(path, opts);
+    });
+    render(App);
+    await screen.findByText(/Learn more about the/);
+    go("recovery");
+    await fireEvent.input(await screen.findByLabelText("Username"), { target: { value: "ada" } });
+    await fireEvent.input(screen.getByLabelText("Backup email"), { target: { value: "backup@example.ca" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Send code to backup email" }));
+    expect(api).toHaveBeenCalledWith("/recovery/backup/start", { method: "POST", body: { username: "ada", email: "backup@example.ca" } });
+    await fireEvent.input(screen.getByLabelText("Backup sign-in code"), { target: { value: "123456" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Sign in with backup code" }));
+    await waitFor(() => expect(session.me).toEqual(member));
+    expect(api).toHaveBeenCalledWith("/recovery/backup/token", { method: "POST", body: { username: "ada", code: "123456" } });
+    expect(sessionStorage.getItem("token")).toBe("backup-session");
+  });
+
+  it("completes a Google return in the same tab and removes the code from the URL", async () => {
+    serve(staff);
+    const normalResponse = api.getMockImplementation();
+    api.mockImplementation(async (path, opts) => {
+      if (path === "/auth/google/complete") {
+        expect(location.search).toBe("");
+        expect(opts.body).toEqual({ code: "authorization-code", state: "google.state", verifier: "verifier" });
+        return { token: "staff-session" };
+      }
+      return normalResponse(path);
+    });
+    sessionStorage.setItem("google-staff-login", JSON.stringify({ state: "google.state", verifier: "verifier" }));
+    history.replaceState(null, "", "/?code=authorization-code&state=google.state");
+    render(App);
+    await waitFor(() => expect(session.me).toEqual(staff));
+    expect(sessionStorage.getItem("token")).toBe("staff-session");
+    expect(sessionStorage.getItem("google-staff-login")).toBeNull();
+  });
+
   it("shows the public menu, the home page and a copyright footer", async () => {
     render(App);
     expect(within(menu()).getByRole("button", { name: "Home" })).toBeInTheDocument();
@@ -49,6 +144,16 @@ describe("signed out", () => {
     expect(await screen.findByText(/Learn more about the/)).toBeInTheDocument();
     expect(screen.getByRole("contentinfo")).toHaveTextContent(`© ${new Date().getFullYear()}`);
     expect(screen.queryByRole("button", { name: /admin mode/i })).not.toBeInTheDocument();
+  });
+
+  it("shows the running server's version and commit next to the copyright", async () => {
+    api.mockImplementation(async path => {
+      if (path === "/content") return { pages: {} };
+      if (path === "/version") return { version: "0.1.0", commit: "3d1f3c5abcde" };
+      return { enabled: [] };
+    });
+    render(App);
+    await waitFor(() => expect(screen.getByRole("contentinfo")).toHaveTextContent(/© \d{4} .* · v0\.1\.0 \(3d1f3c5\)$/));
   });
 
   it("opens a program's public page, with a sign-in prompt instead of actions", async () => {

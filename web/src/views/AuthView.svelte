@@ -1,5 +1,5 @@
 <script>
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { api } from "../lib/api.js";
   import { Action } from "../lib/action.svelte.js";
   import { signIn } from "../lib/session.svelte.js";
@@ -9,46 +9,110 @@
 
   let { onsignin, googleError = "" } = $props();
   let username = $state(""), code = $state("");
+  let codeSent = $state(false);
   let googleEnabled = $state(false);
+  let codeInput = $state();
   const send = new Action(), enter = new Action();
   const google = new Action(), check = new Action();
   const loadGoogle = () => check.run(async () => { googleEnabled = (await api("/auth/google")).enabled === true; });
   onMount(() => { loadGoogle(); });
 
-  const sendCode = () => send.run(async () => {
-    await api("/auth/login", { method: "POST", body: { username } });
-  }, "If the account exists, a code was sent.");
+  const sendCode = async event => {
+    event?.preventDefault();
+    if (!username.trim()) { send.error = "Enter your username."; return; }
+    let sent = false;
+    await send.run(async () => {
+      await api("/auth/login", { method: "POST", body: { username } });
+      sent = true;
+    }, "If the account exists, a code was sent.");
+    if (!sent) return;
+    codeSent = true;
+    await tick();
+    codeInput?.focus();
+  };
 
-  const signInWithCode = () => enter.run(async () => {
-    const result = await api("/auth/token", { method: "POST", body: { username, code } });
-    signIn(result.token);
-    await onsignin();
-  });
+  const changeUsername = () => {
+    codeSent = false;
+    code = "";
+    send.ok = "";
+    enter.error = "";
+  };
+
+  const signInWithCode = event => {
+    event?.preventDefault();
+    return enter.run(async () => {
+      const result = await api("/auth/token", { method: "POST", body: { username, code } });
+      signIn(result.token);
+      await onsignin();
+    });
+  };
 </script>
 
 <div class="card">
   <h2>Sign in</h2>
   {#if googleError}<p class="err" role="alert">{googleError}</p>{/if}
-  <Status action={check} />
-  {#if check.error}<button class="secondary" onclick={loadGoogle}>Retry loading staff sign-in</button>{/if}
-  {#if googleEnabled}
-    <h3>Staff and administrators</h3>
-    <p>Use your approved work account to sign in.</p>
-    <button class="primary" onclick={() => google.run(beginGoogleStaffLogin)} disabled={google.busy}>Continue with Google</button>
-    <Status action={google} />
-    <hr />
-    <h3>Sign in with an email code</h3>
-    <p>For applicants and existing accounts that use email codes.</p>
+
+  <h3>Sign in with an email code</h3>
+  <p>For applicants and existing accounts that use email codes.</p>
+  <form onsubmit={sendCode}>
+    <label for="username">Username</label>
+    <input id="username" autocomplete="username" bind:value={username} readonly={codeSent} />
+    {#if codeSent}
+      <button type="button" class="secondary" onclick={changeUsername}>Use a different username</button>
+      <button type="submit" class="secondary" disabled={send.busy}>Resend code</button>
+    {:else}
+      <button type="submit" class="secondary" disabled={send.busy}>Email me a code</button>
+    {/if}
+    <Status action={send} />
+  </form>
+
+  {#if codeSent}
+    <form class="code-pop" onsubmit={signInWithCode}>
+      <label for="code">Email code</label>
+      <input id="code" autocomplete="one-time-code" inputmode="numeric" bind:value={code} bind:this={codeInput} />
+      <button type="submit" class="primary" disabled={enter.busy || !code.trim()}>Sign in with code</button>
+      <Status action={enter} />
+    </form>
   {/if}
-  <label for="username">Username</label>
-  <input id="username" autocomplete="username" bind:value={username} />
-  <button class="secondary" onclick={sendCode} disabled={send.busy}>Email me a code</button>
-  <Status action={send} />
-  <label for="code">Email code</label>
-  <input id="code" autocomplete="one-time-code" bind:value={code} />
-  <button class="secondary" onclick={signInWithCode} disabled={enter.busy}>Sign in with code</button>
-  <Status action={enter} />
+
   <hr />
   <button class="primary" onclick={() => go("register")}>Create an account</button>
   <button class="primary" onclick={() => go("recovery")}>Account recovery</button>
+
+  <section class="sso-box" aria-labelledby="sso-heading">
+    <h3 id="sso-heading">Staff? Log in here!</h3>
+    <p>Union staff and administrators sign in with single sign-on using their approved work account.</p>
+    <button class="primary" onclick={() => google.run(beginGoogleStaffLogin)} disabled={!googleEnabled || google.busy || check.busy}>Continue with Google</button>
+    {#if check.busy}
+      <p class="help">Checking single sign-on…</p>
+    {:else if check.error}
+      <Status action={check} />
+      <button class="secondary" onclick={loadGoogle}>Retry loading staff sign-in</button>
+    {:else if !googleEnabled}
+      <p class="help">Single sign-on is not set up for this portal yet. An administrator can turn it on in the deployment settings.</p>
+    {/if}
+    <Status action={google} />
+  </section>
 </div>
+
+<style>
+  .sso-box {
+    margin-top: 1.25rem;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 6%, white);
+  }
+  .code-pop {
+    margin-top: 0.75rem;
+    transform-origin: top center;
+    animation: code-pop 320ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+  @keyframes code-pop {
+    from { opacity: 0; transform: translateY(-6px) scale(0.92); }
+    to { opacity: 1; transform: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .code-pop { animation: none; }
+  }
+</style>

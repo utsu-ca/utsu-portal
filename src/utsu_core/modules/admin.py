@@ -98,6 +98,8 @@ class AdminModule:
                 ch, user_ch, acct_ch = v.get("changes") or {}, {}, {}
                 if b.approve:
                     if "email" in ch:
+                        if ch["email"] == acct.get("recovery_email"):
+                            raise HTTPException(409, "The primary and backup addresses must be different")
                         S.create("emails", ctx.email_key(ch["email"]), {"uuid": uid}) or _conflict()
                         S.delete("emails", acct["email_key"])
                         acct_ch["email_key"], user_ch["email"] = ctx.email_key(ch["email"]), ch["email"]

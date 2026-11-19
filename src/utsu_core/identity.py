@@ -20,6 +20,14 @@ from .services.roster import StoreRoster, match_person
 
 log = logging.getLogger("utsu_core.identity")
 
+RECOVERY_SUBJECT = "backup:"
+
+
+def permits_backup_signin(account: dict) -> bool:
+    return (account.get("status") == "verified" and account.get("email_verified") is True
+            and not account.get("google_staff_username") and account.get("role") == "applicant"
+            and not account.get("roles"))
+
 
 class Identity:
     def subject(self, raw: str) -> str | None: ...
@@ -33,6 +41,12 @@ class Identity:
 
     def authenticate(self, raw: str) -> dict | None:
         sub = self.subject(raw) if raw else None
+        if sub and sub.startswith(RECOVERY_SUBJECT):
+            uid, _, version = sub.removeprefix(RECOVERY_SUBJECT).partition(":")
+            acct = self.account(uid) if version else None
+            if acct and acct.get("recovery_version") == version and permits_backup_signin(acct):
+                return {**acct, "backup_session": True}
+            return None
         acct = self.account(sub) if sub else None
         return acct if acct and acct.get("email_verified") else None
 
@@ -48,6 +62,9 @@ class LocalIdentity(Identity):
 
     def issue(self, uuid: str) -> str:
         return security.sign_user_token(self.key, uuid, self.ctx.settings.token_ttl)
+
+    def issue_backup(self, uuid: str, version: str) -> str:
+        return security.sign_user_token(self.key, f"{RECOVERY_SUBJECT}{uuid}:{version}", self.ctx.settings.token_ttl)
 
     def account(self, uuid):
         return self.ctx.store.get("accounts", uuid)

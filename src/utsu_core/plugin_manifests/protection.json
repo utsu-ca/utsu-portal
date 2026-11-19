@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "collections": {
+    "accounts": ["recovery_email"],
     "media": ["face", "id_card"],
     "agm_media": ["face", "id_card"],
     "receipts": ["data_url"],

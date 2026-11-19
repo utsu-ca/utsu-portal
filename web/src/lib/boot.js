@@ -3,14 +3,14 @@ import { loadPlugins } from "./plugins.svelte.js";
 import { loadContent } from "./content.svelte.js";
 import { refreshMe, session } from "./session.svelte.js";
 import { go } from "./nav.svelte.js";
-import { completeGoogleStaffLogin } from "./google-staff.js";
+import { completeGoogleStaffLogin, isGoogleStaffCallback } from "./google-staff.js";
 
 export async function start() {
   // The menu follows the plug-in list as it arrives; the first view must not wait for it.
   loadPlugins();
   loadContent();
   try {
-    await completeGoogleStaffLogin();
+    if (isGoogleStaffCallback()) await completeGoogleStaffLogin();
   } catch (error) {
     return go("auth", { googleError: error.message });
   }
