@@ -58,6 +58,26 @@ def test_chunking_large_values_roundtrip():
     assert s.inner.list("m__chunks") == [] and s.get("m", "k1") is None
 
 
+@pytest.mark.parametrize("method", ["get", "list"])
+def test_chunk_reads_retry_after_generation_is_replaced(method):
+    class RacingStore(MemoryStore):
+        before_chunk_read = None
+
+        def get(self, col, id):
+            if col.endswith("__chunks") and self.before_chunk_read:
+                callback, self.before_chunk_read = self.before_chunk_read, None
+                callback()
+            return super().get(col, id)
+
+    inner = RacingStore()
+    store = ChunkingStore(inner, 300)
+    store.put("c", "a", {"id": "a", "value": "x" * 1000})
+    inner.before_chunk_read = lambda: store.put("c", "a", {"id": "a", "value": "new generation"})
+
+    result = store.get("c", "a") if method == "get" else store.list("c")[0]
+    assert result == {"id": "a", "value": "new generation"}
+
+
 def test_open_store_specs(tmp_path):
     assert isinstance(open_store(f"sql:sqlite:///{tmp_path}/x.db"), SQLStore)
     assert isinstance(open_store("test_stores:Capped"), MemoryStore)
@@ -67,7 +87,8 @@ def test_open_store_specs(tmp_path):
         open_store("sql")
 
 
-def test_portal_runs_on_sql_store(tmp_path):
+def test_portal_runs_on_sql_store(tmp_path, monkeypatch):
+    monkeypatch.setattr("utsu_core.services.turnstile.verify_registration", lambda _settings, _token: None)
     mail = OutboxMailer()
     c = TestClient(create_app(Settings(secret="s" * 32, admin_emails=("boss@x.ca",), store=f"sql:sqlite:///{tmp_path}/p.db"), mailer=mail))
     assert c.get("/healthz").json() == {"ok": True}

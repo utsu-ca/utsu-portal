@@ -1,7 +1,8 @@
 <script>
   import { onDestroy, onMount } from "svelte";
-  import { api, getToken } from "../lib/api.js";
+  import { api } from "../lib/api.js";
   import { Action } from "../lib/action.svelte.js";
+  import { openStream } from "../lib/stream.js";
   import Status from "../components/Status.svelte";
   import FormRenderer from "../components/FormRenderer.svelte";
 
@@ -35,16 +36,17 @@
       yaml = form.draft_yaml;
       submissions = (await api(`/admin/forms/${id}/submissions`)).map(s => ({ ...s, newStatus: s.status, note: "" }));
       // realtime sync of edits made by other admins
-      events = new EventSource(`/api/admin/forms/${id}/events?token=${encodeURIComponent(getToken())}`);
-      events.onmessage = ev => {
-        const data = JSON.parse(ev.data);
-        if (data.yaml && data.rev !== rev) {
-          rev = data.rev;
-          yaml = data.yaml;
-          refreshPreview();
-          act.ok = "updated by another admin (rev " + data.rev + ")";
-        }
-      };
+      events = openStream(`/admin/forms/${id}/events`, {
+        onEvent: (type, data) => {
+          if (type !== "message") return;
+          if (data.yaml && data.rev !== rev) {
+            rev = data.rev;
+            yaml = data.yaml;
+            refreshPreview();
+            act.ok = "updated by another admin (rev " + data.rev + ")";
+          }
+        },
+      });
     }
     await refreshPreview();
   }));

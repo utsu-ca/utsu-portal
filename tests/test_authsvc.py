@@ -90,6 +90,19 @@ def test_backup_session_roundtrip_in_split_deployment():
     assert pc.get("/api/admin/audit", headers=bh).status_code == 401
 
 
+def test_split_identity_resolves_changed_username_and_primary_email():
+    ac, pc, mail, *_ = make()
+    register(ac, mail, "ada", "ada@x.ca")
+    headers = login(ac, mail, "ada")
+    uid = ac.get("/api/me", headers=headers).json()["user"]["uuid"]
+    identity = pc.app.state.ctx.identity
+    assert identity.resolve("ada@x.ca")["uuid"] == uid
+    assert identity.resolve("ada")["uuid"] == uid
+    assert ac.patch("/api/me/username", headers=headers, json={"username": "newname"}).status_code == 200
+    assert identity.resolve("newname")["uuid"] == uid
+    assert identity.resolve("ada") is None
+
+
 def test_portal_cannot_mint_or_replay_tokens():
     ac, pc, mail, *_ = make()
     register(ac, mail, "ada", "ada@x.ca")

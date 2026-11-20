@@ -29,6 +29,7 @@ from .services.account_check import check_accounts
 from .settings import Settings
 from .store import ACCESS, AccessLog, AuditedStore, Store, open_store
 from .version import server_version
+from .devadmin import ConsoleMailer, check_dev_settings, dev_local_present, seed_dev_admin
 from .services.anchors import AnchorRuntime
 from .services.email import EmailDeliveryService
 from .services.files import DocumentService
@@ -158,10 +159,14 @@ def build_app(settings: Settings, store: Store | None, mailer: Mailer | None, mo
               seed: bool = True, ui: bool = True, form_owners: Mapping[str, str] | None = None,
               role_catalogue: dict[str, str] | None = None,
               plugin_settings: Mapping[str, Mapping[str, Any]] | None = None) -> FastAPI:
+    check_dev_settings(settings)
+    mailer = mailer or mailer_from_env()
+    if settings.dev_admin and not mailer.is_configured:
+        mailer = ConsoleMailer()
     store = EncryptingStore(store or open_store(settings.store), Crypter(settings.data_key, settings.secret))
     if settings.audit_db_access:
         store = AuditedStore(store)
-    ctx = Context(store, settings, mailer or mailer_from_env(), bus=bus_from_settings(settings),
+    ctx = Context(store, settings, mailer, bus=bus_from_settings(settings),
                   roles=ROLES if role_catalogue is None else role_catalogue,
                   plugin_settings=plugin_settings)
     ctx.identity = identity or LocalIdentity(ctx)
@@ -181,7 +186,8 @@ def build_app(settings: Settings, store: Store | None, mailer: Mailer | None, mo
         user = ctx.identity.user(uuid) or {}
         return user.get("preferred_name") or user.get("first_name") or None
 
-    ctx.messaging = MessagingRuntime(ctx.store, ctx.audit, ctx.bus, ctx.limiter, ctx.thread_types, display_name, ctx.now)
+    ctx.messaging = MessagingRuntime(ctx.store, ctx.audit, ctx.bus, ctx.limiter, ctx.thread_types, display_name, ctx.now,
+                                     ctx.identity.user)
     for module in modules:
         configure = getattr(module, "configure", None)
         if configure is not None:
@@ -201,6 +207,8 @@ def build_app(settings: Settings, store: Store | None, mailer: Mailer | None, mo
     routers = _module_routers(modules, ctx, ui)
     if seed:
         seed_forms(ctx)
+    if settings.dev_admin and identity is None:
+        seed_dev_admin(ctx)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -283,7 +291,10 @@ def build_app(settings: Settings, store: Store | None, mailer: Mailer | None, mo
         resp = await call_next(request)
         h = resp.headers
         h.setdefault("X-Content-Type-Options", "nosniff")
-        h.setdefault("Content-Security-Policy", "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+        csp = "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+        if settings.turnstile_site_key and settings.turnstile_secret_key:
+            csp += "; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; connect-src 'self' https://challenges.cloudflare.com"
+        h.setdefault("Content-Security-Policy", csp)
         h.setdefault("X-Frame-Options", "DENY")
         h.setdefault("Referrer-Policy", "no-referrer")
         h.setdefault("Permissions-Policy", "camera=(self), microphone=(), geolocation=()")
@@ -316,7 +327,7 @@ def build_app(settings: Settings, store: Store | None, mailer: Mailer | None, mo
 
     @app.get("/api/version", include_in_schema=False)
     def version():
-        return build
+        return {**build, "dev_local": dev_local_present(ctx)}
 
     @app.get("/readyz", include_in_schema=False)
     def readyz():

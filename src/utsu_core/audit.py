@@ -185,7 +185,8 @@ class AuditLog:
                    else S.get("audit_head", "head") or {"seq": 0, "hash": "", "month": None})
         else:
             raise RuntimeError("audit log is too contended")
-        S.create("audit_months", month, {"id": month, "month": month, "state": "hot", "first_seq": seq})
+        if S.get("audit_months", month) is None:
+            S.create("audit_months", month, {"id": month, "month": month, "state": "hot", "first_seq": seq})
         S.update("audit_head", "head", lambda h: {"id": "head", "seq": seq, "hash": d["hash"], "month": month} if not h or h["seq"] < seq else None)
         return d
 

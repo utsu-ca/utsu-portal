@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
@@ -24,6 +24,7 @@ STREAM_LIFETIME = 600  # seconds; clients reconnect from their cursor
 class PostIn(BaseModel):
     body: str = Field(max_length=MAX_BODY_LIMIT * 2)
     internal: bool = False
+    name_choice: Literal["real", "username"] = "real"
 
 
 class ReadIn(BaseModel):
@@ -127,7 +128,7 @@ class MessagingModule:
 
         @r.post("/{thread_type}/{record_id}/messages")
         def post(thread_type: str, record_id: str, b: PostIn, a: dict = verified):
-            return _call(runtime.post, thread_type, record_id, a, b.body, b.internal)
+            return _call(runtime.post, thread_type, record_id, a, b.body, b.internal, b.name_choice)
 
         @r.post("/{thread_type}/{record_id}/read")
         def read(thread_type: str, record_id: str, b: ReadIn, a: dict = verified):

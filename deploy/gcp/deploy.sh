@@ -42,6 +42,8 @@ echo "Deploying to project: $PROJECT_ID in $REGION"
 
 HOST_RE='^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$'
 ask DOMAIN_NAME "Website address people will visit (e.g. portal.example.com)" "$HOST_RE" "enter a hostname like portal.example.com" "" "${DOMAIN_NAME:-}"
+ask PORTAL_TURNSTILE_SITE_KEY "Cloudflare Turnstile site key for registration" '^[A-Za-z0-9_-]+$' \
+    "enter the Turnstile site key" "" "${PORTAL_TURNSTILE_SITE_KEY:-}"
 ask GOOGLE_STAFF_SSO "Enable Google Workspace sign-in for staff and administrators?" '^(yes|no)$' "enter yes or no" "no" "${GOOGLE_STAFF_SSO:-}"
 EMAIL_RE='[A-Za-z0-9._+%-]+@[A-Za-z0-9.-]+'
 if [ "$GOOGLE_STAFF_SSO" = yes ]; then
@@ -110,6 +112,19 @@ echo "--> Ensuring secrets..."
 ensure_secret portal-secret openssl rand -hex 32
 ensure_secret portal-sso-key openssl genpkey -algorithm RSA -pkeyopt rsa_key_bits:2048
 SECRETS="PORTAL_SECRET=portal-secret:latest,PORTAL_SSO_KEY=portal-sso-key:latest"
+if ! exists gcloud secrets describe portal-turnstile-secret; then
+    if [ -z "${PORTAL_TURNSTILE_SECRET_KEY:-}" ]; then
+        read -rs -p "Cloudflare Turnstile secret key (hidden): " PORTAL_TURNSTILE_SECRET_KEY
+        printf '\n'
+    fi
+    if [ -z "$PORTAL_TURNSTILE_SECRET_KEY" ]; then
+        echo "ERROR: Cloudflare Turnstile secret key is required." >&2
+        exit 1
+    fi
+fi
+ensure_secret portal-turnstile-secret printf '%s' "${PORTAL_TURNSTILE_SECRET_KEY:-}"
+unset PORTAL_TURNSTILE_SECRET_KEY
+SECRETS="$SECRETS,PORTAL_TURNSTILE_SECRET_KEY=portal-turnstile-secret:latest"
 if [ "$GOOGLE_STAFF_SSO" = yes ]; then
     if ! exists gcloud secrets describe portal-google-client-secret; then
         if [ -z "${PORTAL_GOOGLE_CLIENT_SECRET:-}" ]; then
@@ -137,6 +152,7 @@ fi
 echo "--> Deploying Cloud Run service (a few minutes)..."
 ENV_VARS="^|^PORTAL_STORE=firestore|PORTAL_ADMIN_EMAILS=$PORTAL_ADMIN_EMAILS|PORTAL_BASE_URL=https://$DOMAIN_NAME|PORTAL_MAIL_FROM=$MAIL_FROM"
 ENV_VARS="$ENV_VARS|PORTAL_APPLICANT_EMAIL_DOMAINS=${PORTAL_APPLICANT_EMAIL_DOMAINS:-}"
+ENV_VARS="$ENV_VARS|PORTAL_TURNSTILE_SITE_KEY=$PORTAL_TURNSTILE_SITE_KEY"
 # The image has no .git, so record the deployed revision for the footer (warns when uncommitted changes ship).
 PORTAL_COMMIT="${PORTAL_COMMIT:-$(git rev-parse HEAD 2>/dev/null || true)}"
 if [ -n "$PORTAL_COMMIT" ]; then

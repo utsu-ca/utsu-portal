@@ -81,6 +81,26 @@ def test_topic_threads_locking_redaction_and_author_access(env):
                   headers=h["ada"]).status_code == 403
 
 
+def test_author_choice_is_snapshotted_for_topics_and_posts(env):
+    c, h = env.c, env.h
+    result = c.post("/api/discussion/boards/general/topics",
+                    json={"title": "Pseudonym", "body": "Opening", "name_choice": "username"}, headers=h["ada"])
+    assert result.status_code == 200 and result.json()["author_name"] == "ada"
+    tid = result.json()["id"]
+    reply = c.post(f"{THREAD}/{tid}/messages", json={"body": "Reply", "name_choice": "username"}, headers=h["ada"])
+    assert reply.json()["author_name"] == "ada"
+    assert c.patch("/api/me/username", json={"username": "newname"}, headers=h["ada"]).status_code == 200
+    topic = c.get("/api/discussion/boards/general/topics", headers=h["bob"]).json()["topics"]
+    assert next(item for item in topic if item["id"] == tid)["author_name"] == "ada"
+    messages = c.get(f"{THREAD}/{tid}/messages", headers=h["bob"]).json()
+    assert [message["author_name"] for message in messages] == ["ada", "ada"]
+    assert c.patch("/api/me/username", json={"username": ""}, headers=h["ada"]).status_code == 200
+    assert c.post(f"{THREAD}/{tid}/messages", json={"body": "No alias", "name_choice": "username"},
+                  headers=h["ada"]).status_code == 422
+    real = c.post(f"{THREAD}/{tid}/messages", json={"body": "Real name", "name_choice": "real"}, headers=h["ada"])
+    assert real.status_code == 200 and real.json()["author_name"] != "ada"
+
+
 def _events(chunks: list[str]) -> list[tuple[str, object]]:
     out = []
     for chunk in chunks:

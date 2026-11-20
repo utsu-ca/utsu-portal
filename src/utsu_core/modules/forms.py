@@ -42,7 +42,6 @@ class FormsModule:
         S = ctx.store
         forms = ctx.forms.core_view()
         admin = ctx.require_role("forms_editor")
-        admin_q = ctx.require_role("forms_editor", allow_query_token=True)
         verified = ctx.require_verified()
 
         def published(fid: str) -> dict:
@@ -220,7 +219,7 @@ class FormsModule:
             return {"published_version": None}
 
         @r.get("/admin/forms/{fid}/events")
-        async def events(fid: str, request: Request, _: dict = admin_q):
+        async def events(fid: str, request: Request, _: dict = admin):
             _ensure(fid)
 
             async def gen():

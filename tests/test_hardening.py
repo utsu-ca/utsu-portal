@@ -36,19 +36,19 @@ def test_username_alone_never_grants_admin_but_allowlisted_email_does():
 def test_otp_resend_cannot_reset_guess_budget_and_has_cooldown():
     c, mail = boot()
     register(c, mail, "ada", "ada@x.ca")
-    c.post("/api/auth/login", json={"username": "ada"})
+    c.post("/api/auth/login-email", json={"email": "ada@x.ca"})
     n = len(mail.outbox)
-    c.post("/api/auth/login", json={"username": "ada"})  # inside cooldown: silently throttled
+    c.post("/api/auth/login-email", json={"email": "ada@x.ca"})  # inside cooldown: silently throttled
     assert len(mail.outbox) == n
     ctx = c.app.state.ctx
     for _ in range(5):
-        assert c.post("/api/auth/token", json={"username": "ada", "code": "000000"}).status_code == 400
+        assert c.post("/api/auth/token-email", json={"email": "ada@x.ca", "code": "000000"}).status_code == 400
     t = ctx.now()
     ctx.now = lambda: t + 120  # cooldown over, but the window and its wrong guesses persist
-    c.post("/api/auth/login", json={"username": "ada"})
+    c.post("/api/auth/login-email", json={"email": "ada@x.ca"})
     assert len(mail.outbox) == n
     ctx.now = lambda: t + 2000  # new window
-    c.post("/api/auth/login", json={"username": "ada"})
+    c.post("/api/auth/login-email", json={"email": "ada@x.ca"})
     assert len(mail.outbox) == n + 1
 
 
@@ -57,7 +57,7 @@ def test_otp_sends_capped_per_window():
     register(c, mail, "ada", "ada@x.ca")
     n = len(mail.outbox)
     for _ in range(9):
-        c.post("/api/auth/login", json={"username": "ada"})
+        c.post("/api/auth/login-email", json={"email": "ada@x.ca"})
     assert len(mail.outbox) - n == 5
 
 

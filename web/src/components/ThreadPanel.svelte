@@ -5,9 +5,10 @@
   import { api } from "../lib/api.js";
   import { Action } from "../lib/action.svelte.js";
   import { openStream } from "../lib/stream.js";
+  import { session } from "../lib/session.svelte.js";
   import Status from "./Status.svelte";
 
-  let { type, id, title = "Discussion" } = $props();
+  let { type, id, title = "Discussion", maskAuthors = $bindable(false) } = $props();
 
   const base = $derived(`/threads/${encodeURIComponent(type)}/${encodeURIComponent(id)}`);
   const load = new Action();
@@ -19,6 +20,7 @@
   let connection = $state("connecting");
   let body = $state("");
   let internal = $state(false);
+  let nameChoice = $state("real");
   let redacting = $state(null);
   let reason = $state("");
   let readUpTo = 0;
@@ -81,7 +83,7 @@
 
   async function post(event) {
     event.preventDefault();
-    const row = await send.run(() => api(base + "/messages", { method: "POST", body: { body, internal } }));
+    const row = await send.run(() => api(base + "/messages", { method: "POST", body: { body, internal, name_choice: nameChoice } }));
     if (row) {
       upsert(row);
       readUpTo = Math.max(readUpTo, row.seq);
@@ -110,13 +112,15 @@
     <p class="meta" role="status">{labels[connection]}</p>
   {/if}
 
+  <label class="opt"><input type="checkbox" bind:checked={maskAuthors} /> Mask author names on this screen</label>
+  {#if maskAuthors}<p class="help">This only hides names from your view, not from other viewers or the server.</p>{/if}
   {#if info && connection === "live" && messages.length === 0}<p class="help">No posts yet.</p>{/if}
   <div role="log" aria-label="{title} messages">
   <ol class="thread-list">
     {#each messages as message (message.seq)}
       <li class="thread-post" class:mine={message.mine} class:internal={message.internal}>
         <div class="meta">
-          <strong>{message.author_name}</strong> · <time>{when(message.at)}</time>
+          <strong>{maskAuthors ? "Hidden author" : message.author_name}</strong> · <time>{when(message.at)}</time>
           {#if message.internal}<span class="badge">Internal note</span>{/if}
         </div>
         {#if message.redacted}
@@ -150,6 +154,11 @@
       <form onsubmit={post}>
         <label for="thread-{id}-body">Your post</label>
         <textarea id="thread-{id}-body" bind:value={body} rows="4" maxlength={info.max_body} required></textarea>
+        <label for="thread-{id}-name">Post as</label>
+        <select id="thread-{id}-name" bind:value={nameChoice}>
+          <option value="real">Real name</option>
+          <option value="username" disabled={!session.me?.user?.username}>Username{session.me?.user?.username ? `: ${session.me.user.username}` : " (set one in your account)"}</option>
+        </select>
         {#if info.internal_notes}
           <label class="opt"><input type="checkbox" bind:checked={internal} /> Internal note (staff only)</label>
         {/if}

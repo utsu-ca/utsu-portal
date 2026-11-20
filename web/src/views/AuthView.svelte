@@ -4,11 +4,13 @@
   import { Action } from "../lib/action.svelte.js";
   import { signIn } from "../lib/session.svelte.js";
   import { go } from "../lib/nav.svelte.js";
+  import { start } from "../lib/boot.js";
   import Status from "../components/Status.svelte";
   import { beginGoogleStaffLogin } from "../lib/google-staff.js";
 
-  let { onsignin, googleError = "" } = $props();
-  let username = $state(""), code = $state("");
+  // Rendered both as its own view and inside Profile, so it starts the session itself rather than relying on a callback.
+  let { googleError = "" } = $props();
+  let email = $state(""), code = $state("");
   let codeSent = $state(false);
   let googleEnabled = $state(false);
   let codeInput = $state();
@@ -19,31 +21,35 @@
 
   const sendCode = async event => {
     event?.preventDefault();
-    if (!username.trim()) { send.error = "Enter your username."; return; }
+    if (!email.trim()) {
+      send.error = "Enter the primary email on your account.";
+      return;
+    }
     let sent = false;
     await send.run(async () => {
-      await api("/auth/login", { method: "POST", body: { username } });
+      await api("/auth/login-email", { method: "POST", body: { email } });
       sent = true;
-    }, "If the account exists, a code was sent.");
+    }, "If an account uses that email, a code was sent.");
     if (!sent) return;
     codeSent = true;
     await tick();
     codeInput?.focus();
   };
 
-  const changeUsername = () => {
+  const changeEmail = () => {
     codeSent = false;
     code = "";
     send.ok = "";
+    send.error = "";
     enter.error = "";
   };
 
   const signInWithCode = event => {
     event?.preventDefault();
     return enter.run(async () => {
-      const result = await api("/auth/token", { method: "POST", body: { username, code } });
+      const result = await api("/auth/token-email", { method: "POST", body: { email, code } });
       signIn(result.token);
-      await onsignin();
+      await start();
     });
   };
 </script>
@@ -55,10 +61,10 @@
   <h3>Sign in with an email code</h3>
   <p>For applicants and existing accounts that use email codes.</p>
   <form onsubmit={sendCode}>
-    <label for="username">Username</label>
-    <input id="username" autocomplete="username" bind:value={username} readonly={codeSent} />
+    <label for="login-email">Primary email</label>
+    <input id="login-email" type="email" autocomplete="email" bind:value={email} readonly={codeSent} />
     {#if codeSent}
-      <button type="button" class="secondary" onclick={changeUsername}>Use a different username</button>
+      <button type="button" class="secondary" onclick={changeEmail}>Use a different email</button>
       <button type="submit" class="secondary" disabled={send.busy}>Resend code</button>
     {:else}
       <button type="submit" class="secondary" disabled={send.busy}>Email me a code</button>

@@ -195,7 +195,7 @@ class DiscussionRuntime:
             "kind_label": entry[1].label if entry else None,
             "panel": entry[1].panel if entry else None,
             "ref": topic.get("ref") if entry else None,
-            "author_name": names[author] or "Member",
+            "author_name": topic.get("author_name") or names[author] or "Member",
             "pinned": bool(topic.get("pinned")),
             "locked": bool(topic.get("locked")),
             "created_at": topic.get("created_at"),
@@ -214,7 +214,7 @@ class DiscussionRuntime:
         return rows
 
     def create_topic(self, board_id: str, title: str, body: str, author: Mapping[str, Any],
-                     kind: str = DEFAULT_KIND, ref: str = "") -> dict[str, Any]:
+                     kind: str = DEFAULT_KIND, ref: str = "", name_choice: str = "real") -> dict[str, Any]:
         board = self.board(board_id)
         if board is None:
             raise LookupError("board not found")
@@ -230,12 +230,13 @@ class DiscussionRuntime:
             raise MessageRejected("the opening post is empty")
         topic_id = secrets.token_hex(8)
         topic = {"id": topic_id, "board": board_id, "title": clean_line(title, 200, "title"), "kind": kind,
-                 "ref": ref, "author": author["uuid"], "pinned": False, "locked": False,
+                 "ref": ref, "author": author["uuid"], "author_name": "Member", "pinned": False, "locked": False,
                  "created_at": self._s.now()}
         if not self._s.store.create("discussion_topics", topic_id, topic):
             raise RuntimeError("topic ID collision")
         try:
-            self._s.messaging.post(THREAD_TYPE, topic_id, author, body)
+            opening = self._s.messaging.post(THREAD_TYPE, topic_id, author, body, name_choice=name_choice)
+            topic = self._s.store.update("discussion_topics", topic_id, lambda current: {**current, "author_name": opening["author_name"]})
         except BaseException:
             self._s.store.delete("discussion_topics", topic_id)
             raise
@@ -332,6 +333,7 @@ class BoardUpdate(BaseModel):
 class TopicIn(BaseModel):
     title: str = Field(max_length=800)
     body: str = Field(max_length=MAX_POST * 2)
+    name_choice: Literal["real", "username"] = "real"
 
 
 class ModerateIn(BaseModel):
@@ -409,7 +411,7 @@ class DiscussionPlugin:
         @r.post("/boards/{board_id}/topics")
         def create_topic(board_id: str, b: TopicIn, a: dict = verified):
             visible_board(board_id, a)
-            return _call(runtime.create_topic, board_id, b.title, b.body, a)
+            return _call(runtime.create_topic, board_id, b.title, b.body, a, name_choice=b.name_choice)
 
         @r.get("/topics/{topic_id}")
         def topic(topic_id: str, a: dict = verified):

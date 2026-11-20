@@ -27,6 +27,27 @@ afterEach(() => { cleanup(); api.mockReset(); openStream.mockReset(); session.ad
 describe("live thread", () => {
   const thread = "/threads/discussion-topic/t1";
 
+  it("lets a viewer hide and restore author names, including on incoming posts", async () => {
+    const live = stream();
+    api.mockImplementation(async path => {
+      if (path === thread) return { post: true, staff: false, internal_notes: false, max_body: 4000, last_seq: 0, read: 0 };
+      if (path === `${thread}/read`) return {};
+      throw new Error(`unexpected ${path}`);
+    });
+    render(ThreadPanel, { type: "discussion-topic", id: "t1" });
+    await vi.waitFor(() => expect(live.onEvent).toBeTypeOf("function"));
+    live.onEvent("message", row(1));
+    expect(await screen.findByText("Ada")).toBeInTheDocument();
+    await fireEvent.click(screen.getByLabelText("Mask author names on this screen"));
+    expect(screen.queryByText("Ada")).not.toBeInTheDocument();
+    live.onEvent("message", row(2, { author_name: "Bob" }));
+    await vi.waitFor(() => expect(screen.getAllByText("Hidden author")).toHaveLength(2));
+    expect(screen.queryByText("Bob")).not.toBeInTheDocument();
+    await fireEvent.click(screen.getByLabelText("Mask author names on this screen"));
+    expect(screen.getByText("Ada")).toBeInTheDocument();
+    expect(screen.getByText("Bob")).toBeInTheDocument();
+  });
+
   it("streams posts in order, posts immediately and marks what was seen as read", async () => {
     const live = stream();
     api.mockImplementation(async (path, opts) => {
@@ -50,7 +71,7 @@ describe("live thread", () => {
     await fireEvent.input(screen.getByLabelText("Your post"), { target: { value: "Agreed" } });
     await fireEvent.click(screen.getByRole("button", { name: "Post" }));
     expect(await screen.findByText("Agreed")).toBeInTheDocument();
-    expect(posts(`${thread}/messages`)[0][1].body).toEqual({ body: "Agreed", internal: false });
+    expect(posts(`${thread}/messages`)[0][1].body).toEqual({ body: "Agreed", internal: false, name_choice: "real" });
     expect(screen.getByLabelText("Your post")).toHaveValue("");
 
     live.onEvent("message", row(3, { mine: true, body: "Agreed", author_name: "Me" }));
@@ -180,7 +201,7 @@ describe("boards and topics", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Start topic" }));
     await vi.waitFor(() => expect(nav.name).toBe("discussionTopic"));
     expect(nav.props).toEqual({ id: "t9" });
-    expect(posts("/discussion/boards/general/topics")[0][1].body).toEqual({ title: "Dietary needs", body: "What should we order?" });
+    expect(posts("/discussion/boards/general/topics")[0][1].body).toEqual({ title: "Dietary needs", body: "What should we order?", name_choice: "real" });
   });
 
   it("shows the owning plug-in's panel above a ballot topic's replies", async () => {
@@ -205,6 +226,9 @@ describe("boards and topics", () => {
     expect(screen.getByRole("button", { name: "Cast my vote" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Discuss this ballot" })).not.toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Replies" })).toBeInTheDocument();
+    expect(screen.getByText(/Started by Elections/)).toBeInTheDocument();
+    await fireEvent.click(screen.getByLabelText("Mask author names on this screen"));
+    expect(screen.getByText(/Started by Hidden author/)).toBeInTheDocument();
     await fireEvent.click(screen.getByRole("button", { name: "Back to General" }));
     expect(nav.name).toBe("discussionBoard");
   });

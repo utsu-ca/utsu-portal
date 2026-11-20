@@ -7,6 +7,7 @@ import hmac
 import json
 import re
 import secrets
+import uuid
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
@@ -60,9 +61,10 @@ def _exchange(fields: dict[str, str]) -> str:
 def _provision(ctx: Context, claims: dict, subject: str, email: str) -> str:
     # A colon cannot occur in a self-registered username. Scope the handle to Google's stable subject, not email.
     username = "google:" + hmac.new(ctx.settings.secret.encode(), subject.encode(), hashlib.sha256).hexdigest()[:32]
-    uid = ctx.uid(username)
-    ekey = ctx.email_key(email)
     store = ctx.store
+    store.create("google_subjects", username, {"uuid": str(uuid.uuid4())})
+    uid = store.get("google_subjects", username)["uuid"]
+    ekey = ctx.email_key(email)
     account = store.get("accounts", uid)
     if account is not None:
         if (account.get("google_staff_username") != username or account.get("status") != "verified"

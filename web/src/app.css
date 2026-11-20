@@ -28,6 +28,13 @@
   --color-accent-hover: var(--admin-accent-hover, #92400e);
   --color-chrome: var(--admin-chrome, #451a03);
 }
+/* A server holding the local-development admin is always red, in both modes, whatever the branding theme says. */
+:root[data-env="dev-local"], :root[data-env="dev-local"][data-mode="admin"] {
+  --color-accent: #b91c1c;
+  --color-accent-hover: #991b1b;
+  --color-chrome: #7f1d1d;
+  --color-page: #fef2f2;
+}
 
 @layer base {
   body { @apply m-0 bg-page font-sans text-base text-slate-900 antialiased; }

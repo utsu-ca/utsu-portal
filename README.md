@@ -10,31 +10,20 @@ reconciliation/EFT export are not implemented. Do not rely on the current system
 The old program and mail command-line interfaces have been removed. The [wiki](wiki/Home.md) contains historical
 batch documentation and may describe commands and workflows that no longer exist.
 
-## Local setup
+## Local development
 
-Python 3.12 or newer is required. From the project root:
-
-```sh
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-export PORTAL_SECRET="$(openssl rand -hex 32)"
-export PORTAL_STORE="sqlite:portal.sqlite"
-export PORTAL_ADMIN_EMAILS="admin@example.com"
-export PORTAL_HSTS=0
-uvicorn utsu_core:create_app --factory --host 127.0.0.1 --port 8000
-```
-
-Open `http://127.0.0.1:8000`. Keep `PORTAL_SECRET` stable across restarts: it is used for identity hashes and,
-unless `PORTAL_DATA_KEY` is configured, derives the encryption key. The default store is in-memory and loses data
-when the process stops. The example disables HSTS only for local HTTP; production requires HTTPS and appropriate
-secrets, backups, database and deployment configuration.
+Follow the [Docker development guide](docs/development/docker.md) to start the portal, Svelte hot reload,
+PostgreSQL, Redis, and observability together. This is the supported dev server; the standalone persistent dev
+launcher is retired. Python 3.12 or newer is required for Python tests outside Docker.
 
 Registration and sign-in use email codes. Configure `PORTAL_SMTP_URL` as an `smtp://` or `smtps://` URL and
 `PORTAL_MAIL_FROM` as the sender to deliver mail; without SMTP, the default mailer logs only recipient and subject,
 not the code. For local testing, `testing/mail_sink.py` catches mail without sending it (see below). An
 administrator account is created only after the email listed in `PORTAL_ADMIN_EMAILS` is verified.
 Secrets can also be supplied via the corresponding `_FILE` environment variable.
+Registration also requires `PORTAL_TURNSTILE_SITE_KEY` and `PORTAL_TURNSTILE_SECRET_KEY` for Cloudflare Turnstile,
+unless the explicitly enabled local-development admin is used without keys. Set `PORTAL_BASE_URL` to the hostname
+registered for the Turnstile widget.
 
 ## Current workflows
 
@@ -108,10 +97,18 @@ notice. SMTP must be configured. This is individual messaging, not the historica
 - `testing/generate_fake_*.py` generates synthetic historical-form and roster data for testing. Run
   `python testing/generate_fake_data.py` or use `--help` for generator options. Generated exports are not direct
   portal-import files; some required portal fields have no historical equivalent.
-- `testing/mail_sink.py` is a local mail catcher (standard library only). Run `python testing/mail_sink.py`, start
-  the portal with `PORTAL_SMTP_URL=smtp://127.0.0.1:1025`, and read sign-in codes and notices at
+- `testing/mail_sink.py` is a local mail catcher (standard library only). The Docker dev stack starts it
+  automatically. When running it separately with `python testing/mail_sink.py`, point SMTP at `smtp://127.0.0.1:1025` and read sign-in codes and notices at
   `http://127.0.0.1:8025` (JSON at `/messages?to=ADDR`). `--reject REGEX` bounces matching recipients with 550 to
   exercise failure paths; `--help` lists the other options.
+- `PORTAL_DEV_ADMIN=1` seeds a verified account for each enabled role at `<role>@dev-local.test` (for example,
+  `admin@dev-local.test` or `forms_editor@dev-local.test`). It also pre-registers three verified applicants with no
+  staff roles: `applicant+1@dev-local.test`, `applicant+2@dev-local.test`, and `applicant+3@dev-local.test`.
+  The legacy `devadmin@dev-local.test` login still works. Sign-in codes go to the mail sink if `PORTAL_SMTP_URL` is set,
+  otherwise the whole message is printed to the server log. The server refuses to start with it unless
+  `PORTAL_BASE_URL` is a localhost address, and refuses it with the Firestore store or split auth. While the
+  development marker exists in the store, every page turns red and the service is renamed "ACTIVE DEV LOCAL, DO NOT USE",
+  even after the setting is removed, so a copied development database is easy to spot.
 - [Architecture implementation plan](docs/design/06-architecture-implementation.md) tracks the approved
   reorganization, acceptance criteria, verification, and remaining work. Earlier
   [design documents](docs/design/00-overview.md) are historical proposals, not the current implementation.

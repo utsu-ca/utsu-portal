@@ -50,6 +50,8 @@ generated once into Secret Manager and mounted as env vars. **Never rotate `PORT
 | `PORTAL_ADMIN_EMAILS` | emails that become admin once verified by OTP |
 | `PORTAL_APPLICANT_EMAIL_DOMAINS` | optional comma-separated exact primary email domains (e.g. `mail.utoronto.ca`); applies to new applicants and primary email changes, not backup emails, existing sign-ins, or new legacy bootstrap admins |
 | `PORTAL_COMMIT` | source revision shown with the package version in the site footer (from `GET /api/version`); `deploy.sh` sets it from `git rev-parse HEAD`, and a development checkout falls back to git when unset |
+| `PORTAL_TURNSTILE_SITE_KEY`, `PORTAL_TURNSTILE_SECRET_KEY` | Cloudflare Turnstile keys required for registration; register the `PORTAL_BASE_URL` hostname with Cloudflare. The secret supports `_FILE` and must remain private. Registration fails closed without both keys, except in explicitly enabled local dev mode without keys. |
+| `PORTAL_DEV_ADMIN` | local development only: `1` seeds the `devadmin` administrator. Startup fails unless `PORTAL_BASE_URL` is localhost (and with Firestore or split auth). While that account exists, the UI is red and named "ACTIVE DEV LOCAL, DO NOT USE". Never set it in a deployment |
 | `PORTAL_BASE_URL`, `PORTAL_SSO_KEY` | SSO issuer URL and RSA private key (PEM) |
 | `PORTAL_GOOGLE_STAFF_DOMAINS` | comma-separated exact Workspace domains eligible for staff accounts |
 | `PORTAL_GOOGLE_CLIENT_ID`, `PORTAL_GOOGLE_CLIENT_SECRET` | optional Google OAuth web credentials; mount the secret or use its `_FILE` variant |

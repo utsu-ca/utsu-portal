@@ -4,9 +4,10 @@ import base64
 import hmac
 import logging
 import re
+import uuid
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 from .. import security
 from ..context import Context, roles_of
@@ -15,6 +16,8 @@ from ..security import clean_text
 from ..services.account_check import check_one
 from ..services.google_staff import register_routes as register_google_routes
 from ..services.roster import get_trunc_id
+from ..services.usernames import release, reserve, username_key
+from ..services import turnstile
 
 name = "auth"
 USERNAME = re.compile(r"^[A-Za-z0-9._-]{3,64}$")
@@ -25,17 +28,18 @@ log = logging.getLogger(__name__)
 class Name(BaseModel):
     @field_validator("*", mode="before")
     @classmethod
-    def _clean(cls, v):
-        return clean_text(v, 100) if isinstance(v, str) else v
+    def _clean(cls, v, info: ValidationInfo):
+        return clean_text(v, 100) if isinstance(v, str) and info.field_name != "challenge_token" else v
 
 
 class Register(Name):
-    username: str
+    username: str = ""
     email: str
     first_name: str = Field(min_length=1)
     last_name: str = Field(min_length=1)
     preferred_name: str = ""
     student_number: str = Field(pattern=r"^\d{7,10}$")
+    challenge_token: str = Field(default="", max_length=2048)
 
 
 class Username(BaseModel):
@@ -47,6 +51,14 @@ class Recover(Username):
 
 
 class CodeIn(Username):
+    code: str
+
+
+class EmailIn(BaseModel):
+    email: str = Field(max_length=320)
+
+
+class EmailCodeIn(EmailIn):
     code: str
 
 
@@ -65,6 +77,10 @@ class BackupLogin(Username, BackupAddress):
 
 class Preferred(Name):
     preferred_name: str = Field(min_length=1)
+
+
+class PublicUsername(Name):
+    username: str = ""
 
 class ConfirmRosterNumber(BaseModel):
     student_number: str = Field(pattern=r"^\d{7,10}$")
@@ -107,6 +123,10 @@ def _divisions(ctx: Context, codes: list[str]) -> list[str]:
     return codes
 
 
+def _public_user(user: dict) -> dict:
+    return {key: value for key, value in user.items() if key != "username_token"}
+
+
 def _submit_verification(ctx: Context, uid: str, kind: str, body: Verification, changes: dict) -> dict:
     if security.read_token(ctx.settings.secret, body.challenge, "chal") is None:
         raise HTTPException(422, "live-scan challenge missing or expired; capture again")
@@ -135,9 +155,13 @@ class AuthModule:
         def school_email(email: str) -> bool:
             return bool(EMAIL.fullmatch(email) and (not domains or email.lower().rsplit("@", 1)[1] in domains))
 
+        @r.get("/auth/registration-challenge")
+        def registration_challenge():
+            return turnstile.configuration(ctx.settings)
+
         @r.post("/auth/register", status_code=201)
         def register(b: Register):
-            if not USERNAME.match(b.username):
+            if b.username and not USERNAME.fullmatch(b.username):
                 raise HTTPException(422, "username must be 3-64 chars of letters, digits . _ -")
             if not EMAIL.match(b.email):
                 raise HTTPException(422, "invalid email")
@@ -145,32 +169,68 @@ class AuthModule:
                 raise HTTPException(422, "Use a primary email address from an approved school domain")
             if b.email.lower() == (ctx.settings.google_bootstrap_admin_email or "").strip().lower():
                 raise HTTPException(409, "Use Google sign-in for this work account")
-            uid = ctx.uid(b.username)
+            turnstile.verify_registration(ctx.settings, b.challenge_token)
+            uid = str(uuid.uuid4())
             sid = security.student_id_uuid(ctx.settings.secret, b.student_number)
             ekey = ctx.email_key(b.email)
-            if S.get("accounts", uid):
-                raise HTTPException(409, "username already registered")
-            if not S.create("student_ids", sid, {"uuid": uid}):
-                raise HTTPException(409, "student number already registered")
-            if not S.create("emails", ekey, {"uuid": uid}):
-                S.delete("student_ids", sid)
-                raise HTTPException(409, "email already registered")
-            admin = b.email.strip().lower() in ctx.settings.admin_emails  # username is never trusted; the email OTP below proves the mailbox
-            S.put("users", uid, {"uuid": uid, "email": b.email.lower(), "preferred_name": b.preferred_name or b.first_name,
-                                 "first_name": b.first_name, "last_name": b.last_name,
-                                 "student_number": security.truncate_student_number(b.student_number)})
-            digits = get_trunc_id(b.student_number)
-            if digits is not None:
-                S.put("roster_identifiers", uid, {"digits": f"{digits:04d}"})
-            S.put("accounts", uid, {"uuid": uid, "status": "pending_email", "role": "admin" if admin else "applicant", "roles": ["admin"] if admin else [],
-                                    "email_verified": False, "sid_uuid": sid, "email_key": ekey})
-            ctx.send_otp("email", uid, b.email)
-            ctx.audit.record(uid, "account.registered", f"user:{uid}", None, S.get("users", uid), {"role": "admin" if admin else "applicant"})
-            return {"uuid": uid, "status": "pending_email"}
+            ukey = username_key(ctx.settings.secret, b.username) if b.username else None
+            utoken = None
+            sid_reserved = email_reserved = user_saved = roster_saved = registered = account_saved = False
+            try:
+                if ukey:
+                    utoken = reserve(S, ukey, uid)
+                if not S.create("accounts", uid, {
+                    "uuid": uid, "status": "registering", "role": "applicant", "roles": [],
+                    "email_verified": False, "sid_uuid": sid, "email_key": ekey,
+                }):
+                    raise HTTPException(409, "account ID collision; retry registration")
+                account_saved = True
+                if not S.create("student_ids", sid, {"uuid": uid}):
+                    raise HTTPException(409, "student number already registered")
+                sid_reserved = True
+                if not S.create("emails", ekey, {"uuid": uid}):
+                    raise HTTPException(409, "email already registered")
+                email_reserved = True
+
+                admin = b.email.strip().lower() in ctx.settings.admin_emails  # username is never trusted; the email OTP below proves the mailbox
+                S.put("users", uid, {"uuid": uid, "email": b.email.lower(), "preferred_name": b.preferred_name or b.first_name,
+                                     "first_name": b.first_name, "last_name": b.last_name,
+                                     "student_number": security.truncate_student_number(b.student_number),
+                                     "username": b.username, "username_token": utoken})
+                user_saved = True
+                digits = get_trunc_id(b.student_number)
+                if digits is not None:
+                    S.put("roster_identifiers", uid, {"digits": f"{digits:04d}"})
+                    roster_saved = True
+                def finish(acct):
+                    if not acct or acct.get("status") != "registering":
+                        raise HTTPException(409, "registration reservation was lost")
+                    return {**acct, "status": "pending_email", "role": "admin" if admin else "applicant",
+                            "roles": ["admin"] if admin else []}
+
+                S.update("accounts", uid, finish)
+                ctx.send_otp("email", uid, b.email)
+                registered = True
+                ctx.audit.record(uid, "account.registered", f"user:{uid}", None, S.get("users", uid), {"role": "admin" if admin else "applicant"})
+                return {"uuid": uid, "status": "pending_email"}
+            finally:
+                if not registered:
+                    if email_reserved:
+                        S.delete("emails", ekey)
+                    if sid_reserved:
+                        S.delete("student_ids", sid)
+                    if roster_saved:
+                        S.delete("roster_identifiers", uid)
+                    if user_saved:
+                        S.delete("users", uid)
+                    if account_saved:
+                        S.delete("accounts", uid)
+                    if ukey and utoken:
+                        release(S, ukey, utoken)
 
         @r.post("/auth/verify-email")
-        def verify_email(b: CodeIn):
-            uid = ctx.uid(b.username)
+        def verify_email(b: EmailCodeIn | CodeIn):
+            uid = ctx.uid(b.email if isinstance(b, EmailCodeIn) else b.username)
             acct = S.get("accounts", uid)
             if acct is None or ctx.check_otp("email", uid, b.code) is None:
                 raise HTTPException(400, "invalid or expired code")
@@ -184,19 +244,31 @@ class AuthModule:
             ctx.audit.record(uid, "account.email_verified", f"user:{uid}", None, {"status": acct["status"]})
             return {"status": acct["status"]}
 
-        @r.post("/auth/login")
-        def login(b: Username):
-            uid = ctx.uid(b.username)
-            user, acct = S.get("users", uid), S.get("accounts", uid)
-            if user and acct and not acct.get("google_staff_username"):  # no account enumeration
-                ctx.send_otp("login", uid, user["email"])
-            return {"detail": "if the account exists, a code was emailed"}
+        def email_account(email: str) -> str | None:
+            """The account whose current primary email is this address; never a Google staff account."""
+            email = email.strip().lower()
+            if not EMAIL.fullmatch(email):
+                return None
+            uid = (S.get("emails", ctx.email_key(email)) or {}).get("uuid")
+            user, acct = (S.get("users", uid), S.get("accounts", uid)) if uid else (None, None)
+            if not user or not acct or acct.get("google_staff_username") or user.get("email", "").lower() != email:
+                return None
+            return uid
 
-        @r.post("/auth/token")
-        def token(b: CodeIn):
-            uid = ctx.uid(b.username)
-            acct = S.get("accounts", uid)
-            if acct is None or acct.get("google_staff_username") or ctx.check_otp("login", uid, b.code) is None:
+        @r.post("/auth/login-email")
+        def login_by_email(b: EmailIn):
+            uid = email_account(b.email)
+            if uid:  # no account enumeration
+                ctx.send_otp("login", uid, S.get("users", uid)["email"])
+            return {"detail": "if an account uses that email, a code was emailed"}
+
+        @r.post("/auth/token-email")
+        def token_by_email(b: EmailCodeIn):
+            return finish_login(email_account(b.email), b.code)
+
+        def finish_login(uid: str | None, code: str) -> dict:
+            acct = S.get("accounts", uid) if uid else None
+            if acct is None or acct.get("google_staff_username") or ctx.check_otp("login", uid, code) is None:
                 raise HTTPException(400, "invalid or expired code")
             if not acct["email_verified"]:
                 def mark(ac):  # the login code proves control of the registered email
@@ -212,7 +284,7 @@ class AuthModule:
         @r.get("/me")
         def me(acct: dict = user_dep):
             u = S.get("users", acct["uuid"])
-            result = {"user": u, "status": acct["status"], "role": acct["role"],
+            result = {"user": _public_user(u), "status": acct["status"], "role": acct["role"],
                       "roles": sorted(roles_of(acct, ctx.roles))}
             if acct.get("google_staff_username"):
                 result["staff_sso"] = True
@@ -268,7 +340,42 @@ class AuthModule:
             old = u["preferred_name"]
             u = S.update("users", acct["uuid"], lambda cur: {**cur, "preferred_name": b.preferred_name})  # the only user-mutable field
             ctx.audit.record(acct["uuid"], "user.preferred_name_changed", f"user:{acct['uuid']}", {"preferred_name": old}, {"preferred_name": u["preferred_name"]})
-            return {"user": u}
+            return {"user": _public_user(u)}
+
+        @r.patch("/me/username")
+        def update_username(body: PublicUsername, acct: dict = user_dep):
+            if acct.get("backup_session"):
+                raise HTTPException(403, "Sign in with your primary email to change your username")
+            value = body.username
+            if value and not USERNAME.fullmatch(value):
+                raise HTTPException(422, "username must be 3-64 chars of letters, digits . _ -")
+            uid = acct["uuid"]
+            user = S.get("users", uid)
+            old_value, old_token = user.get("username", ""), user.get("username_token")
+            if value == old_value:
+                return {"user": _public_user(user)}
+            old_key = username_key(ctx.settings.secret, old_value) if old_value else None
+            new_key = username_key(ctx.settings.secret, value) if value else None
+            # A case-only edit keeps the existing reservation.
+            new_token = old_token if new_key and new_key == old_key else None
+            if new_key and new_key != old_key:
+                new_token = reserve(S, new_key, uid)
+            saved = False
+            try:
+                def change(current):
+                    if not current or current.get("username_token") != old_token or current.get("username", "") != old_value:
+                        raise HTTPException(409, "Your username changed; reload and try again")
+                    return {**current, "username": value, "username_token": new_token}
+
+                user = S.update("users", uid, change)
+                saved = True
+            finally:
+                if not saved and new_key and new_key != old_key and new_token:
+                    release(S, new_key, new_token)
+            if old_key and old_key != new_key and old_token:
+                release(S, old_key, old_token)
+            ctx.audit.record(uid, "user.username_changed", f"user:{uid}")
+            return {"user": _public_user(user)}
 
         @r.post("/me/roster-number")
         def confirm_roster_number(body: ConfirmRosterNumber, acct: dict = user_dep):
@@ -366,7 +473,7 @@ class AuthModule:
             u = S.get("users", uid)
             if u and u["student_number"] == b.student_number_trunc:
                 ctx.send_otp("login", uid, u["email"])
-            return {"detail": "if the details match, a code was emailed; exchange it at /api/auth/token"}
+            return {"detail": "if the details match, a code was emailed; sign in using your primary email"}
 
         @r.post("/recovery/email-otp")
         def recovery_email_otp(b: RecoveryOtp):

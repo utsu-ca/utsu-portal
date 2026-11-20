@@ -26,6 +26,7 @@ def get_json(sink, path):
 
 
 def test_portal_sign_up_code_arrives_in_the_sink(sink, monkeypatch):
+    monkeypatch.setattr("utsu_core.services.turnstile.verify_registration", lambda _settings, _token: None)
     monkeypatch.setenv("PORTAL_SMTP_URL", f"smtp://user:p%40ss@127.0.0.1:{sink.smtp_port}")
     monkeypatch.setenv("PORTAL_MAIL_FROM", "portal@example.local")
     c = TestClient(create_app(Settings(secret="s" * 32), mailer=mailer_from_env()))

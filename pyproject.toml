@@ -14,6 +14,12 @@ dependencies = ["fastapi>=0.110", "pydantic>=2", "uvicorn", "pyyaml", "cryptogra
 [project.optional-dependencies]
 dev = ["pytest", "httpx", "fakeredis", "sqlalchemy>=2", "email-validator>=2", "eth-account>=0.13"]
 portal = []  # retained for existing deployment configurations
+container-dev = [
+    "httpx",
+    "opentelemetry-distro==0.59b0",
+    "opentelemetry-instrumentation-fastapi==0.59b0",
+    "opentelemetry-exporter-otlp-proto-http==1.38.0",
+]
 firestore = ["google-cloud-firestore"]
 sql = ["sqlalchemy>=2"]  # + a driver: psycopg (PostgreSQL/Supabase), pyodbc (Azure SQL), pymysql
 mailsvc = ["sqlalchemy>=2", "email-validator>=2"]

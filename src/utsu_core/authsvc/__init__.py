@@ -52,7 +52,7 @@ class InternalModule:
                 return None
             # minimal projection: no hashes, no email/student-id lookup keys
             return {"account": {k: a.get(k) for k in ("uuid", "status", "role", "roles", "email_verified", "recovery_version")},
-                    "user": u}
+                    "user": {key: value for key, value in u.items() if key != "username_token"}}
 
         @r.get("/ping")
         def ping(authorization: str | None = Header(None)):

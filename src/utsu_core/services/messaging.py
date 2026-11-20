@@ -73,13 +73,15 @@ class MessagingRuntime:
     """Every operation re-checks the owning plug-in's authorizer; unknown or disabled types deny."""
 
     def __init__(self, store: Store, audit: Any, bus: Any, limiter: Any, registry: ThreadTypeRegistry,
-                 display_name: Callable[[str], str | None], now: Callable[[], int]) -> None:
+                 display_name: Callable[[str], str | None], now: Callable[[], int],
+                 user_lookup: Callable[[str], dict | None] | None = None) -> None:
         self._store = store
         self._audit = audit
         self._bus = bus
         self._limiter = limiter
         self._registry = registry
         self._display_name = display_name
+        self._user_lookup = user_lookup
         self._now = now
 
     def for_owner(self, owner: str) -> "MessagingView":
@@ -112,7 +114,7 @@ class MessagingRuntime:
         }
 
     def post(self, thread_type: str, record_id: str, account: Mapping[str, Any], body: str,
-             internal: bool = False) -> Doc:
+             internal: bool = False, name_choice: str = "real") -> Doc:
         registered, access = self.resolve(thread_type, record_id, account)
         if internal and not (registered.definition.internal_notes and access.staff):
             raise ThreadDenied("internal notes are not available here")
@@ -121,6 +123,16 @@ class MessagingRuntime:
         text = clean_body(body, registered.definition.max_body)
         key = thread_key(thread_type, record_id)
         uid = account["uuid"]
+        if name_choice not in ("real", "username"):
+            raise MessageRejected("Choose a valid author name")
+        user = self._user_lookup(uid) if self._user_lookup else None
+        if name_choice == "username":
+            author_name = (user or {}).get("username")
+            if not author_name:
+                raise MessageRejected("Set a username on your account before posting with it")
+        else:
+            author_name = " ".join(part for part in ((user or {}).get("first_name"), (user or {}).get("last_name")) if part)
+            author_name = author_name or self._display_name(uid) or "Member"
         if not (self._limiter.allow(f"msg:{uid}", ACCOUNT_POSTS_PER_MINUTE, 60)
                 and self._limiter.allow(f"msg:{uid}:{key}", THREAD_POSTS_PER_MINUTE, 60)):
             raise MessageRateLimited("posting too quickly; wait a minute and try again")
@@ -134,7 +146,8 @@ class MessagingRuntime:
         thread = self._store.update("message_threads", key, allocate)
         assert thread is not None
         seq = int(thread["seq"])
-        message = {"thread": key, "seq": seq, "author": uid, "internal": bool(internal), "body": text, "at": now}
+        message = {"thread": key, "seq": seq, "author": uid, "author_name": author_name,
+                   "internal": bool(internal), "body": text, "at": now}
         if not self._store.create("messages", f"{key}:{seq:010d}", message):
             raise RuntimeError("message sequence collision")
         self._audit.record(uid, "message.post", key, None, None, {"seq": seq, "internal": bool(internal)})
@@ -221,11 +234,11 @@ class MessagingRuntime:
 
     def _public(self, row: Doc, access: ThreadAccess, viewer: str, names: dict[str, str | None]) -> Doc:
         author = row["author"]
-        if author not in names:
+        if not row.get("author_name") and author not in names:
             names[author] = self._display_name(author)
         result = {
             "seq": int(row["seq"]),
-            "author_name": names[author] or "Member",
+            "author_name": row.get("author_name") or names.get(author) or "Member",
             "mine": author == viewer,
             "internal": bool(row.get("internal")),
             "body": "" if row.get("redacted") else row.get("body", ""),
@@ -249,9 +262,9 @@ class MessagingView:
             raise PermissionError(f"thread type {thread_type} is outside this messaging scope")
 
     def post(self, thread_type: str, record_id: str, account: Mapping[str, Any], body: str,
-             internal: bool = False) -> Doc:
+             internal: bool = False, name_choice: str = "real") -> Doc:
         self._check(thread_type)
-        return self._runtime.post(thread_type, record_id, account, body, internal)
+        return self._runtime.post(thread_type, record_id, account, body, internal, name_choice)
 
     def messages(self, thread_type: str, record_id: str, account: Mapping[str, Any], after: int = 0,
                  limit: int = 100) -> list[Doc]:

@@ -131,7 +131,7 @@ The main web application that:
 
 ```
 User Browser:
-  POST https://portal.example.org/api/auth/login
+  POST https://portal.example.org/api/auth/login-email
   
 NGINX Ingress:
   1. Receives HTTPS request

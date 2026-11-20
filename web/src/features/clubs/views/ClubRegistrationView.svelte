@@ -48,7 +48,7 @@
     <p>{club.description}</p>
     <ul>{#each Object.entries(club.members) as [uuid, memberRole]}<li>{memberRole}: <span class="help">{uuid}</span></li>{/each}</ul>
     {#if memberOf === club.id}
-      <label for={"m-" + club.id}>Username of a verified account</label>
+      <label for={"m-" + club.id}>Email or username of a verified account</label>
       <input id={"m-" + club.id} autocomplete="off" bind:value={username} />
       <label for={"r-" + club.id}>Role</label>
       <select id={"r-" + club.id} bind:value={role}><option value="treasurer">treasurer</option><option value="executive">executive</option></select>

@@ -1,6 +1,7 @@
 // Branding and colours, read at run time from /branding/theme.json so they can be changed without rebuilding.
 // Only plain hex colours and bare file names are accepted from the file.
-export const theme = $state({ name: "UTSU Digital Service", logoUrl: "", copyright: { holder: "UTSU", startYear: null } });
+export const theme = $state({ name: "UTSU Digital Service", logoUrl: "", devLocal: false, copyright: { holder: "UTSU", startYear: null } });
+export const DEV_LOCAL_NAME = "ACTIVE DEV LOCAL, DO NOT USE";
 
 const HEX = /^#[0-9a-f]{3,8}$/i;
 const FILE = /^[\w][\w.\- ]*$/;
@@ -20,8 +21,8 @@ export function applyTheme(config = {}) {
       else root.style.removeProperty(variable);
     }
   }
-  if (typeof config.name === "string" && config.name.trim()) theme.name = config.name.trim().slice(0, 80);
-  theme.logoUrl = brandingUrl(config.logo);
+  if (!theme.devLocal && typeof config.name === "string" && config.name.trim()) theme.name = config.name.trim().slice(0, 80);
+  if (!theme.devLocal) theme.logoUrl = brandingUrl(config.logo);
   const holder = config.copyright?.holder;
   if (typeof holder === "string" && holder.trim()) theme.copyright.holder = holder.trim().slice(0, 80);
   const start = Number(config.copyright?.startYear);
@@ -36,6 +37,14 @@ export function applyTheme(config = {}) {
     }
     link.href = favicon;
   }
+}
+
+// A server holding the local-development admin turns every page red and renames the service, whatever the branding says.
+export function markDevLocal() {
+  theme.devLocal = true;
+  theme.name = DEV_LOCAL_NAME;
+  theme.logoUrl = "";
+  document.documentElement.dataset.env = "dev-local";
 }
 
 // A missing or broken theme file leaves the built-in colours and name in place.

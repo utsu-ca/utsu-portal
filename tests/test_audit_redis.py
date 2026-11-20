@@ -64,7 +64,7 @@ def test_rate_limit_shared_via_redis():
 
 def test_auth_endpoints_rate_limited():
     c, mail, _ = boot(rate_limit_auth=3)
-    codes = [c.post("/api/auth/login", json={"username": "nobody"}).status_code for _ in range(5)]
+    codes = [c.post("/api/auth/login-email", json={"email": "nobody@example.ca"}).status_code for _ in range(5)]
     assert codes == [200, 200, 200, 429, 429]
 
 
@@ -141,15 +141,43 @@ def test_security_headers_and_readyz_and_body_limit():
     r = c.get("/healthz")
     assert "max-age" in r.headers["strict-transport-security"] and r.headers["x-frame-options"] == "DENY"
     assert c.get("/readyz").status_code == 200
-    assert c.post("/api/auth/login", content=b"x" * 500, headers={"content-type": "application/json"}).status_code == 413
+    assert c.post("/api/auth/login-email", content=b"x" * 500, headers={"content-type": "application/json"}).status_code == 413
 
 
 def test_version_reports_configured_commit_and_ignores_junk():
     from utsu_core.version import package_version
     c, *_ = boot(commit="3D1F3C5ABCDEF0123456")
-    assert c.get("/api/version").json() == {"version": package_version(), "commit": "3d1f3c5abcde"}
+    assert c.get("/api/version").json() == {"version": package_version(), "commit": "3d1f3c5abcde", "dev_local": False}
     c, *_ = boot(commit="<script>")
     assert c.get("/api/version").json()["commit"] is None
+
+
+def test_dev_admin_is_seeded_locally_and_flags_the_server(caplog):
+    import uuid
+    from utsu_core.devadmin import DEV_ADMIN_EMAIL, ConsoleMailer
+    c, mail, store = boot()
+    assert c.get("/api/version").json()["dev_local"] is False
+    c, mail, store = boot(dev_admin=True)
+    assert c.get("/api/version").json()["dev_local"] is True
+    h = login(c, mail, DEV_ADMIN_EMAIL)
+    me = c.get("/api/me", headers=h).json()
+    assert me["status"] == "verified" and "admin" in me["roles"] and me["user"]["email"] == DEV_ADMIN_EMAIL
+    assert uuid.UUID(me["user"]["uuid"]).version == 4
+    # Seeding again (a restart on the same store) keeps the one account.
+    again = TestClient(create_app(Settings(secret="s" * 40, dev_admin=True), store, mail))
+    assert again.get("/api/version").json()["dev_local"] is True
+    # Without SMTP the dev admin's codes go to the console.
+    console = create_app(Settings(secret="s" * 40, dev_admin=True), MemoryStore())
+    assert isinstance(console.state.ctx.mailer, ConsoleMailer)
+    with caplog.at_level("WARNING"):
+        TestClient(console).post("/api/auth/login-email", json={"email": DEV_ADMIN_EMAIL})
+    assert "DEV MAIL to " + DEV_ADMIN_EMAIL in caplog.text
+
+
+@pytest.mark.parametrize("kw", [{"sso_issuer": "https://portal.utsu.ca"}, {"store": "firestore"}])
+def test_dev_admin_refused_outside_local_development(kw):
+    with pytest.raises(RuntimeError, match="PORTAL_DEV_ADMIN"):
+        create_app(Settings(secret="s" * 40, dev_admin=True, **kw), MemoryStore(), OutboxMailer())
 
 
 def test_secret_must_be_strong(monkeypatch):

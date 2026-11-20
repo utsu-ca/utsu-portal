@@ -21,6 +21,7 @@ writing the student file and CSVs).
 import argparse
 import csv
 import math
+import os
 import random
 import re
 import sys
@@ -30,7 +31,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TESTING = ROOT / "testing"
-OUTPUT_DIR = TESTING / "output"
+OUTPUT_DIR = Path(os.environ.get("UTSU_FAKE_OUTPUT_DIR", TESTING / "output"))
 UOFT_DATA = OUTPUT_DIR / "fake_uoft_data.csv"
 DEFAULT_SEED = "UTSU-482"
 DEFAULT_STUDENTS = 500  # size of the fake_uoft_data.csv roster the forms draw their applicants from

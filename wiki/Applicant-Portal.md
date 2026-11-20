@@ -11,23 +11,31 @@ implementing `utsu_core.store.Store` (get/put/delete/list/create). `PORTAL_SECRE
 hashes, so it must stay stable.
 
 ## Identity and accounts
-- `uuid` = HMAC(secret, username) (v5-style); the full student number becomes a secondary uuid, stored only as a
+- New accounts have a random UUID v4, shown on the Account page. An optional, changeable username can be used as a
+  public display name; a keyed username index resolves it to the account without changing the UUID. The full student number becomes a secondary uuid, stored only as a
   uniqueness index (`student_ids`). The **user record** holds only `uuid, email, preferred_name, first_name, last_name,
   student_number` (last 4 digits). Account status/role live in a separate `accounts` collection. The four digits
   before the final digit used by the masked roster are stored separately and encrypted. Existing accounts must
   confirm the original number on the Account screen; matching is denied until they do so. Numbers shorter than
   nine digits cannot be matched to this roster format and require administrator assistance.
-- Passwordless: username, then an emailed 6-digit OTP (hashed, expiring, attempt-limited) gives a signed bearer token.
-- Activation: email OTP, then a live face + ID capture (browser camera, server-issued challenge phrase), current
+- Passwordless: use the primary email and an emailed 6-digit OTP (hashed, expiring, attempt-limited) to obtain a
+  signed bearer token.
+- Registration requires a server-verified Cloudflare Turnstile challenge. The only bypass is an explicitly enabled
+  local-development admin instance with no Turnstile keys.
+- Activation: email OTP, then face and ID photos (browser camera or upload, with the server-issued challenge phrase
+  visible in the face photo), current
   division codes and legal names, then **manual admin approval**. Only `verified` accounts can submit forms. Images are
   deleted as soon as a decision is made. Accounts whose OTP-verified email is listed in `PORTAL_ADMIN_EMAILS` are admins and skip review (usernames are never trusted). Re-sent OTPs have a cooldown, a per-window cap and a carried-over guess budget; recovery endpoints are limited per username and answer uniformly. Form `pattern`s are restricted to a backtracking-safe regex subset.
-- Verified applicants can add or replace a separate **backup email** on the Account screen. The portal verifies both
+- Verified applicants can add or replace a separate **recovery email** on the Account screen. The portal verifies both
   the primary and proposed backup inboxes before saving it. When locked out, use **Account recovery** with your
-  username and backup address to receive a one-time sign-in code. This does not change the primary address or grant
+  primary email or username and backup address to receive a one-time sign-in code. This does not change the primary address or grant
   staff permissions. Google Workspace and accounts with staff or administrative roles cannot use backup sign-in.
-- The legacy username + last four student digits option still sends a code to the primary address. A primary email
+- The primary email or username + last four student digits option still sends a code to the primary address. A primary email
   change requires a code sent to the new address plus an administrator-approved face and ID request; legal-name
-  changes also require review. The portal ID stays the same when either email address changes.
+  changes also require review and can be requested from the Account screen. The portal ID stays the same when either email address changes.
+- On discussion topics and replies, members can choose their real name or username. The chosen name is saved with each
+  post, so changing a username does not rewrite old posts. A viewer can mask author names on the current screen; this is
+  only visual and does not hide them from the server or other viewers.
 - Note: a camera capture plus challenge phrase is not cryptographic proof of liveness; admins make the final decision.
 - In a split deployment the authentication service owns the roster. Program eligibility and standalone AGM roster
   checks query its service-token-protected internal API; roster details are not copied into the portal store.

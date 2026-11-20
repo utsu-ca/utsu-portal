@@ -1,4 +1,5 @@
 <script>
+  import { onMount } from "svelte";
   import { api } from "../lib/api.js";
   import { Action } from "../lib/action.svelte.js";
   import Status from "../components/Status.svelte";
@@ -6,8 +7,14 @@
   import { start as startSession } from "../lib/boot.js";
   import { signIn } from "../lib/session.svelte.js";
 
+  let { identifier = "", legalFirst = "", legalLast = "" } = $props();
   let username = $state(""), trunc = $state(""), newEmail = $state(""), otp = $state(""),
     first = $state(""), last = $state(""), divisions = $state("");
+  onMount(() => {
+    username = identifier;
+    first = legalFirst;
+    last = legalLast;
+  });
   let scan = $state(null);
   let backup = $state(""), backupCode = $state("");
   const start = new Action(), sendOtp = new Action(), submit = new Action();
@@ -34,7 +41,7 @@
   }, "Code sent");
 
   const request = () => submit.run(async () => {
-    if (!scan?.shots.face || !scan?.shots.id_card) throw new Error("Capture your face and your student ID first.");
+    if (!scan?.shots.face || !scan?.shots.id_card) throw new Error("Provide both a face photo and a student ID photo.");
     await api("/recovery/request", { method: "POST", body: {
       username, student_number_trunc: trunc, new_email: newEmail || null, otp: otp || null,
       first_name: first, last_name: last, division_codes: split(divisions),
@@ -46,7 +53,7 @@
 
 <div class="card">
   <h2>Account recovery</h2>
-  <label for="rec-user">Username</label>
+  <label for="rec-user">Primary email or username</label>
   <input id="rec-user" autocomplete="username" bind:value={username} />
   <h3>Sign in with a verified backup email</h3>
   <label for="rec-backup-email">Backup email</label>
@@ -64,7 +71,7 @@
   <button class="primary" onclick={emailMe} disabled={start.busy}>Email me a sign-in code (email on file)</button>
   <Status action={start} />
   <hr />
-  <h3>Change primary email or legal name (requires face + ID scan)</h3>
+  <h3>Change primary email or legal name (requires face and ID photos)</h3>
   <label for="rec-email">New primary email (optional)</label>
   <input id="rec-email" type="email" bind:value={newEmail} />
   <button class="primary" onclick={codeToNewEmail} disabled={sendOtp.busy}>Send code to new email</button>
@@ -77,7 +84,7 @@
   <input id="rec-last" bind:value={last} />
   <label for="rec-div">Division codes (comma separated)</label>
   <input id="rec-div" bind:value={divisions} />
-  <ScanWidget bind:scan />
+  <ScanWidget bind:scan allowUpload />
   <button class="primary" onclick={request} disabled={submit.busy}>Submit request</button>
   <Status action={submit} />
 </div>

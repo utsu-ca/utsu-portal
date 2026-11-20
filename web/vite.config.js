@@ -5,6 +5,7 @@ import { svelteTesting } from "@testing-library/svelte/vite";
 import tailwindcss from "@tailwindcss/vite";
 
 const here = path => fileURLToPath(new URL(path, import.meta.url));
+const backend = process.env.PORTAL_DEV_PROXY || "http://localhost:8000";
 
 // The build is committed to src/utsu_core/static so that `pip install` and the Docker image need no Node.
 // Rebuild with `npm run build` in web/ after changing anything under web/.
@@ -24,7 +25,7 @@ export default defineConfig({
       },
     },
   },
-  server: { proxy: { "/api": "http://localhost:8000", "/sso": "http://localhost:8000", "/branding": "http://localhost:8000" } },
+  server: { proxy: { "/api": backend, "/sso": backend, "/branding": backend, "/healthz": backend, "/readyz": backend } },
   test: {
     environment: "jsdom",
     setupFiles: ["./src/test-setup.js"],

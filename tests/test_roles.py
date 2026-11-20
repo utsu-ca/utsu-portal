@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 import sys
 from pathlib import Path
 
@@ -70,6 +71,23 @@ def test_sole_remaining_admin_cannot_demote_self():
     assert put(ac, uh2, "boss", []).status_code == 200
     # ada is now the only admin; boss (no longer admin) cannot act, and ada cannot demote herself
     assert put(ac, uh2, "ada", []).status_code == 403
+
+
+def test_concurrent_admin_demotions_cannot_remove_the_last_admin():
+    ac, pc, mail, astore, ah, uh = setup()
+    assert put(ac, ah, "ada", ["admin"]).status_code == 200
+    uh2 = login(ac, mail, "ada")
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = [
+            pool.submit(put, ac, ah, "ada", []),
+            pool.submit(put, ac, uh2, "boss", []),
+        ]
+        statuses = sorted(result.result().status_code for result in results)
+
+    assert statuses == [200, 409]
+    admins = [a for a in astore.list("accounts") if "admin" in roles_of(a)]
+    assert len(admins) == 1
 
 
 def test_disabled_program_roles_are_ineffective_but_stored_grants_are_preserved():

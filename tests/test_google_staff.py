@@ -1,4 +1,5 @@
 import time
+import uuid
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 
@@ -82,6 +83,7 @@ def test_staff_provisioning_promotion_and_replay(workspace):
     assert client.post(BASE + "/complete", json=body).status_code == 400
     headers = {"Authorization": f"Bearer {result.json()['token']}"}
     me = client.get("/api/me", headers=headers).json()
+    assert uuid.UUID(me["user"]["uuid"]).version == 4
     assert me["roles"] == ["staff"] and me["staff_sso"] is True
     assert not me["user"]["student_number"]
     assert not store.list("roster_identifiers") and not store.list("student_ids")
@@ -106,10 +108,10 @@ def test_staff_provisioning_promotion_and_replay(workspace):
     assert client.get("/api/me", headers={"Authorization": f"Bearer {again['token']}"}).json()["roles"] == []
 
     mail_count = len(mail.outbox)
-    client.post("/api/auth/login", json={"username": username})
+    assert client.post("/api/auth/login-email", json={"email": "staff@example.ca"}).status_code == 200
+    assert client.post("/api/auth/token-email", json={"email": "staff@example.ca", "code": "000000"}).status_code == 400
     client.post("/api/recovery/start", json={"username": username, "student_number_trunc": "0000"})
     assert len(mail.outbox) == mail_count
-    assert client.post("/api/auth/token", json={"username": username, "code": "000000"}).status_code == 400
 
 
 def test_workspace_requires_signed_approved_identity_and_never_links_email(workspace):

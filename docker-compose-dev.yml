@@ -1,0 +1,146 @@
+# Use with docker-compose.yml in a separate Compose project and start with --watch.
+services:
+  portal:
+    build:
+      args:
+        PORTAL_EXTRA_DEPS: ",container-dev"
+    command:
+      - /bin/sh
+      - -ec
+      - python /app/testing/dev_seed.py && exec opentelemetry-instrument uvicorn --app-dir /app/testing --factory dev_app:create_dev_app --host 0.0.0.0 --port 8080 --no-server-header
+    environment:
+      PYTHONPATH: /app/src
+      PORTAL_DEV_ADMIN: "1"
+      PORTAL_DEV_SEED: "${PORTAL_DEV_SEED:-0}"
+      PORTAL_BASE_URL: "http://127.0.0.1:${PORTAL_WEB_PORT:-5173}"
+      PORTAL_SMTP_URL: ""
+      PORTAL_TURNSTILE_SITE_KEY: ""
+      PORTAL_TURNSTILE_SECRET_KEY: ""
+      OTEL_SERVICE_NAME: utsu-portal
+      OTEL_TRACES_EXPORTER: otlp_proto_http
+      OTEL_METRICS_EXPORTER: otlp_proto_http
+      OTEL_LOGS_EXPORTER: none
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
+      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: http://prometheus:9090/api/v1/otlp/v1/metrics
+      OTEL_METRIC_EXPORT_INTERVAL: "5000"
+      OTEL_PYTHON_FASTAPI_EXCLUDED_URLS: "/healthz,/readyz"
+    depends_on:
+      mail-sink:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+      prometheus:
+        condition: service_started
+    volumes:
+      - ./src:/app/src:ro
+      - ./testing:/app/testing:ro
+      - ./data:/app/data:ro
+    healthcheck:
+      start_period: 900s
+    develop:
+      watch:
+        - action: restart
+          path: ./src/utsu_core
+          ignore:
+            - static/
+            - "**/__pycache__/"
+        - action: rebuild
+          path: ./pyproject.toml
+
+  mail-sink:
+    image: python:3.12-slim
+    user: "10001"
+    command: ["python", "-u", "/app/mail_sink.py", "--host", "0.0.0.0"]
+    volumes:
+      - ./testing/mail_sink.py:/app/mail_sink.py:ro
+    ports:
+      - "127.0.0.1:${PORTAL_MAIL_INBOX_PORT:-8025}:8025"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import smtplib, urllib.request; smtplib.SMTP('127.0.0.1', 1025, timeout=1).quit(); urllib.request.urlopen('http://127.0.0.1:8025/', timeout=1).close()"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile.dev
+    environment:
+      PORTAL_DEV_PROXY: http://portal:8080
+    ports:
+      - "127.0.0.1:${PORTAL_WEB_PORT:-5173}:5173"
+    depends_on:
+      portal:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5173/static/').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+    develop:
+      watch:
+        - action: sync
+          path: ./web
+          target: /app
+          initial_sync: true
+          ignore:
+            - node_modules/
+            - package.json
+            - package-lock.json
+            - Dockerfile.dev
+            - ".env*"
+        - action: rebuild
+          path: ./web/package.json
+        - action: rebuild
+          path: ./web/package-lock.json
+        - action: rebuild
+          path: ./web/Dockerfile.dev
+
+  jaeger:
+    image: jaegertracing/jaeger:2.9.0
+    ports:
+      - "127.0.0.1:${PORTAL_JAEGER_PORT:-16686}:16686"
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus",
+              "--storage.tsdb.retention.time=7d", "--web.enable-otlp-receiver"]
+    ports:
+      - "127.0.0.1:${PORTAL_PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - dev-prometheus-data:/prometheus
+
+  grafana:
+    image: grafana/grafana:12.1.1
+    environment:
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    configs:
+      - source: dev-grafana-datasources
+        target: /etc/grafana/provisioning/datasources/dev.yaml
+    ports:
+      - "127.0.0.1:${PORTAL_GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - dev-grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - jaeger
+
+configs:
+  dev-grafana-datasources:
+    content: |
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          url: http://prometheus:9090
+          access: proxy
+          isDefault: true
+        - name: Jaeger
+          type: jaeger
+          url: http://jaeger:16686
+          access: proxy
+
+volumes:
+  dev-prometheus-data:
+  dev-grafana-data:

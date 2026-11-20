@@ -4,6 +4,7 @@ import App from "./App.svelte";
 import { go, nav } from "./lib/nav.svelte.js";
 import { session, setAdminMode } from "./lib/session.svelte.js";
 import { layout } from "./lib/layout.svelte.js";
+import { applyTheme, theme } from "./lib/theme.svelte.js";
 import { bankingStatus, clearBankingStatus } from "./features/sabp/state/banking.svelte.js";
 
 vi.mock("./lib/api.js", async importOriginal => ({ ...(await importOriginal()), api: vi.fn() }));
@@ -50,7 +51,7 @@ describe("signed out", () => {
     render(App);
     await screen.findByText(/Learn more about the/);
     go("auth");
-    const google = await screen.findByRole("button", { name: "Continue with Google" });
+    const google = await screen.findByRole("button", { name: "Continue with Google" }, { timeout: 5000 });
     const otp = screen.getByRole("button", { name: "Email me a code" });
     const recovery = screen.getByRole("button", { name: "Account recovery" });
     expect(otp.compareDocumentPosition(google) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -72,27 +73,28 @@ describe("signed out", () => {
     expect(screen.getByRole("button", { name: "Continue with Google" }).disabled).toBe(true);
   });
 
-  it("asks for the email code only after the username is sent", async () => {
+  it.each(["auth", "profile"])("signs in by email from %s after requesting a code", async view => {
     api.mockImplementation(async (path, opts) => {
       if (path === "/content") return { pages: {} };
-      if (path === "/auth/login") return {};
-      if (path === "/auth/token") return { token: "t1" };
+      if (path === "/auth/login-email") return {};
+      if (path === "/auth/token-email") return { token: "t1" };
       if (path === "/me") return member;
       return { enabled: [] };
     });
     render(App);
     await screen.findByText(/Learn more about the/);
-    go("auth");
-    await fireEvent.input(await screen.findByLabelText("Username"), { target: { value: "ada" } });
+    go(view);
+    await fireEvent.input(await screen.findByLabelText("Primary email"), { target: { value: "a@x.ca" } });
     expect(screen.queryByLabelText("Email code")).toBeNull();
     await fireEvent.click(screen.getByRole("button", { name: "Email me a code" }));
-    expect(api).toHaveBeenCalledWith("/auth/login", { method: "POST", body: { username: "ada" } });
+    expect(api).toHaveBeenCalledWith("/auth/login-email", { method: "POST", body: { email: "a@x.ca" } });
     const code = await screen.findByLabelText("Email code");
     await waitFor(() => expect(document.activeElement).toBe(code));
     await fireEvent.input(code, { target: { value: "123456" } });
     await fireEvent.click(screen.getByRole("button", { name: "Sign in with code" }));
     await waitFor(() => expect(session.me).toEqual(member));
-    expect(api).toHaveBeenCalledWith("/auth/token", { method: "POST", body: { username: "ada", code: "123456" } });
+    expect(api).toHaveBeenCalledWith("/auth/token-email", { method: "POST", body: { email: "a@x.ca", code: "123456" } });
+    expect(screen.queryByText("onsignin is not a function")).toBeNull();
   });
 
   it("requests and exchanges a backup code from account recovery", async () => {
@@ -106,7 +108,7 @@ describe("signed out", () => {
     render(App);
     await screen.findByText(/Learn more about the/);
     go("recovery");
-    await fireEvent.input(await screen.findByLabelText("Username"), { target: { value: "ada" } });
+    await fireEvent.input(await screen.findByLabelText("Primary email or username"), { target: { value: "ada" } });
     await fireEvent.input(screen.getByLabelText("Backup email"), { target: { value: "backup@example.ca" } });
     await fireEvent.click(screen.getByRole("button", { name: "Send code to backup email" }));
     expect(api).toHaveBeenCalledWith("/recovery/backup/start", { method: "POST", body: { username: "ada", email: "backup@example.ca" } });
@@ -115,6 +117,60 @@ describe("signed out", () => {
     await waitFor(() => expect(session.me).toEqual(member));
     expect(api).toHaveBeenCalledWith("/recovery/backup/token", { method: "POST", body: { username: "ada", code: "123456" } });
     expect(sessionStorage.getItem("token")).toBe("backup-session");
+  });
+
+  it("registers without a username and verifies the primary email", async () => {
+    api.mockImplementation(async path => {
+      if (path === "/content") return { pages: {} };
+      if (path === "/auth/registration-challenge") return { local_bypass: true, site_key: null };
+      return { enabled: [] };
+    });
+    render(App);
+    await screen.findByText(/Learn more about the/);
+    go("register");
+    await fireEvent.input(await screen.findByLabelText("Email"), { target: { value: "a@x.ca" } });
+    await fireEvent.input(screen.getByLabelText("Legal first name"), { target: { value: "Ada" } });
+    await fireEvent.input(screen.getByLabelText("Legal last name"), { target: { value: "L" } });
+    await fireEvent.input(screen.getByLabelText("Student number"), { target: { value: "1234567890" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Register" }));
+    await fireEvent.input(await screen.findByLabelText("Email code"), { target: { value: "123456" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Verify email" }));
+    expect(api).toHaveBeenCalledWith("/auth/register", expect.objectContaining({ body: expect.objectContaining({ username: "", email: "a@x.ca" }) }));
+    expect(api).toHaveBeenCalledWith("/auth/verify-email", { method: "POST", body: { email: "a@x.ca", code: "123456" } });
+  });
+
+  it("requires a Turnstile token and resets the widget after a failed registration", async () => {
+    let callbacks;
+    const widget = {
+      render: vi.fn((_element, options) => { callbacks = options; return "widget"; }),
+      reset: vi.fn(),
+      remove: vi.fn(),
+    };
+    vi.stubGlobal("turnstile", widget);
+    try {
+      api.mockImplementation(async (path, opts) => {
+        if (path === "/content") return { pages: {} };
+        if (path === "/auth/registration-challenge") return { site_key: "site", local_bypass: false };
+        if (path === "/auth/register") throw new Error("Try again");
+        return { enabled: [] };
+      });
+      render(App);
+      await screen.findByText(/Learn more about the/);
+      go("register");
+      await vi.waitFor(() => expect(callbacks).toBeDefined());
+      const button = screen.getByRole("button", { name: "Register" });
+      expect(button).toBeDisabled();
+      callbacks.callback("challenge-token");
+      await vi.waitFor(() => expect(button).toBeEnabled());
+      await fireEvent.click(button);
+      expect(await screen.findByText("Try again")).toBeInTheDocument();
+      expect(widget.reset).toHaveBeenCalledWith("widget");
+      expect(button).toBeDisabled();
+      expect(api).toHaveBeenCalledWith("/auth/register", expect.objectContaining({ body: expect.objectContaining({ challenge_token: "challenge-token" }) }));
+    } finally {
+      cleanup();
+      vi.unstubAllGlobals();
+    }
   });
 
   it("completes a Google return in the same tab and removes the code from the URL", async () => {
@@ -154,6 +210,26 @@ describe("signed out", () => {
     });
     render(App);
     await waitFor(() => expect(screen.getByRole("contentinfo")).toHaveTextContent(/© \d{4} .* · v0\.1\.0 \(3d1f3c5\)$/));
+  });
+
+  it("turns red and renames the service while the local development admin exists on the server", async () => {
+    const before = theme.name;
+    api.mockImplementation(async path => {
+      if (path === "/content") return { pages: {} };
+      if (path === "/version") return { version: "0.1.0", commit: null, dev_local: true };
+      return { enabled: [] };
+    });
+    try {
+      render(App);
+      await waitFor(() => expect(document.documentElement.dataset.env).toBe("dev-local"));
+      expect(await screen.findAllByText("ACTIVE DEV LOCAL, DO NOT USE")).not.toHaveLength(0);
+      applyTheme({ name: "Rebranded" });
+      expect(theme.name).toBe("ACTIVE DEV LOCAL, DO NOT USE");
+    } finally {
+      theme.devLocal = false;
+      theme.name = before;
+      delete document.documentElement.dataset.env;
+    }
   });
 
   it("opens a program's public page, with a sign-in prompt instead of actions", async () => {
@@ -342,6 +418,19 @@ describe("signed in", () => {
     await waitFor(() => expect(session.token).toBeNull());
     await waitFor(() => expect(bankingStatus.status).toBeNull());
     expect(within(menu()).queryByRole("button", { name: "Account" })).not.toBeInTheDocument();
+  });
+
+  it("shows the account identifier on the account page", async () => {
+    sessionStorage.setItem("token", "t");
+    session.token = "t";
+    serve(member);
+    render(App);
+    await within(menu()).findByRole("button", { name: "Account" });
+    await fireEvent.click(within(menu()).getByRole("button", { name: "Account" }));
+    expect(await screen.findByText("Account ID: u1")).toBeInTheDocument();
+    await fireEvent.input(screen.getByLabelText("Public username (optional)"), { target: { value: "alias" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Save username" }));
+    expect(api).toHaveBeenCalledWith("/me/username", { method: "PATCH", body: { username: "alias" } });
   });
 
   it("does not restore banking state from a response that arrives after sign-out", async () => {

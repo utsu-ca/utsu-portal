@@ -325,30 +325,36 @@ gcloud run services describe portal --region us-central1 --format='value(status.
 
 ```bash
 # 1. Create test user
-curl -X POST http://localhost:8001/api/auth/signup \
+curl -X POST http://localhost:8001/api/auth/register \
   -H "Content-Type: application/json" \
   -d '{
+    "username": "testuser",
     "email": "test@example.com",
-    "password": "SecurePassword123!",
     "first_name": "Test",
-    "last_name": "User"
+    "last_name": "User",
+    "student_number": "1234567890"
   }'
 
-# 2. Login
-curl -X POST http://localhost:8001/api/auth/login \
+# 2. Verify the registration email using the code delivered to the test inbox
+curl -X POST http://localhost:8001/api/auth/verify-email \
   -H "Content-Type: application/json" \
-  -d '{
-    "email": "test@example.com",
-    "password": "SecurePassword123!"
-  }'
+  -d '{"username": "testuser", "code": "REGISTRATION_CODE"}'
+
+# 3. Request and exchange a sign-in code
+curl -X POST http://localhost:8001/api/auth/login-email \
+  -H "Content-Type: application/json" \
+  -d '{"email": "test@example.com"}'
+curl -X POST http://localhost:8001/api/auth/token-email \
+  -H "Content-Type: application/json" \
+  -d '{"email": "test@example.com", "code": "LOGIN_CODE"}'
 # Response: {"token": "eyJhbGc..."}
 
-# 3. Get current user
+# 4. Get current user
 TOKEN="eyJhbGc..."
 curl -X GET http://localhost:8001/api/me \
   -H "Authorization: Bearer $TOKEN"
 
-# 4. Assign role
+# 5. Assign role
 SERVICE_TOKEN="your-secret-token-32-chars"
 curl -X POST http://localhost:8001/api/rbac/users/user-id-123/roles/admin \
   -H "Authorization: Bearer $SERVICE_TOKEN"

@@ -5,18 +5,54 @@ projection, which the portal caches for ~15 s: a revocation takes effect everywh
 carry no roles, so a stolen old token never keeps privileges that have been revoked."""
 from __future__ import annotations
 
+import secrets
+import time
+from contextlib import contextmanager
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from ..context import Context, roles_of
 from ..security import clean_text
+from ..store import Store
 
 name = "roles"
 
 
 class RoleSet(BaseModel):
-    username: str = Field(min_length=3, max_length=64)
+    username: str = Field(min_length=3, max_length=320)
     roles: list[str] = Field(max_length=64)
+
+
+@contextmanager
+def _admin_role_lock(store: Store):
+    owner = secrets.token_urlsafe(16)
+    deadline = time.monotonic() + 10
+
+    while True:
+        now = time.time()
+
+        def claim(lock):
+            if lock is None or lock.get("expires_at", 0) <= now:
+                return {"owner": owner, "expires_at": now + 30}
+            return None
+
+        current = store.update("role_locks", "admin-roles", claim)
+        if current and current.get("owner") == owner:
+            break
+        if time.monotonic() >= deadline:
+            raise HTTPException(503, "role changes are busy; retry shortly")
+        time.sleep(0.01)
+
+    try:
+        yield
+    finally:
+        def release(lock):
+            if lock and lock.get("owner") == owner:
+                return {**lock, "owner": None, "expires_at": 0}
+            return None
+
+        store.update("role_locks", "admin-roles", release)
 
 
 class RolesModule:
@@ -53,21 +89,21 @@ class RolesModule:
             if uid == actor["uuid"]:
                 raise HTTPException(403, "you cannot change your own roles")
             seen: dict = {}
+            with _admin_role_lock(S):
+                def go(a):
+                    if not a:
+                        raise HTTPException(404, "no such account")
+                    if a["status"] != "verified":
+                        raise HTTPException(409, "roles can only be granted to verified accounts")
+                    seen["before"] = sorted(roles_of(a, ctx.roles))
+                    if "admin" in roles_of(a, ctx.roles) and "admin" not in new:
+                        others = [x for x in S.list("accounts") if x["uuid"] != uid and "admin" in roles_of(x, ctx.roles) and x["status"] == "verified"]
+                        if not others:
+                            raise HTTPException(409, "cannot remove the last admin")
+                    inactive = set(a.get("roles") or []) - set(ctx.roles)
+                    return {**a, "roles": sorted(new | inactive), "role": "admin" if "admin" in new else "applicant"}
 
-            def go(a):
-                if not a:
-                    raise HTTPException(404, "no such account")
-                if a["status"] != "verified":
-                    raise HTTPException(409, "roles can only be granted to verified accounts")
-                seen["before"] = sorted(roles_of(a, ctx.roles))
-                if "admin" in roles_of(a, ctx.roles) and "admin" not in new:
-                    others = [x for x in S.list("accounts") if x["uuid"] != uid and "admin" in roles_of(x, ctx.roles) and x["status"] == "verified"]
-                    if not others:
-                        raise HTTPException(409, "cannot remove the last admin")
-                inactive = set(a.get("roles") or []) - set(ctx.roles)
-                return {**a, "roles": sorted(new | inactive), "role": "admin" if "admin" in new else "applicant"}
-
-            after = S.update("accounts", uid, go)  # optimistic lock: concurrent edits retry on fresh data
+                S.update("accounts", uid, go)
             ctx.audit.record(actor["uuid"], "role.set", f"user:{uid}", {"roles": seen["before"]}, {"roles": sorted(new)})
             return {"uuid": uid, "roles": sorted(new)}
 

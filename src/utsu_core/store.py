@@ -20,6 +20,10 @@ class Conflict(Exception):
     """Another writer changed the document since it was read (optimistic lock failed)."""
 
 
+class _MissingChunk(Conflict):
+    """A document generation was replaced while its chunk data was being read."""
+
+
 class Store(ABC):
     @abstractmethod
     def get(self, col: str, id: str) -> Doc | None: ...
@@ -226,7 +230,13 @@ class ChunkingStore(Store):
         for k, v in list(doc.items()):
             if isinstance(v, str) and v.startswith(self.MARK):
                 n, _, owner = v[len(self.MARK):].partition(":")
-                doc[k] = "".join(self.inner.get(f"{col}__chunks", f"{owner}.{k}.{i}")["d"] for i in range(int(n)))
+                parts = []
+                for i in range(int(n)):
+                    chunk = self.inner.get(f"{col}__chunks", f"{owner}.{k}.{i}")
+                    if chunk is None or "d" not in chunk:
+                        raise _MissingChunk(f"{col}/{id}: chunk generation changed during read")
+                    parts.append(chunk["d"])
+                doc[k] = "".join(parts)
         return doc
 
     def _drop_doc(self, col: str, old: Doc | None) -> None:
@@ -237,7 +247,17 @@ class ChunkingStore(Store):
                     self.inner.delete(f"{col}__chunks", f"{owner}.{k}.{i}")
 
     def get(self, col, id):
-        return self._unpack(col, id, self.inner.get(col, id))
+        for _ in range(3):
+            doc = self.inner.get(col, id)
+            try:
+                return self._unpack(col, id, doc)
+            except _MissingChunk as exc:
+                latest = self.inner.get(col, id)
+                if latest is None:
+                    return None
+                if latest == doc:
+                    raise Conflict(f"{col}/{id}: chunk data is missing") from exc
+        raise Conflict(f"{col}/{id}: document changed repeatedly while reading chunks")
 
     def put(self, col, id, doc):
         old = self.inner.get(col, id)
@@ -250,7 +270,13 @@ class ChunkingStore(Store):
         self._drop_doc(col, old)
 
     def list(self, col, **equals):
-        return [self._unpack(col, "", d) for d in self.inner.list(col, **equals)]
+        for _ in range(3):
+            docs = self.inner.list(col, **equals)
+            try:
+                return [self._unpack(col, "", d) for d in docs]
+            except _MissingChunk:
+                continue
+        raise Conflict(f"{col}: documents changed repeatedly while reading chunks")
 
     def create(self, col, id, doc):
         if self.inner.get(col, id) is not None:

@@ -64,7 +64,7 @@
       {#if loader}
         {#await loader() then module}
           {@const View = module.default}
-          {#if nav.name === "auth"}<View onsignin={start} {...nav.props} />{:else}<View {...nav.props} />{/if}
+          <View {...nav.props} />
         {:catch}
           <p class="err" role="alert">This page could not be loaded. Check your connection and try again.</p>
         {/await}

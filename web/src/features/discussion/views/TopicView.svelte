@@ -13,7 +13,7 @@
 
   const load = new Action();
   const moderate = new Action();
-  let data = $state(null);
+  let data = $state(null), maskAuthors = $state(false);
 
   const panel = $derived(data?.topic.ref ? panels[data.topic.panel] : undefined);
   const when = at => (at ? new Date(at * 1000).toLocaleString() : "");
@@ -31,7 +31,7 @@
   <div class="card">
     <h2>{data.topic.title}</h2>
     <p class="meta">
-      Started by {data.topic.author_name} · {when(data.topic.created_at)}
+      Started by {maskAuthors ? "Hidden author" : data.topic.author_name} · {when(data.topic.created_at)}
       {#if data.topic.pinned}<span class="badge">Pinned</span>{/if}
       {#if data.topic.locked}<span class="badge">Locked</span>{/if}
     </p>
@@ -59,6 +59,6 @@
   {/if}
 
   {#key data.topic.locked}
-    <ThreadPanel type="discussion-topic" id={data.topic.id} title="Replies" />
+    <ThreadPanel type="discussion-topic" id={data.topic.id} title="Replies" bind:maskAuthors />
   {/key}
 {/if}

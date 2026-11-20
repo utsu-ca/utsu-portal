@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
-from fastapi import Depends, Header, HTTPException, Query
+from fastapi import Depends, Header, HTTPException
 from fastapi.params import Depends as AuthDependency
 
 from . import security
@@ -60,7 +60,24 @@ class Context:
         return int(time.time())
 
     def uid(self, username: str) -> str:
-        return security.username_uuid(self.settings.secret, username)
+        value = username.strip()
+        if "@" in value:
+            match = self.store.get("emails", self.email_key(value))
+            if match:
+                user = self.store.get("users", match["uuid"])
+                if user and user.get("email", "").lower() == value.lower():
+                    return match["uuid"]
+        if value.startswith("google:"):
+            match = self.store.get("google_subjects", value)
+            if match:
+                return match["uuid"]
+        key = security.username_uuid(self.settings.secret, value)
+        match = self.store.get("usernames", key)
+        if match and match.get("uuid"):
+            user = self.store.get("users", match["uuid"])
+            if user and user.get("username_token") == match.get("token"):
+                return match["uuid"]
+        return key
 
     def email_key(self, email: str) -> str:
         return hashlib.sha256(email.lower().encode()).hexdigest()
@@ -167,17 +184,16 @@ class Context:
             return a
         return Depends(dep)
 
-    def require_role(self, *roles: str, allow_query_token: bool = False) -> AuthDependency:
+    def require_role(self, *roles: str) -> AuthDependency:
         """Allow verified accounts holding `admin` (superset) or any of `roles`. No roles given = admin only."""
         want = {"admin", *roles}
 
-        def dep(authorization: str | None = Header(None),
-                token: str | None = Query(None) if allow_query_token else None) -> dict[str, Any]:
-            a = self._account(authorization, token if allow_query_token else None)
+        def dep(authorization: str | None = Header(None)) -> dict[str, Any]:
+            a = self._account(authorization, None)
             if a["status"] != "verified" or not (roles_of(a, self.roles) & want):
                 raise HTTPException(403, "insufficient role")
             return a
         return Depends(dep)
 
-    def require_admin(self, allow_query_token: bool = False) -> AuthDependency:
-        return self.require_role(allow_query_token=allow_query_token)
+    def require_admin(self) -> AuthDependency:
+        return self.require_role()

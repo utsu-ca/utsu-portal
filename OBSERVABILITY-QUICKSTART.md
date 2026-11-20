@@ -3,6 +3,8 @@
 > These are optional integration examples, not systems automatically wired into the portal. The current supported
 > application and deployment contract is documented in [Deployment](wiki/Deployment.md); consult the
 > [implementation plan](docs/design/06-architecture-implementation.md) for active architecture work.
+> For the supported local stack with automatically enabled tracing and metrics, see
+> [Docker development](docs/development/docker.md).
 
 This guide walks through setting up the three new production-grade systems.
 

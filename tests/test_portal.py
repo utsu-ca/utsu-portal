@@ -1,10 +1,12 @@
 import base64
 import pytest
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
+from unittest.mock import patch
 from fastapi.testclient import TestClient
 from fastapi import HTTPException
 
-from utsu_core import create_app, formdef
+from utsu_core import create_app, formdef, security
 from utsu_core.contracts import SubmissionPolicy
 from utsu_core.mailer import OutboxMailer
 from utsu_core.services.submissions import (
@@ -17,7 +19,8 @@ IMG = "data:image/png;base64," + base64.b64encode(b"\x89PNG fake").decode()
 
 
 @pytest.fixture
-def env():
+def env(monkeypatch):
+    monkeypatch.setattr("utsu_core.services.turnstile.verify_registration", lambda _settings, _token: None)
     mail = OutboxMailer()
     app = create_app(Settings(secret="s" * 32, admin_emails=("boss@x.ca",)), mailer=mail)
     return TestClient(app), mail
@@ -28,14 +31,17 @@ def code(mail):
 
 
 def register(c, mail, user, email, sn="1234567890", first="Ada", last="Lovelace"):
-    r = c.post("/api/auth/register", json={"username": user, "email": email, "first_name": first, "last_name": last, "student_number": sn})
+    with patch("utsu_core.services.turnstile.verify_registration"):
+        r = c.post("/api/auth/register", json={"username": user, "email": email, "first_name": first, "last_name": last, "student_number": sn})
     assert r.status_code == 201, r.text
     assert c.post("/api/auth/verify-email", json={"username": user, "code": code(mail)}).status_code == 200
 
 
 def login(c, mail, user):
-    c.post("/api/auth/login", json={"username": user})
-    r = c.post("/api/auth/token", json={"username": user, "code": code(mail)})
+    ctx = c.app.state.ctx
+    email = ctx.store.get("users", ctx.uid(user))["email"]
+    c.post("/api/auth/login-email", json={"email": email})
+    r = c.post("/api/auth/token-email", json={"email": email, "code": code(mail)})
     assert r.status_code == 200, r.text
     return {"Authorization": "Bearer " + r.json()["token"]}
 
@@ -59,6 +65,26 @@ def activate(c, ah, uh):
     assert c.post(f"/api/admin/verifications/{r.json()['id']}/decision", json={"approve": True}, headers=ah).status_code == 200
 
 
+def test_email_code_signin(env):
+    c, mail = env
+    register(c, mail, "ada", "ada@x.ca")
+    response = c.post("/api/auth/login-email", json={"email": " ADA@X.CA "})
+    assert response.status_code == 200
+    otp = code(mail)
+    result = c.post("/api/auth/token-email", json={"email": "ada@x.ca", "code": otp})
+    assert result.status_code == 200
+    headers = {"Authorization": f"Bearer {result.json()['token']}"}
+    assert c.get("/api/me", headers=headers).json()["user"]["email"] == "ada@x.ca"
+    assert c.post("/api/auth/token-email", json={"email": "ada@x.ca", "code": otp}).status_code == 400
+    count = len(mail.outbox)
+    unknown = c.post("/api/auth/login-email", json={"email": "unknown@example.ca"})
+    assert unknown.json() == response.json()
+    assert len(mail.outbox) == count
+    assert c.post("/api/auth/token-email", json={"email": "unknown@example.ca", "code": otp}).status_code == 400
+    assert c.post("/api/auth/login", json={"username": "ada"}).status_code == 404
+    assert c.post("/api/auth/token", json={"username": "ada", "code": otp}).status_code == 404
+
+
 def test_roster_requirement_is_a_neutral_submission_policy():
     ctx = create_app(Settings(secret="s" * 32)).state.ctx
     ctx.identity = SimpleNamespace(roster_check=lambda _: None)
@@ -74,7 +100,7 @@ def test_user_record_and_lifecycle(env):
     c, mail = env
     ah, uh = setup_admin_and_user(c, mail)
     me = c.get("/api/me", headers=uh).json()
-    assert set(me["user"]) == {"uuid", "email", "preferred_name", "first_name", "last_name", "student_number"}
+    assert set(me["user"]) == {"uuid", "email", "preferred_name", "first_name", "last_name", "student_number", "username"}
     assert me["user"]["student_number"] == "7890" and me["status"] == "pending_review"
     # unverified cannot submit
     f = c.get("/api/forms/agm_rsvp/static").json()
@@ -85,6 +111,111 @@ def test_user_record_and_lifecycle(env):
     assert c.get("/api/admin/verifications", headers=uh).status_code == 403
     r = c.patch("/api/me", json={"preferred_name": "Countess"}, headers=uh)
     assert r.json()["user"]["preferred_name"] == "Countess" and r.json()["user"]["first_name"] == "Ada"
+
+
+def test_optional_username_and_random_account_id(env):
+    import uuid
+
+    c, mail = env
+    response = c.post("/api/auth/register", json={
+        "email": "new@x.ca", "first_name": "New", "last_name": "Member", "student_number": "1234567890",
+    })
+    assert response.status_code == 201
+    uid = response.json()["uuid"]
+    assert uuid.UUID(uid).version == 4
+    assert c.post("/api/auth/verify-email", json={"email": "new@x.ca", "code": code(mail)}).status_code == 200
+    assert c.post("/api/auth/login-email", json={"email": "new@x.ca"}).status_code == 200
+    result = c.post("/api/auth/token-email", json={"email": "new@x.ca", "code": code(mail)})
+    headers = {"Authorization": f"Bearer {result.json()['token']}"}
+    ctx = c.app.state.ctx
+
+    result = c.patch("/api/me/username", headers=headers, json={"username": "Alias"})
+    assert result.status_code == 200 and result.json()["user"]["username"] == "Alias"
+    assert ctx.uid("alias") == uid and ctx.uid("NEW@X.CA") == uid
+    assert c.patch("/api/me/username", headers=headers, json={"username": "Other"}).status_code == 200
+    assert ctx.uid("other") == uid and ctx.uid("alias") != uid
+    assert c.patch("/api/me/username", headers=headers, json={"username": ""}).status_code == 200
+    assert ctx.uid("other") != uid
+    assert c.get("/api/me", headers=headers).json()["user"]["uuid"] == uid
+
+
+def test_username_reservations_follow_changes(env):
+    c, mail = env
+    c.app.state.ctx.settings.otp_cooldown = 0
+    register(c, mail, "ada", "ada@x.ca")
+    headers = login(c, mail, "ada")
+    register(c, mail, "bob", "bob@x.ca", sn="2222222222")
+    other = login(c, mail, "bob")
+    assert c.patch("/api/me/username", headers=other, json={"username": "ADA"}).status_code == 409
+    assert c.patch("/api/me/username", headers=headers, json={"username": "renamed"}).status_code == 200
+    assert c.patch("/api/me/username", headers=other, json={"username": "ADA"}).status_code == 200
+    ctx = c.app.state.ctx
+    assert ctx.uid("ada") == c.get("/api/me", headers=other).json()["user"]["uuid"]
+    assert ctx.uid("renamed") == c.get("/api/me", headers=headers).json()["user"]["uuid"]
+
+
+def test_concurrent_username_changes_leave_only_the_current_name_reserved(env):
+    c, mail = env
+    register(c, mail, "ada", "ada@x.ca")
+    headers = login(c, mail, "ada")
+    uid = c.get("/api/me", headers=headers).json()["user"]["uuid"]
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(
+            lambda name: c.patch("/api/me/username", headers=headers, json={"username": name}),
+            ("firstalias", "secondalias"),
+        ))
+    assert all(result.status_code in (200, 409) for result in results)
+    assert any(result.status_code == 200 for result in results)
+    current = c.get("/api/me", headers=headers).json()["user"]["username"]
+    ctx = c.app.state.ctx
+    assert ctx.uid(current) == uid
+    for name in ("ada", "firstalias", "secondalias"):
+        if name != current:
+            assert ctx.uid(name) != uid
+
+
+def test_concurrent_registration_reserves_username_and_indexes(env):
+    c, _ = env
+    registrations = [
+        {"username": "racer", "email": "one@x.ca", "first_name": "One", "last_name": "User", "student_number": "1111111111"},
+        {"username": "racer", "email": "two@x.ca", "first_name": "Two", "last_name": "User", "student_number": "2222222222"},
+    ]
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda data: c.post("/api/auth/register", json=data), registrations))
+
+    assert sorted(result.status_code for result in results) == [201, 409]
+    ctx = c.app.state.ctx
+    uid = ctx.uid("racer")
+    winner = next(data for data, result in zip(registrations, results) if result.status_code == 201)
+    loser = next(data for data, result in zip(registrations, results) if result.status_code == 409)
+    account = ctx.store.get("accounts", uid)
+    assert ctx.store.get("users", uid)["email"] == winner["email"]
+    assert ctx.store.get("emails", ctx.email_key(winner["email"])) == {"uuid": uid}
+    assert ctx.store.get("student_ids", account["sid_uuid"]) == {"uuid": uid}
+    assert ctx.store.get("emails", ctx.email_key(loser["email"])) is None
+    assert ctx.store.get("student_ids", security.student_id_uuid(ctx.settings.secret, loser["student_number"])) is None
+
+
+def test_failed_registration_releases_reserved_account_and_student_id(env):
+    c, mail = env
+    register(c, mail, "existing", "existing@x.ca", sn="1234567890")
+    response = c.post("/api/auth/register", json={
+        "username": "retry", "email": "existing@x.ca", "first_name": "Retry", "last_name": "User",
+        "student_number": "2222222222",
+    })
+    assert response.status_code == 409
+    ctx = c.app.state.ctx
+    assert ctx.store.get("accounts", ctx.uid("retry")) is None
+    assert ctx.store.get("student_ids", ctx.store.get("accounts", ctx.uid("existing"))["sid_uuid"]) is not None
+    assert ctx.store.get("student_ids", security.student_id_uuid(ctx.settings.secret, "2222222222")) is None
+
+
+def test_form_event_stream_rejects_query_string_tokens(env):
+    c, mail = env
+    ah, _ = setup_admin_and_user(c, mail)
+    token = ah["Authorization"].removeprefix("Bearer ")
+    response = c.get("/api/admin/forms/agm_rsvp/events", params={"token": token})
+    assert response.status_code == 401
 
 
 def test_submission_validation_and_status(env):
@@ -245,11 +376,11 @@ def test_duplicates_and_otp_lockout(env):
     setup_admin_and_user(c, mail)
     r = c.post("/api/auth/register", json={"username": "ADA", "email": "o@x.ca", "first_name": "A", "last_name": "B", "student_number": "1234567890"})
     assert r.status_code == 409
-    c.post("/api/auth/login", json={"username": "ada"})
+    c.post("/api/auth/login-email", json={"email": "ada@x.ca"})
     good = code(mail)
     for _ in range(5):
-        assert c.post("/api/auth/token", json={"username": "ada", "code": "000000" if good != "000000" else "111111"}).status_code == 400
-    assert c.post("/api/auth/token", json={"username": "ada", "code": good}).status_code == 400
+        assert c.post("/api/auth/token-email", json={"email": "ada@x.ca", "code": "000000" if good != "000000" else "111111"}).status_code == 400
+    assert c.post("/api/auth/token-email", json={"email": "ada@x.ca", "code": good}).status_code == 400
 
 
 def test_schema_validation():

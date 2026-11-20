@@ -22,7 +22,7 @@
 <Status action={load} />
 <div class="card">
   <h3>Assign roles</h3>
-  <label for="role-user">Username of a verified account</label>
+  <label for="role-user">Email or username of a verified account</label>
   <input id="role-user" autocomplete="off" bind:value={username} />
   {#each Object.entries(catalogue) as [role, description]}
     <label class="opt" title={description}><input type="checkbox" bind:checked={chosen[role]} /> {role} — {description}</label>
@@ -37,7 +37,7 @@
     {#if holder.username}
       <p class="help">{holder.email}</p>
       <button class="secondary" disabled={save.busy} onclick={() => {
-        username = holder.username;
+        username = holder.email;
         chosen = Object.fromEntries(holder.roles.map(role => [role, true]));
       }}>Load roles for {holder.preferred_name || holder.email}</button>
     {/if}

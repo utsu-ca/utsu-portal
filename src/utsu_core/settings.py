@@ -27,6 +27,8 @@ class Settings:
     google_client_id: str | None = None
     google_client_secret: str | None = field(default=None, repr=False)
     google_bootstrap_admin_email: str | None = None
+    turnstile_site_key: str | None = None
+    turnstile_secret_key: str | None = field(default=None, repr=False)
     store: str = "memory"  # memory | sqlite:<path> | firestore
     token_ttl: int = 8 * 3600
     otp_ttl: int = 600
@@ -49,6 +51,7 @@ class Settings:
     expense_large_cents: int = 50_000  # expenses at/above this need the larger approval count
     default_tax_bps: int = 1300  # Ontario HST 13%
     max_receipt_bytes: int = 3_000_000
+    dev_admin: bool = False  # seed local-development accounts (localhost only; see devadmin.py)
     commit: str | None = None  # source revision of this deployment, shown in the footer (git checkout is used when unset)
     branding_dir: str | None = None  # folder holding theme.json and logos, served at /branding (default: the bundled one)
     max_cheque_bytes: int = 3_000_000
@@ -98,7 +101,10 @@ class Settings:
                    google_staff_domains=tuple(a.strip().lower() for a in (env("PORTAL_GOOGLE_STAFF_DOMAINS") or "").split(",") if a.strip()),
                    google_client_id=env("PORTAL_GOOGLE_CLIENT_ID"), google_client_secret=env("PORTAL_GOOGLE_CLIENT_SECRET"),
                    google_bootstrap_admin_email=env("PORTAL_GOOGLE_BOOTSTRAP_ADMIN_EMAIL"),
+                   turnstile_site_key=env("PORTAL_TURNSTILE_SITE_KEY"),
+                   turnstile_secret_key=env("PORTAL_TURNSTILE_SECRET_KEY"),
                    commit=env("PORTAL_COMMIT"),
+                   dev_admin=(env("PORTAL_DEV_ADMIN") or "").strip().lower() in ("1", "true", "yes"),
                    enabled_plugins=enabled_plugins,
                    api_only=env("PORTAL_API_ONLY", "0") == "1",
                    sso_issuer=env("PORTAL_BASE_URL", "http://localhost:8000").rstrip("/"), sso_key_pem=env("PORTAL_SSO_KEY"),
