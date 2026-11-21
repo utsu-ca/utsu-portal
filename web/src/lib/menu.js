@@ -38,6 +38,7 @@ export function buildMenu({ signedIn = false, verified = false, has = () => fals
     ...user(has("senate_admin"), { id: "senate-admin", label: "Administer seating", view: "senateAdmin" }),
   ];
   const administration = [
+    ...user(has("payments_finance"), { id: "admin-orders", label: "Payment orders", view: "paymentOrders" }),
     ...user(has("forms_editor"), { id: "admin-forms", label: "Forms", view: "adminForms" }),
     ...user(has("verifier"), { id: "admin-verifications", label: "Identity checks", view: "adminVerifications" }),
     ...user(has("admin"), { id: "admin-roles", label: "Roles", view: "adminRoles" }),
@@ -62,6 +63,7 @@ export function buildMenu({ signedIn = false, verified = false, has = () => fals
       page("scholarships", "Scholarships", "scholarships"),
     ] },
     { id: "clubs", label: "Clubs", icon: "\u{1F465}", items: [
+      ...user(enabled("clubs"), { id: "club-directory", label: "Directory", view: "clubDirectory" }),
       page("club-finances", "Finances", "club-finances", financeActions),
       page("club-registration", "Registration", "club-registration", registrationActions),
     ] },
@@ -71,6 +73,8 @@ export function buildMenu({ signedIn = false, verified = false, has = () => fals
     ...(administration.length ? [{ id: "administration", label: "Administration", items: administration }] : []),
     { id: "profile", label: "Profile", icon: "\u{1F464}", view: "profile", items: signedIn ? [
       { id: "profile-account", label: "Account", view: "account" },
+      ...user(verified, { id: "profile-financial", label: "Financial information", view: "banking", props: { shared: true } }),
+      ...user(verified, { id: "profile-orders", label: "Orders and payments", view: "orders" }),
       { id: "profile-applications", label: "My applications", view: "status" },
       { id: "profile-signout", label: "Sign out", action: "signOut" },
     ] : [] },

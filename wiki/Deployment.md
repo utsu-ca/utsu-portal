@@ -102,6 +102,92 @@ Everything goes through the six-method `Store` interface (`get/put/delete/list/c
 indexed column if a collection grows to many hundreds of thousands of rows. The suite runs the same contract tests on every
 backend (`tests/test_stores.py`).
 
+## Upload quotas and cold receipt storage
+
+The portal, not rclone, owns authorization, audit records, file IDs and quota reservations.
+Defaults are 15,000,000 decoded bytes per person and 1 GiB per club approved academic year,
+capped at 10 GiB. A club has at least the starting allocation while pending. Only distinct approved years
+count; elapsed time and rejected renewals do not. Existing clubs retain their known approval year; lost historical
+renewals cannot be inferred and must be restored from verified registration records into `registered_years`.
+Changing `PORTAL_CLUB_STORAGE_YEAR_BYTES` changes the annual increment, not the fixed 10 GiB ceiling.
+`PORTAL_USER_STORAGE_BYTES` changes the personal quota. Base64, encryption overhead and duplicate hot/cold copies
+are not charged; archived originals are. Over-quota legacy records remain readable, deletable and migratable,
+but cannot increase their usage.
+
+The optional receipt pilot stores encrypted opaque blobs outside the database. Receipt metadata retains owner,
+decoded size, content and ciphertext checksums, upload academic year (September boundary, Toronto), storage tier,
+and last successful access. It preserves IDs, permissions, audit reads, de-duplication and transaction links.
+The old `FILE_STORAGE` adapter is not used by portal uploads.
+
+| Setting | Purpose |
+|---|---|
+| `PORTAL_QUOTA_STORE` (or `_FILE`) | Persistent shared `Store` URI; required for split auth and portal deployments. Both services must use the **same** URI even when their application databases differ. |
+| `PORTAL_RECEIPT_STORAGE_PATH` | Private durable hot directory shared by portal replicas and the worker. Unset keeps existing database storage. Compose supplies a named volume automatically. |
+| `PORTAL_RECEIPT_COLD_REMOTE` | rclone `remote:path`, e.g. `archive:/srv/portal-receipts` on a private SFTP node. |
+| `PORTAL_RECEIPT_ARCHIVE_ENABLED` | Defaults to `0`: report candidates without copying/deleting. Set to `1` for scheduled archiving. |
+| `RCLONE_CONFIG` | rclone config path, mounted read-only into both portal and worker (cold reads also use rclone). |
+
+For a local storage node, use an SSH/SFTP server with a dedicated restricted account and a durable archive disk;
+no custom Node server or publicly accessible rclone API is needed. Configure an rclone SFTP remote, including a
+verified host key/known-hosts file. Prefer SFTP (or explicitly configured FTPS), never plaintext FTP for receipts.
+Keep its credentials and SSH files in `secrets/storage`, not in source control; paths in rclone config must refer
+to their container locations under `/run/secrets/storage`. Restrict host/container access so UID 10001 can read
+the config and key files; do not make keys world-readable. The storage node needs adequate disk space and backups.
+
+With the Compose deployment:
+
+1. Create `secrets/storage/rclone.conf` with your `archive` remote using `rclone config`; include required key and
+   known-hosts files in that directory. Set `PORTAL_RECEIPT_COLD_REMOTE` in your existing environment file.
+2. Start the portal with the cold-storage mount and optional nightly worker:
+
+   ```sh
+   docker compose --env-file secrets/dev.env -f docker-compose.yml -f docker-compose-storage.yml \
+     --profile storage up --build -d
+   ```
+
+   Include `-f docker-compose-dev.yml` for the development stack. Migration runs nightly even in report-only
+   mode, moving legacy database receipts to encrypted hot files; new uploads already use the hot volume.
+3. Inspect migration/archive candidates without enabling deletion:
+
+   ```sh
+   docker compose --env-file secrets/dev.env -f docker-compose.yml -f docker-compose-storage.yml \
+     run --rm receipt-maintenance python -m utsu_core.receipt_maintenance --migrate
+   ```
+
+4. After checking the report, testing the remote and backing up the hot directory/database, set
+   `PORTAL_RECEIPT_ARCHIVE_ENABLED=1` and recreate **both** portal and worker with the same Compose command.
+   For an immediate run, use the previous command with `--migrate --apply`.
+
+Candidates are receipts from any previous upload academic year **OR** receipts with no successful access for
+365 days. New/migrated receipts start with a current access timestamp when no historical timestamp exists.
+The worker copies, reads back and verifies the ciphertext, then compare-and-swaps the database tier before
+removing the hot original. Concurrent record changes retain the hot copy. An unavailable/corrupt remote records
+a per-receipt error and retains hot data; other candidates are still attempted and the job exits nonzero.
+A crash after committing the cold pointer leaves a redundant hot copy;
+the next applied job verifies cold storage again before cleaning it up.
+Cold downloads are authorized/audited through the portal and fail explicitly if the node is offline.
+This is tiering, **not a backup or a retention/deletion policy**; back up encryption keys, metadata and both tiers.
+
+Personal scans/cheques remain in their existing encrypted records. All upload writes reserve decoded-byte quota
+atomically in the shared quota store, so concurrent uploads cannot over-allocate. Lazy backfill accounts for legacy
+files at startup and before a new owner's first write. Stop uploads during the initial rollout; start both auth
+and portal against the shared quota store before reopening writes so both sets of historical files are counted.
+Quota-store outages fail writes/startup rather than granting unmetered storage.
+
+Interrupted writes retain conservative reservations instead of expiring them unsafely. Stop all writers before
+rebuilding an affected owner's quota:
+
+```sh
+python -m utsu_core.receipt_maintenance --reconcile-owner user:UUID --quota-scope all
+```
+
+Use `club:ID` for clubs. For split deployments, run with the portal environment and `--quota-scope portal`, then
+with the auth-service environment and `--auth-service --quota-scope auth`; both share the same quota URI.
+Never reconcile while either service is accepting writes. Direct database edits bypass metering and also require
+offline reconciliation. Kubernetes deployments must mount the same persistent hot storage and rclone credentials
+in portal and worker pods; `emptyDir` or per-pod disks are not suitable. The provided split manifest expects a
+matching `quota-store` secret in both services; the separate quota database must be reachable by both.
+
 ## Moving off GCP
 Build the image (`docker build .`) and run it anywhere (Azure Container Apps, Fly, Kubernetes): set the env vars above,
 supply secrets from that platform's vault, and choose a store. Two things to know when scaling past one instance:

@@ -73,12 +73,14 @@ class AuditModule:
                             headers={"Content-Disposition": 'attachment; filename="audit.ndjson.gz"', "Cache-Control": "no-store"})
 
         @r.get("/compare")
-        def compare(a: str, b: str, _: dict = admin):
+        def compare(a: str, b: str, actor: dict = admin):
             """Diff the resulting state of two entries (e.g. two revisions of the same form)."""
+            log.record(actor["uuid"], "audit.snapshot_read", f"audit:{a}:{b}")
             return A.diff(log.snapshots(entry(a))[1], log.snapshots(entry(b))[1])
 
         @r.get("/{eid}/diff")
-        def entry_diff(eid: str, _: dict = admin):
+        def entry_diff(eid: str, actor: dict = admin):
+            log.record(actor["uuid"], "audit.snapshot_read", f"audit:{eid}")
             d = entry(eid)
             before, after = log.snapshots(d)
             return {"entry": log.public(d), **A.diff(before, after)}

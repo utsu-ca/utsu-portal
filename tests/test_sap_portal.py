@@ -245,6 +245,7 @@ def test_sap_scoring_requires_weights_and_complete_questionnaire():
                      json={"version": form["version"], "hash": form["hash"], "data": values}, headers=user)
     assert submit(data).status_code == 200
     assert c.get("/api/me/sap", headers=user).json()["wfni"]["status"] == "weights_not_configured"
+    assert c.get("/api/admin/sap/weights", headers=admin).status_code == 404
     weights = (Path(__file__).resolve().parents[1] / "data" / "wfni_weights.csv").read_text()
     assert c.put("/api/admin/sap/weights", json={"csv": weights}, headers=user).status_code == 403
     assert c.put("/api/admin/sap/weights", json={"csv": "bad"}, headers=admin).status_code == 422
@@ -320,7 +321,7 @@ def test_sap_banking_is_encrypted_private_and_irreversibly_destroyed():
     uid = c.get("/api/me", headers=user).json()["user"]["uuid"]
     assert c.put("/api/sap/banking", json={**banking, "transit_number": "123"}, headers=user).status_code == 422
     assert c.put("/api/sap/banking", json=banking, headers=user).json() == {"status": "on_file"}
-    stored = inner.get("sap_banking", uid)
+    stored = inner.get("financial_profiles", uid)
     assert all(stored[field].startswith(PREFIX) for field in banking)
     assert c.get("/api/sap/banking", headers=user).json() == {"status": "on_file"}
     path = f"/api/admin/sap/applications/{uid}/banking"
@@ -329,7 +330,7 @@ def test_sap_banking_is_encrypted_private_and_irreversibly_destroyed():
     assert c.put("/api/sap/banking", json=banking, headers=user).status_code == 409
     assert c.request("DELETE", path, json={"confirm": False}, headers=admin).status_code == 422
     assert c.request("DELETE", path, json={"confirm": True}, headers=admin).json() == {"status": "destroyed"}
-    assert not any(field in inner.get("sap_banking", uid) for field in banking)
+    assert not any(field in inner.get("financial_profiles", uid) for field in banking)
     assert c.get(path, headers=admin).status_code == 404
     assert c.put("/api/sap/banking", json=banking, headers=user).status_code == 409
     assert all("0000456" not in str(entry) for entry in c.app.state.ctx.audit.entries())
@@ -362,14 +363,14 @@ def test_banking_reverification_is_single_use_encrypted_and_requires_acceptance(
     assert c.post(path + "/reverify", headers=admin).status_code == 200
     link = mail.outbox[-1][2].splitlines()[-1]
     token = parse_qs(urlsplit(link).fragment)["sap-banking"][0]
-    assert token not in str(inner.get("sap_banking", uid))
+    assert token not in str(inner.get("financial_profiles", uid))
     assert c.put("/api/sap/banking/reverify", json={**new, "token": "wrong", "void_cheque": CHEQUE}, headers=user).status_code == 409
     with ThreadPoolExecutor(max_workers=2) as pool:
         responses = list(pool.map(lambda _: c.put("/api/sap/banking/reverify",
                              json={**new, "token": token, "void_cheque": CHEQUE}, headers=user), range(2)))
     assert sorted(response.status_code for response in responses) == [200, 409]
     assert c.get("/api/sap/banking", headers=user).json() == {"status": "reverify_received"}
-    raw = inner.get("sap_banking", uid)
+    raw = inner.get("financial_profiles", uid)
     assert raw["pending"].startswith(PREFIX) and "999888" not in str(raw)
     assert c.get(path, headers=admin).json() == old
     assert c.post(path + "/reverify", headers=admin).status_code == 409
@@ -381,11 +382,11 @@ def test_banking_reverification_is_single_use_encrypted_and_requires_acceptance(
     assert c.post(path + "/accept", json={"revision": comparison["revision"], "confirm": True}, headers=admin).status_code == 200
     assert c.get(path, headers=admin).json() == new
     assert c.get(path + "/pending", headers=admin).status_code == 404
-    assert "pending" not in inner.get("sap_banking", uid)
+    assert "pending" not in inner.get("financial_profiles", uid)
     assert all("999888" not in str(entry) for entry in c.app.state.ctx.audit.entries())
     assert c.post(path + "/reverify", headers=admin).status_code == 200
     token = parse_qs(urlsplit(mail.outbox[-1][2].splitlines()[-1]).fragment)["sap-banking"][0]
-    expires = c.app.state.ctx.store.get("sap_banking", uid)["request_expires"]
+    expires = c.app.state.ctx.store.get("financial_profiles", uid)["request_expires"]
     monkeypatch.setattr(c.app.state.ctx, "now", lambda: expires)
     assert c.put("/api/sap/banking/reverify", json={**old, "token": token, "void_cheque": CHEQUE}, headers=user).status_code == 409
     assert c.request("DELETE", path, json={"confirm": True}, headers=admin).status_code == 200
@@ -441,7 +442,7 @@ def test_finance_controller_flags_failed_validation_and_reviews_the_void_cheque(
                  headers=user).status_code == 413
     assert c.put("/api/sap/banking/reverify", json={**new, "token": token, "void_cheque": CHEQUE},
                  headers=user).json() == {"status": "reverify_received"}
-    raw = inner.get("sap_banking", uid)
+    raw = inner.get("financial_profiles", uid)
     assert raw["pending"].startswith(PREFIX) and "JVBERi" not in str(raw)  # the cheque is encrypted at rest
 
     comparison = c.get(path + "/pending", headers=finance).json()

@@ -25,7 +25,10 @@ _RESTRICTED_SETTINGS = {
     "secret", "data_key", "auth_signing_key", "auth_public_key", "service_token", "sso_key_pem", "anchor_token",
     "anchor_evm_key",
 }
-_CORE_COLLECTIONS = frozenset({"messages", "message_threads", "message_reads", "anchors", "anchor_ledger", "public_content"})
+_CORE_COLLECTIONS = frozenset({
+    "messages", "message_threads", "message_reads", "anchors", "anchor_ledger", "public_content",
+    "financial_profiles", "orders", "payment_events",
+})
 
 
 class PluginHostError(RuntimeError):

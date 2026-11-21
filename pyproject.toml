@@ -9,7 +9,7 @@ description = "UTSU web application backend for Senate, student aid, and AGM wor
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.12"
-dependencies = ["fastapi>=0.110", "pydantic>=2", "uvicorn", "pyyaml", "cryptography>=50", "segno>=1.6.6", "redis>=5", "google-re2>=1.1", "pyjwt>=2.10.1"]
+dependencies = ["fastapi>=0.110", "pydantic>=2", "uvicorn", "pyyaml", "cryptography>=50", "segno>=1.6.6", "redis>=5", "google-re2>=1.1", "pyjwt>=2.10.1", "tzdata"]
 
 [project.optional-dependencies]
 dev = ["pytest", "httpx", "fakeredis", "sqlalchemy>=2", "email-validator>=2", "eth-account>=0.13"]
@@ -45,6 +45,7 @@ filesvc = [
 authsvc = [
     "bcrypt>=4.1",  # Password hashing
 ]
+payments = ["stripe>=17"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -17,6 +17,7 @@ from .role_catalogue import ROLES
 from .services.anchors import AnchorRuntime
 from .services.email import EmailDeliveryService, EmailDeliveryUnknown, EmailNotConfigured
 from .services.files import DocumentService
+from .services.upload_quota import QuotaStore
 from .services.forms import FormRegistry, FormsRuntime
 from .services.messaging import MessagingRuntime, ThreadTypeRegistry
 from .services.notifications import NotificationTypeRegistry
@@ -47,6 +48,7 @@ class Context:
     roles: Mapping[str, str] = field(default_factory=lambda: ROLES)
     plugin_settings: Mapping[str, Mapping[str, Any]] | None = None
     files: DocumentService = field(init=False)
+    upload_quotas: QuotaStore = field(init=False)
     form_registry: FormRegistry = field(init=False)
     forms: FormsRuntime = field(init=False)
     notification_types: NotificationTypeRegistry = field(init=False)

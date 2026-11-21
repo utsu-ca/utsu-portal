@@ -1,0 +1,10 @@
+# Use alongside docker-compose.yml when connecting cold storage.
+services:
+  portal:
+    volumes:
+      - type: bind
+        source: ./secrets/storage
+        target: /run/secrets/storage
+        read_only: true
+        bind:
+          create_host_path: false

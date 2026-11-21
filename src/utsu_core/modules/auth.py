@@ -137,7 +137,7 @@ def _submit_verification(ctx: Context, uid: str, kind: str, body: Verification, 
     vid = security.secrets.token_hex(12)
     rec = {"id": vid, "uuid": uid, "kind": kind, "status": "pending", "submitted_at": ctx.now(),
            "division_codes": divs, "first_name": body.first_name, "last_name": body.last_name, "changes": changes}
-    ctx.store.put("media", vid, {"face": face, "id_card": idc})
+    ctx.store.put("media", vid, {"id": vid, "uuid": uid, "face": face, "id_card": idc})
     ctx.store.put("verifications", vid, rec)
     return {"id": vid, "status": "pending"}
 
@@ -149,6 +149,10 @@ class AuthModule:
         r = APIRouter(prefix="/api")
         S = ctx.store
         user_dep = ctx.require_user()
+        @r.get("/auth/storage")
+        def storage_usage(account: dict = user_dep):
+            return ctx.upload_quotas.usage(f"user:{account['uuid']}")
+
         register_google_routes(r, ctx)
         domains = {d.strip().lower() for d in ctx.settings.applicant_email_domains}
 

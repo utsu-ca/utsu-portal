@@ -62,6 +62,11 @@ def test_split_deployment_roundtrip():
     assert refused.status_code == 403 and "student status" in refused.json()["detail"]  # verified, but not rostered
     roster = "First Name,Last Name,Truncated Student Number,Faculty,Division\nAda,Lovelace,xxxxx6789x,ARTSC,UC\n"
     assert ac.post("/api/admin/roster", json={"csv": roster}, headers=ah).status_code == 200
+    roster_page = ac.get("/api/admin/roster", headers=ah)
+    assert roster_page.status_code == 200
+    assert roster_page.json()["items"][0]["email"] == "ada@x.ca"
+    assert roster_page.json()["items"][0]["last_login"] is not None
+    assert pc.get("/api/admin/roster", headers=ah).status_code == 404
     assert pc.put("/api/forms/agm_rsvp/submission", json=body, headers=uh).status_code == 422  # now only the form is wrong
 
 

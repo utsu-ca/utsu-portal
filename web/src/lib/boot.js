@@ -23,6 +23,7 @@ export async function start() {
   }
   if (!session.token || !session.me) return go("home");
   const verified = session.me.status === "verified";
-  if (verified && new URLSearchParams(location.hash.slice(1)).has("sap-banking")) return go("banking");
+  if (verified && new URLSearchParams(location.hash.slice(1)).has("sap-banking")) return go("banking", { shared: true });
+  if (verified && location.hash === "#orders") return go("orders");
   go(verified ? "home" : "account");
 }

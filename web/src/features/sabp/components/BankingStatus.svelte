@@ -25,7 +25,7 @@
 {#if needsAction}
   <div class="banner-action" role="alert">
     <span>Action needed: we could not verify your banking information.</span>
-    <button class="primary" onclick={() => go("banking")}>Verify banking information</button>
+    <button class="primary" onclick={() => go("banking", { shared: true })}>Verify banking information</button>
   </div>
 {/if}
 {#if session.token && session.me?.status === "verified" && bankingStatus.error && nav.name !== "banking"}
@@ -35,6 +35,6 @@
       <Status action={bankingStatus} />
     </div>
     <button class="secondary" onclick={refreshBankingStatus} disabled={bankingStatus.busy}>Retry banking status</button>
-    <button class="primary" onclick={() => go("banking")}>Banking information</button>
+    <button class="primary" onclick={() => go("banking", { shared: true })}>Banking information</button>
   </div>
 {/if}

@@ -25,6 +25,11 @@ docker compose --env-file secrets/dev.env -p utsu-portal-dev \
 Open http://127.0.0.1:5173/static/ and sign in as `admin@dev-local.test` or another `<role>@dev-local.test` account.
 The dev override disables Turnstile and routes email to the [local inbox](http://127.0.0.1:8025/) instead of
 sending it externally. Request a one-time sign-in code in the portal, then open the inbox to read it.
+Club receipt blobs persist encrypted in the `portal-receipt-files` volume. The optional `storage` profile adds a
+nightly migration/archive worker; archive transfers are disabled by default. Use the
+[cold-storage overlay and setup](../../wiki/Deployment.md#upload-quotas-and-cold-receipt-storage) when connecting
+an SFTP archive node. Never remove that volume independently of the database.
+It also enables the experimental student aid review queue for testing; it is not a complete committee process.
 `applicant+1@dev-local.test` through `applicant+3@dev-local.test` have no staff roles.
 Restarting the portal keeps existing dev accounts and their IDs; no database reset is needed.
 
@@ -74,8 +79,10 @@ verified and has a synthetic student number (`12345NNNN0`) linked to the roster 
 
 The seeder checks every AGM, Senate, and SABP row through the API and saves exactly 30 submissions per
 program, sampled reproducibly from exact roster matches among the registered students. For repeated
-submissions, the latest matching row is the candidate for that student. No legacy contact email or banking
-details are imported. Subsequent portal starts rerun the checks in memory without overwriting local edits.
+submissions, the latest matching row is the candidate for that student. On the first seed, 15 of the SABP applicants
+receive synthetic banking details (institution `000`, transit `12345`, account `12345NNNN`). No legacy contact email
+or banking details are imported. Subsequent portal starts rerun the checks in memory without overwriting local edits,
+and do not add banking details to an existing generated database.
 Use a fresh Compose project to get these counts if you already seeded an earlier version.
 
 If startup reports `Refusing to seed a populated database`, that project's PostgreSQL volume already has

@@ -46,6 +46,7 @@
   label, legend { @apply mt-3 mb-1 block font-semibold; }
   fieldset { @apply m-0 border-0 p-0; }
   input, select, textarea { @apply box-border w-full rounded-md border border-slate-400 bg-white px-3 py-2 text-base focus:border-accent focus:outline-2 focus:outline-offset-1 focus:outline-accent; }
+  input[readonly], textarea[readonly], input:disabled, select:disabled, textarea:disabled { @apply bg-slate-100 text-slate-700; }
   input[type=checkbox], input[type=radio] { @apply mr-2 h-4 w-auto; }
   h2 { @apply mb-2 text-xl font-semibold; }
   h3 { @apply mb-2 text-lg font-semibold; }

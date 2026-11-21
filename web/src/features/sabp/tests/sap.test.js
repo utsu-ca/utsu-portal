@@ -12,16 +12,18 @@ const post = path => api.mock.calls.find(([p, o]) => p.endsWith(path) && o?.meth
 describe("SABP administration", () => {
   it("saves weights, validates the review count, requires a reason to resolve, and imports history", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
-    api.mockImplementation(async path => {
+    api.mockImplementation(async (path, opts) => {
       if (path.startsWith("/admin/sap/applications?")) return { items: [{
         uuid: "student", name: "Student", eligible: true, roster_reason: "", submission_status: "submitted",
         review_stage: "discuss", revision: 7, data: {}, wfni: {}, review_hardship_prepared: true }], next_cursor: null };
       if (path === "/admin/sap/review-report") return [{ uuid: "student", review_id: "r1", stage: "discuss", reviews: [], decision: null }];
-      if (path === "/admin/sap/weights") return { hash: "weights-hash" };
+      if (path === "/admin/sap/weights") return opts?.method
+        ? { hash: "weights-hash" } : { csv: "field,answer,points\nsaved,answer,1" };
       return {};
     });
     render(SapAdminView);
     await screen.findByRole("heading", { name: "Student" });
+    await waitFor(() => expect(screen.getByLabelText("WFNI weights CSV")).toHaveValue("field,answer,points\nsaved,answer,1"));
 
     await fireEvent.input(screen.getByLabelText("WFNI weights CSV"), { target: { value: "field,answer,points" } });
     await fireEvent.click(screen.getByRole("button", { name: "Save WFNI weights" }));
@@ -64,6 +66,31 @@ describe("SABP administration", () => {
     expect(post("/history")[1].body).toMatchObject({
       source: "B012-01", terms: ["Fall 2025", "Winter 2026"], decided_on: "2025-11-01", amount: 500,
       approved: true, revision: 7, ratings: [{ reviewer: "Reviewer", level: 3 }], confirm: true });
+  });
+
+  it("shows the bundled weights as an inactive draft when no configuration exists", async () => {
+    api.mockImplementation(async path => {
+      if (path === "/admin/sap/weights") throw Object.assign(new Error("not configured"), { status: 404 });
+      if (path.startsWith("/admin/sap/applications?")) return { items: [], next_cursor: null };
+      return [];
+    });
+    render(SapAdminView);
+    expect(await screen.findByText(/draft default weights/)).toBeInTheDocument();
+    expect(screen.getByLabelText("WFNI weights CSV").value).toContain("disability_mobility,Yes,2");
+    expect(post("/admin/sap/weights")).toBeUndefined();
+  });
+
+  it("does not substitute defaults or permit saving when loading weights fails", async () => {
+    api.mockImplementation(async path => {
+      if (path === "/admin/sap/weights") throw Object.assign(new Error("Service unavailable"), { status: 503 });
+      if (path.startsWith("/admin/sap/applications?")) return { items: [], next_cursor: null };
+      return [];
+    });
+    render(SapAdminView);
+    expect(await screen.findByText("Service unavailable")).toBeInTheDocument();
+    expect(screen.getByLabelText("WFNI weights CSV")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save WFNI weights" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Retry loading weights" })).toBeInTheDocument();
   });
 });
 

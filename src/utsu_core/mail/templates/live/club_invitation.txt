@@ -1,0 +1,6 @@
+Subject: Invitation from {{ club_name }}
+
+You have been invited to be {{ role }} in {{ club_name }}.
+
+Sign in at {{ link }} and open Clubs > Registration > Register or manage a club to accept or decline the invitation.
+You will not receive the new role unless you accept.

@@ -2,6 +2,41 @@
   "schema_version": 1,
   "plugins": [
     {
+      "id": "payments",
+      "version": "0.1.0",
+      "core_api_major": 1,
+      "factory": "utsu_core.modules.payments:PaymentsModule",
+      "kind": "core",
+      "auth_modes": ["local", "remote"],
+      "settings": ["stripe_secret_key", "stripe_webhook_secret"],
+      "roles": {
+        "payments_finance": "create and inspect payment orders"
+      },
+      "protection": {
+        "orders": ["description", "checkout_url", "payment_intent"]
+      },
+      "order": 26
+    },
+    {
+      "id": "profile",
+      "version": "0.1.0",
+      "core_api_major": 1,
+      "factory": "utsu_core.modules.profile:ProfileModule",
+      "kind": "core",
+      "auth_modes": ["local", "remote"],
+      "settings": ["max_cheque_bytes"],
+      "protection": {
+        "financial_profiles": ["institution_number", "transit_number", "account_number", "pending", "void_cheque"]
+      },
+      "json_protection": {
+        "financial_profiles": ["pending", "void_cheque"]
+      },
+      "roles": {
+        "profile_finance": "access and verify profile banking details"
+      },
+      "order": 25
+    },
+    {
       "id": "sso",
       "version": "0.1.0",
       "core_api_major": 1,
@@ -121,7 +156,7 @@
       "kind": "program",
       "dependencies": ["forms"],
       "form_ids": ["student_aid_bursary"],
-      "settings": ["sap_review_enabled", "max_cheque_bytes"],
+      "settings": ["sap_review_enabled"],
       "protection": {
         "submissions": ["sap_review", "sap_review_hardship", "sap_previous"],
         "sap_banking": ["institution_number", "transit_number", "account_number", "pending", "void_cheque"]
@@ -147,7 +182,7 @@
         "receipts": ["data_url"]
       },
       "settings": [
-        "club_registration_approvals", "expense_approvals_small", "expense_approvals_large",
+        "expense_approvals_small", "expense_approvals_large",
         "expense_large_cents", "default_tax_bps", "max_receipt_bytes"
       ],
       "roles": {

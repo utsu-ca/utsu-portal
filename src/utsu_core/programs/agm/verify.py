@@ -79,7 +79,7 @@ class AgmVerifyModule:
             if not check or check["status"] != "pending":
                 return None
             media = ctx.store.get("agm_media", reference)
-            return json.dumps(media).encode() if media else None
+            return json.dumps({k: v for k, v in media.items() if k not in {"id", "uuid"}}).encode() if media else None
 
         ctx.files.register_kind(
             "agm_verify",
@@ -136,7 +136,7 @@ class AgmVerifyModule:
             if any(S.list("agm_checks", uuid=uid, status="pending")):
                 raise HTTPException(409, "a check is already pending")
             cid = secrets.token_hex(12)
-            S.put("agm_media", cid, {"face": face, "id_card": idc})
+            S.put("agm_media", cid, {"id": cid, "uuid": uid, "face": face, "id_card": idc})
             S.put("agm_checks", cid, {"id": cid, "uuid": uid, "status": "pending", "submitted_at": ctx.now()})
             checks = queue()
             position = next((i for i, check in enumerate(checks, 1) if check["id"] == cid), None)

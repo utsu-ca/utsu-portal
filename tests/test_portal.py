@@ -65,6 +65,86 @@ def activate(c, ah, uh):
     assert c.post(f"/api/admin/verifications/{r.json()['id']}/decision", json={"approve": True}, headers=ah).status_code == 200
 
 
+def test_admin_roster_listing_masks_and_paginates(env):
+    c, mail = env
+    ah, uh = setup_admin_and_user(c, mail)
+    register(c, mail, "dani", "dani@x.ca", sn="1234519200", first="Dani", last="Chang")
+    roster = ("First Name,Last Name,Truncated Student Number,Faculty,Division\n"
+              "Ada,Lovelace,xxxxx6789x,ARTSC,UC\n"
+              "Dani,Chang,xxxxx1920x,ARTSC,UC\n"
+              "No,Account,xxxxx0001x,ARTSC,UC\n")
+    assert c.post("/api/admin/roster", json={"csv": roster}, headers=ah).status_code == 200
+    assert c.get("/api/admin/roster").status_code == 401
+    assert c.get("/api/admin/roster", headers=uh).status_code == 403
+    assert c.get("/api/admin/roster?limit=101", headers=ah).status_code == 422
+    assert c.get("/api/admin/roster?offset=-1", headers=ah).status_code == 422
+
+    first = c.get("/api/admin/roster?offset=0&limit=1", headers=ah).json()
+    ctx = c.app.state.ctx
+    ada = ctx.store.get("users", ctx.uid("ada"))
+    login_event = next(e for e in ctx.audit.entries() if e["actor"] == ada["uuid"] and e["action"] == "auth.login")
+    assert first == {"items": [{"name": "Ada L.", "student_number": "xxxx6789",
+                                "email": "ada@x.ca", "last_login": login_event["ts"]}],
+                     "total": 3, "offset": 0, "limit": 1}
+    rest = c.get("/api/admin/roster?offset=1&limit=2", headers=ah).json()
+    assert rest["items"] == [
+        {"name": "Dani C.", "student_number": "xxxx1920", "email": "dani@x.ca", "last_login": None},
+        {"name": "No A.", "student_number": "xxxx0001", "email": None, "last_login": None},
+    ]
+    assert c.get("/api/admin/roster?offset=3", headers=ah).json()["items"] == []
+
+    # A second account can match the same name and truncated digits; neither email may be attributed.
+    register(c, mail, "ada2", "ada2@x.ca", sn="2222267890")
+    duplicate = c.get("/api/admin/roster?limit=1", headers=ah).json()["items"][0]
+    assert duplicate["email"] is None and duplicate["last_login"] is None
+
+
+def test_admin_roster_listing_does_not_expose_fuzzy_matches(env):
+    c, mail = env
+    ah, _ = setup_admin_and_user(c, mail)
+    roster = ("First Name,Last Name,Truncated Student Number,Faculty,Division\n"
+              "Adaa,Lovelace,xxxxx6789x,ARTSC,UC\n")
+    assert c.post("/api/admin/roster", json={"csv": roster}, headers=ah).status_code == 200
+    row = c.get("/api/admin/roster", headers=ah).json()["items"][0]
+    assert row == {"name": "Adaa L.", "student_number": "xxxx6789", "email": None, "last_login": None}
+
+
+def test_admin_roster_listing_does_not_guess_between_duplicate_roster_entries(env):
+    c, mail = env
+    ah, _ = setup_admin_and_user(c, mail)
+    roster = ("First Name,Last Name,Truncated Student Number,Faculty,Division\n"
+              "Ada,Lovelace,xxxxx6789x,ARTSC,UC\n"
+              "Ada,Lovelace,xxxxx6789x,ARTSC,TRIN\n")
+    assert c.post("/api/admin/roster", json={"csv": roster}, headers=ah).status_code == 200
+    first = c.get("/api/admin/roster?limit=1", headers=ah).json()["items"][0]
+    second = c.get("/api/admin/roster?offset=1&limit=1", headers=ah).json()["items"][0]
+    assert first["email"] is None and second["email"] is None
+
+
+def test_admin_roster_listing_reads_archived_backup_logins(env):
+    import gzip
+    import hashlib
+    import json
+
+    from utsu_core import audit
+
+    c, mail = env
+    ah, _ = setup_admin_and_user(c, mail)
+    ctx = c.app.state.ctx
+    uid = ctx.uid("ada")
+    with patch.object(ctx, "now", return_value=946684800):
+        event = ctx.audit.record(uid, "auth.backup_login", f"user:{uid}")
+    month = audit.month_of(event["ts"])
+    raw = gzip.compress(json.dumps(event).encode())
+    ctx.store.put("audit_archive", month, {"id": month, "month": month, "blob": base64.b64encode(raw).decode(),
+                                           "sha256": hashlib.sha256(raw).hexdigest()})
+    ctx.store.delete(audit.coll(month), event["id"])
+    ctx.store.update("audit_months", month, lambda row: {**row, "state": "dropped"})
+    roster = "First Name,Last Name,Truncated Student Number,Faculty,Division\nAda,Lovelace,xxxxx6789x,ARTSC,UC\n"
+    assert c.post("/api/admin/roster", json={"csv": roster}, headers=ah).status_code == 200
+    assert c.get("/api/admin/roster", headers=ah).json()["items"][0]["last_login"] == event["ts"]
+
+
 def test_email_code_signin(env):
     c, mail = env
     register(c, mail, "ada", "ada@x.ca")

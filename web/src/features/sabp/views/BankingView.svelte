@@ -6,6 +6,8 @@
   import { bankingStatus, loadBankingStatus } from "../state/banking.svelte.js";
   import Status from "../../../components/Status.svelte";
 
+  let { shared = false } = $props();
+  const endpoint = $derived(shared ? "/profile/financial" : "/sap/banking");
   // The banking information verification page. Applicants enter their details once; if the finance team cannot
   // validate them, an emailed link brings them here to re-enter the details and upload a PDF of a void cheque.
   const load = new Action(), submit = new Action();
@@ -22,10 +24,10 @@
   const send = () => submit.run(async () => {
     if (bank.status === "reverify_requested") {
       const void_cheque = await readVoidCheque(file);
-      await api("/sap/banking/reverify", { method: "PUT", body: { ...details(), token, void_cheque } });
+      await api(endpoint + "/reverify", { method: "PUT", body: { ...details(), token, void_cheque } });
       history.replaceState(null, "", location.pathname + location.search);
     } else {
-      await api("/sap/banking", { method: "PUT", body: details() });
+      await api(endpoint, { method: "PUT", body: details() });
     }
     institution = transit = account = "";
     file = null;
@@ -47,14 +49,15 @@
         <p>Open the link in the email we sent you to continue{expires() ? ` (it expires ${expires()})` : ""}.</p>
       {/if}
     {:else}
-      <h2>SABP banking</h2>
+      <h2>{shared ? "Financial profile" : "SABP banking"}</h2>
       {#if bank.status === "on_file"}<p class="ok">Your banking details are on file.</p>{/if}
       {#if bank.status === "reverify_received"}
         <p>Thank you. We received your new details and void cheque; our finance team will review them.</p>
       {/if}
       {#if bank.status === "destroyed"}<p>Your banking details were removed. Contact the UTSU if this is unexpected.</p>{/if}
       {#if bank.status === "not_submitted"}
-        <p>An active SABP application is required. Later changes need a re-verification request from the UTSU.</p>
+        <p>{shared ? "Banking details are stored separately from your profile and reused for payouts." : "An active SABP application is required."}
+          Later changes need a re-verification request from the UTSU.</p>
       {/if}
     {/if}
 

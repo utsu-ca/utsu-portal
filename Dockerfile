@@ -1,6 +1,7 @@
 # Portal image: runs on Cloud Run, Azure Container Apps, Fly, Kubernetes, or plain Docker. Pick the database at run time
 # with PORTAL_STORE (see wiki/Deployment.md); drivers for all supported backends are installed.
 FROM python:3.12-slim
+RUN apt-get update && apt-get install -y --no-install-recommends rclone && rm -rf /var/lib/apt/lists/*
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
 COPY pyproject.toml README.md LICENSE ./
@@ -8,6 +9,7 @@ COPY src ./src
 ARG PORTAL_EXTRA_DEPS=""
 RUN pip install --no-cache-dir ".[portal,firestore,sql${PORTAL_EXTRA_DEPS}]" "psycopg[binary]>=3" pymysql
 RUN useradd --system --no-create-home --uid 10001 app
+RUN mkdir -p /app/receipt-files && chown app /app/receipt-files
 USER 10001
 ENV PORT=8080 PORTAL_APP=utsu_core:create_app
 # PORTAL_APP=utsu_core.authsvc:create_auth_app runs the standalone authentication service from the same image

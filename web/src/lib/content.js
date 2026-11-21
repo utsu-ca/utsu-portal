@@ -36,7 +36,7 @@ export const CONTENT = {
     tagline: "Register a student club with the UTSU.",
     summary: [
       "Registered clubs can receive UTSU grants and track their finances in the portal.",
-      "A registration is reviewed by UTSU administrators, and more than one approval may be needed.",
+      "A registration is reviewed by a UTSU administrator.",
     ],
     eligibility: [
       "The person registering is a verified UTSU member and becomes the club's owner.",
@@ -45,7 +45,9 @@ export const CONTENT = {
     steps: [
       "Sign in and open Register or manage a club.",
       "Give the club's name, category and a description.",
-      "Wait for administrators to decide. Once approved, the owner can add a treasurer and executives.",
+      "The owner can invite a treasurer and executives, who must accept before their roles take effect.",
+      "Wait for administrators to decide on the club's registration.",
+      "Approval lasts through the current September–August academic year; request renewal after it expires.",
     ],
     deadlines: [TBA],
   },

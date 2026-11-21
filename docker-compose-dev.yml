@@ -12,6 +12,7 @@ services:
       PYTHONPATH: /app/src
       PORTAL_DEV_ADMIN: "1"
       PORTAL_DEV_SEED: "${PORTAL_DEV_SEED:-0}"
+      PORTAL_SAP_REVIEW_ENABLED: "1"
       PORTAL_BASE_URL: "http://127.0.0.1:${PORTAL_WEB_PORT:-5173}"
       PORTAL_SMTP_URL: ""
       PORTAL_TURNSTILE_SITE_KEY: ""
@@ -95,6 +96,8 @@ services:
           path: ./web/package-lock.json
         - action: rebuild
           path: ./web/Dockerfile.dev
+        - action: rebuild
+          path: ./data/wfni_weights.csv
 
   jaeger:
     image: jaegertracing/jaeger:2.9.0

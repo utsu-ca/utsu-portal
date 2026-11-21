@@ -82,6 +82,7 @@ def test_generated_seed_does_not_overwrite_dev_data(monkeypatch):
 
     def exercise(_, __, target):
         target.put("accounts", "fixture", {"name": "Generated"})
+        target.put("financial_profiles", "fixture", {"status": "on_file", "account_number": "original"})
         return {}
 
     monkeypatch.setattr(dev_seed.subprocess, "run", lambda *_, **__: None)
@@ -95,8 +96,10 @@ def test_generated_seed_does_not_overwrite_dev_data(monkeypatch):
     dev_seed.prepare_database(settings, generated)
     assert generated.get("accounts", "fixture") == {"name": "Generated"}
     generated.put("accounts", "fixture", {"name": "Edited"})
+    generated.put("financial_profiles", "fixture", {"status": "on_file", "account_number": "edited"})
     dev_seed.prepare_database(settings, generated)
     assert generated.get("accounts", "fixture") == {"name": "Edited"}
+    assert generated.get("financial_profiles", "fixture")["account_number"] == "edited"
 
 
 def test_interrupted_generated_seed_requires_fresh_project(monkeypatch):
@@ -134,3 +137,13 @@ def test_generated_seed_populates_students_roster_and_program_submissions(monkey
         submitters = {submission["uuid"] for submission in submissions}
         assert len(submissions) == len(submitters) == 30
         assert submitters <= student_ids
+
+    sap_submitters = {submission["uuid"] for submission in store.list("submissions", form_id="student_aid_bursary")}
+    banking = ctx.store.list("financial_profiles")
+    assert len(banking) == 15
+    assert {bank["uuid"] for bank in banking} <= sap_submitters
+    by_id = {user["uuid"]: user for user in students}
+    for bank in banking:
+        digits = by_id[bank["uuid"]]["email"].split("+", 1)[1].split("@", 1)[0]
+        assert bank["status"] == "on_file"
+        assert (bank["institution_number"], bank["transit_number"], bank["account_number"]) == ("000", "12345", f"12345{digits}")

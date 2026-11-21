@@ -45,12 +45,17 @@ class Settings:
     api_only: bool = False  # serve API routes without the bundled full-portal UI
     # Program settings stay as compatibility fields for direct Settings(...) callers and existing environment variables.
     # Runtime module access is scoped through the selected manifest's plugin_settings view.
-    club_registration_approvals: int = 2  # distinct admins needed to approve a club
     expense_approvals_small: int = 1
     expense_approvals_large: int = 2
     expense_large_cents: int = 50_000  # expenses at/above this need the larger approval count
     default_tax_bps: int = 1300  # Ontario HST 13%
     max_receipt_bytes: int = 3_000_000
+    user_storage_bytes: int = 15_000_000
+    club_storage_year_bytes: int = 1024 ** 3
+    quota_store: str | None = None
+    receipt_storage_path: str | None = None
+    receipt_cold_remote: str | None = None
+    receipt_archive_enabled: bool = False
     dev_admin: bool = False  # seed local-development accounts (localhost only; see devadmin.py)
     commit: str | None = None  # source revision of this deployment, shown in the footer (git checkout is used when unset)
     branding_dir: str | None = None  # folder holding theme.json and logos, served at /branding (default: the bundled one)
@@ -82,6 +87,8 @@ class Settings:
     auth_url: str | None = None  # set => portal runs against a separate auth service
     auth_public_key: str | None = None  # PEM public key(s) of the auth service, used to verify sessions
     service_token: str | None = None  # shared by auth service and portal for the internal API (>= 32 chars)
+    stripe_secret_key: str | None = field(default=None, repr=False)
+    stripe_webhook_secret: str | None = field(default=None, repr=False)
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -116,6 +123,14 @@ class Settings:
                    token_ttl=int(env("PORTAL_TOKEN_TTL", str(8 * 3600))),
                    auth_signing_key=env("PORTAL_AUTH_SIGNING_KEY"), auth_url=env("PORTAL_AUTH_URL"),
                    auth_public_key=env("PORTAL_AUTH_PUBLIC_KEY"), service_token=env("PORTAL_SERVICE_TOKEN"),
+                   stripe_secret_key=env("PORTAL_STRIPE_SECRET_KEY"),
+                   stripe_webhook_secret=env("PORTAL_STRIPE_WEBHOOK_SECRET"),
+                   user_storage_bytes=int(env("PORTAL_USER_STORAGE_BYTES", "15000000")),
+                   club_storage_year_bytes=int(env("PORTAL_CLUB_STORAGE_YEAR_BYTES", str(1024 ** 3))),
+                   quota_store=env("PORTAL_QUOTA_STORE"),
+                   receipt_storage_path=env("PORTAL_RECEIPT_STORAGE_PATH"),
+                   receipt_cold_remote=env("PORTAL_RECEIPT_COLD_REMOTE"),
+                   receipt_archive_enabled=env("PORTAL_RECEIPT_ARCHIVE_ENABLED", "0") == "1",
                    redis_url=env("PORTAL_REDIS_URL"), data_key=env("PORTAL_DATA_KEY"),
                    rate_limit_auth=int(env("PORTAL_RATE_LIMIT_AUTH", "30")), hsts=env("PORTAL_HSTS", "1") != "0",
                    anchor=env("PORTAL_ANCHOR", "none"), anchor_url=env("PORTAL_ANCHOR_URL"), anchor_token=env("PORTAL_ANCHOR_TOKEN"),

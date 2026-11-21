@@ -35,7 +35,7 @@ export function loadBankingStatus({ force = false } = {}) {
   bankingStatus.error = "";
   bankingStatus.busy = true;
   const isCurrent = () => requestId === id && session.token === token && session.me === account;
-  const promise = api("/sap/banking").then(status => {
+  const promise = api("/profile/financial").then(status => {
     if (isCurrent()) bankingStatus.status = status;
     return status;
   }).catch(error => {

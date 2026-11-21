@@ -18,7 +18,7 @@ function serve(me) {
     if (path === "/content") return { pages: {} };
     if (path === "/plugins") return { enabled: [] };
     if (path === "/me") return me;
-    if (path === "/sap/banking") return { status: "on_file" };
+    if (path === "/profile/financial") return { status: "on_file" };
     if (path === "/senate/current") return null;
     return {};
   });
@@ -365,7 +365,7 @@ describe("signed in", () => {
       if (path === "/content") return { pages: {} };
       if (path === "/plugins") return { enabled: [] };
       if (path === "/me") return member;
-      if (path === "/sap/banking") {
+      if (path === "/profile/financial") {
         if (++bankingCalls === 1) throw new Error("Banking service unavailable.");
         return { status: "reverify_requested" };
       }
@@ -391,7 +391,7 @@ describe("signed in", () => {
       if (path === "/content") return Promise.resolve({ pages: {} });
       if (path === "/plugins") return Promise.resolve({ enabled: [] });
       if (path === "/me") return Promise.resolve(member);
-      if (path === "/sap/banking") return new Promise(resolve => { resolveBanking.push(resolve); });
+      if (path === "/profile/financial") return new Promise(resolve => { resolveBanking.push(resolve); });
       return Promise.resolve({});
     });
     render(App);
@@ -441,7 +441,7 @@ describe("signed in", () => {
       if (path === "/content") return Promise.resolve({ pages: {} });
       if (path === "/plugins") return Promise.resolve({ enabled: [] });
       if (path === "/me") return Promise.resolve(member);
-      if (path === "/sap/banking") return new Promise(resolve => { resolveBanking = resolve; });
+      if (path === "/profile/financial") return new Promise(resolve => { resolveBanking = resolve; });
       return Promise.resolve({});
     });
     render(App);

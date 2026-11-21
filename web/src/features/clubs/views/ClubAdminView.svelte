@@ -4,7 +4,7 @@
   import { Action } from "../../../lib/action.svelte.js";
   import Status from "../../../components/Status.svelte";
 
-  // UTSU administrators decide club registrations (more than one approval may be needed).
+  // UTSU administrators decide club registrations.
   const load = new Action(), act = new Action();
   let clubs = $state([]), notes = $state({});
 

@@ -19,6 +19,12 @@ DAY = 86_400
 def boot(**kw):
     mail, store = OutboxMailer(), MemoryStore()
     app = create_app(Settings(secret="s" * 40, admin_emails=("boss@x.ca",), **kw), store, mail)
+    # These tests write a synthetic, backdated chain independent of startup migration auditing.
+    for month in store.list("audit_months"):
+        for entry in store.list(A.coll(month["month"])):
+            store.delete(A.coll(month["month"]), entry["id"])
+        store.delete("audit_months", month["month"])
+    store.delete("audit_head", "head")
     return TestClient(app), app.state.ctx, mail, store
 
 

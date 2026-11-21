@@ -31,6 +31,10 @@ registered for the Turnstile widget.
   separate identity verification. AGM administrators can view registrations and eligibility,
   download a private registration CSV including accessibility and proxy details, and check a person against
   the roster.
+- **Upload storage:** personal uploads share a 15 MB allocation. Clubs start with 1 GiB, growing by 1 GiB for each
+  additional approved academic year, capped at 10 GiB; archived receipts still count. Club receipts can use
+  encrypted local hot storage and a nightly, report-only-by-default rclone cold-storage worker.
+  See [storage deployment](wiki/Deployment.md#upload-quotas-and-cold-receipt-storage).
 - **Senate:** administrators configure seats, inspect applications, run seeded previews and publish the reviewed
   result. Applicants must provide all seating preferences, including explicit "Not interested" choices. Public
   results show names only when the applicant consented. Administrators can see eligibility and
@@ -38,13 +42,15 @@ registered for the Turnstile widget.
   Seat configuration is not populated automatically.
 - **SABP:** applicants can submit applications and encrypted banking details. Administrators can configure WFNI
   weights, view and export current applications, and manage banking details, including re-verification. The
+  weights editor loads the saved configuration, or displays the bundled CSV as an inactive draft until saved. The
   **finance portal** (`/static/finance.html`, role `sap_finance`) is a separate, banking-only surface for the
   financial controller: it lists banking records and, when details fail validation, one click ("Banking failed
   validation") emails the applicant a single-use link to the banking information verification page, where they
   re-enter their details and upload a PDF void cheque (3 MB maximum, checked server-side, encrypted at rest). The
   controller reviews the new details and the cheque (every view is audited) and accepts them. The private
   CSV excludes hardship statements and banking details; it is not a payment export. The review queue requires
-  `PORTAL_SAP_REVIEW_ENABLED=1`; it is experimental and not a complete committee process. Administrators must
+  `PORTAL_SAP_REVIEW_ENABLED=1` (enabled automatically in Docker dev); it is experimental and not a complete committee
+  process. Administrators must
   review and confirm redacted hardship statements. Client-side static redaction and server identifier checks cannot
   guarantee anonymity. Selected living-costs emergency subsidies are prioritized; missing subsidy selections have
   unknown emergency status and need manual follow-up. Disagreements can be resolved with a recorded reason by an
@@ -116,6 +122,12 @@ notice. SMTP must be configured. This is individual messaging, not the historica
 Run tests with `python -m pytest` (the `pythonpath` and test folder are set in `pyproject.toml`). Some integration
 tests additionally require Node.js. Install only the extras needed for the deployment; see `pyproject.toml` for
 database, authentication and observability extras.
+
+Financial profile banking is stored separately from user profiles, linked by UUID. Stripe-hosted Checkout
+collects payments against staff-created orders; it does not process bursary payouts. Install `.[payments]` and
+configure `PORTAL_STRIPE_SECRET_KEY` and `PORTAL_STRIPE_WEBHOOK_SECRET` to enable collection.
+See [financial profiles and payments](wiki/Applicant-Portal.md#financial-profiles-and-payments) for API,
+webhook, migration and access-audit details.
 
 The generated-user integration test creates synthetic accounts in an isolated in-memory app, verifies them, and
 exercises AGM registration, pagination, check-in and export. It uses 24 users by default; for a larger repeatable run:

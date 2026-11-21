@@ -26,7 +26,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    environment:
+    environment: &portal-environment
       PORTAL_APP: utsu_core:create_app
       PORTAL_SECRET: "${PORTAL_SECRET:?Set a stable PORTAL_SECRET of at least 32 characters}"
       PORTAL_STORE: sql
@@ -41,6 +41,14 @@ services:
       PORTAL_SMTP_URL: "${PORTAL_SMTP_URL:-}"
       PORTAL_MAIL_FROM: "${PORTAL_MAIL_FROM:-no-reply@localhost}"
       PORTAL_HSTS: "0"
+      PORTAL_USER_STORAGE_BYTES: "${PORTAL_USER_STORAGE_BYTES:-15000000}"
+      PORTAL_CLUB_STORAGE_YEAR_BYTES: "${PORTAL_CLUB_STORAGE_YEAR_BYTES:-1073741824}"
+      PORTAL_RECEIPT_STORAGE_PATH: /app/receipt-files
+      PORTAL_RECEIPT_COLD_REMOTE: "${PORTAL_RECEIPT_COLD_REMOTE:-}"
+      PORTAL_RECEIPT_ARCHIVE_ENABLED: "${PORTAL_RECEIPT_ARCHIVE_ENABLED:-0}"
+      RCLONE_CONFIG: /run/secrets/storage/rclone.conf
+    volumes:
+      - portal-receipt-files:/app/receipt-files
     ports:
       - "127.0.0.1:${PORTAL_PORT:-8000}:8080"
     depends_on:
@@ -54,5 +62,26 @@ services:
       timeout: 5s
       retries: 5
 
+  receipt-maintenance:
+    profiles: ["storage"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment: *portal-environment
+    command: ["sh", "-ec", "while :; do python -m utsu_core.receipt_maintenance --migrate --scheduled; sleep 86400; done"]
+    restart: on-failure
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - portal-receipt-files:/app/receipt-files
+      - type: bind
+        source: ./secrets/storage
+        target: /run/secrets/storage
+        read_only: true
+        bind:
+          create_host_path: false
+
 volumes:
   portal-db-data:
+  portal-receipt-files:

@@ -1,4 +1,4 @@
-"""Clubs: registration, multi-admin approval, ledger, receipts and tax (HST) reporting.
+"""Clubs: registration, approval, ledger, receipts and tax (HST) reporting.
 
 Money is always integer cents. Rates are basis points (1300 = 13%). Expenses only count in the ledger once approved.
 """
@@ -9,6 +9,8 @@ import hashlib
 import re
 import secrets
 from collections import defaultdict
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, field_validator
@@ -16,11 +18,32 @@ from pydantic import BaseModel, Field, field_validator
 from ...context import Context, roles_of
 from ...contracts import FileKind
 from ...security import clean_text
+from ...services.email import EmailDeliveryUnknown, EmailNotConfigured
+from ...services.receipt_storage import ReceiptStorage
 
 name = "clubs"
 ROLES = ("owner", "treasurer", "executive")
 FINANCE_ROLES = ("owner", "treasurer")
 RECEIPT_TYPES = {"jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp", "pdf": "application/pdf"}
+TORONTO = ZoneInfo("America/Toronto")
+
+
+def academic_year(timestamp: int) -> int:
+    date = datetime.fromtimestamp(timestamp, TORONTO)
+    return date.year if date.month >= 9 else date.year - 1
+
+
+def approval_year(c: dict) -> int | None:
+    if c.get("approval_year") is not None:
+        return c["approval_year"]
+    approvals = [vote["at"] for vote in c.get("approvals", []) if vote.get("approve") and vote.get("at") is not None]
+    return academic_year(max(approvals)) if approvals and c["status"] == "approved" else None
+
+
+def effective_status(c: dict, now: int) -> str:
+    if c["status"] == "approved" and approval_year(c) != academic_year(now):
+        return "expired"
+    return c["status"]
 
 
 def split_tax(amount: int, bps: int, inclusive: bool) -> tuple[int, int, int]:
@@ -87,6 +110,16 @@ class ClubsModule:
     name = name
 
     def configure(self, ctx: Context) -> None:
+        storage = ReceiptStorage(ctx.store, ctx.settings, lambda: ctx.now(), ctx.audit)
+        ctx.services["receipt_storage"] = storage
+
+        for existing in ctx.store.list("clubs"):
+            year = approval_year(existing)
+            if year is not None and year not in existing.get("registered_years", []):
+                def backfill(current):
+                    return {**current, "registered_years": sorted(set(current.get("registered_years", [])) | {year})}
+                ctx.store.update("clubs", existing["id"], backfill)
+
         def authorized(_action: str, actor: str, club_id: str, receipt_id: str) -> bool:
             account = ctx.identity.account(actor)
             club = ctx.store.get("clubs", club_id)
@@ -103,7 +136,7 @@ class ClubsModule:
             receipt = ctx.store.get("receipts", reference)
             if not receipt or receipt["club_id"] != resource:
                 return None
-            return receipt["data_url"].encode()
+            return storage.read(reference, resource)
 
         ctx.files.register_kind(
             "clubs",
@@ -120,7 +153,6 @@ class ClubsModule:
     def router(self, ctx: Context) -> APIRouter:
         r = APIRouter(prefix="/api")
         S = ctx.store
-        club_registration_approvals = ctx.plugin_setting("clubs", "club_registration_approvals")
         expense_approvals_small = ctx.plugin_setting("clubs", "expense_approvals_small")
         expense_approvals_large = ctx.plugin_setting("clubs", "expense_approvals_large")
         expense_large_cents = ctx.plugin_setting("clubs", "expense_large_cents")
@@ -134,6 +166,11 @@ class ClubsModule:
             if not c:
                 raise HTTPException(404, "unknown club")
             return c
+
+        def display_club(c: dict) -> dict:
+            return {**{k: v for k, v in c.items() if k != "invitations"},
+                    "status": effective_status(c, ctx.now()), "approval_year": approval_year(c),
+                    "storage_usage": ctx.upload_quotas.usage(f"club:{c['id']}")}
 
         def member(c: dict, uid: str, roles=ROLES) -> None:
             if c["members"].get(uid) not in roles:
@@ -161,14 +198,52 @@ class ClubsModule:
 
         @r.get("/clubs/mine")
         def mine(a: dict = verified):
-            return [c for c in S.list("clubs") if a["uuid"] in c["members"]]
+            return [display_club(c) for c in S.list("clubs") if a["uuid"] in c["members"]]
+
+        @r.get("/clubs/invitations")
+        def invitations(a: dict = verified):
+            result = []
+            for c in S.list("clubs"):
+                invitation = c.get("invitations", {}).get(a["uuid"])
+                if invitation:
+                    result.append({"id": invitation["id"], "club_id": c["id"], "club_name": c["name"],
+                                   "role": invitation["role"]})
+            return result
+
+        @r.get("/clubs/directory")
+        def directory():
+            now = ctx.now()
+            clubs = [{"id": c["id"], "name": c["name"], "category": c["category"], "description": c["description"]}
+                     for c in S.list("clubs") if effective_status(c, now) == "approved"]
+            return sorted(clubs, key=lambda c: (c["name"].casefold(), c["id"]))
 
         @r.get("/clubs/{cid}")
         def get_club(cid: str, a: dict = ctx.require_user()):
             c = club(cid)
             if a["uuid"] not in c["members"] and "admin" not in roles_of(a, ctx.roles):
                 raise HTTPException(403, "not permitted for this club")
-            return {**c, "balance_cents": balance(cid)}
+            return {**display_club(c), "balance_cents": balance(cid)}
+
+        @r.post("/clubs/{cid}/renewal")
+        def request_renewal(cid: str, a: dict = verified):
+            def renew(cur):
+                if not cur:
+                    raise HTTPException(404, "unknown club")
+                member(cur, a["uuid"], ("owner",))
+                year = approval_year(cur)
+                if effective_status(cur, ctx.now()) != "expired" and not (cur["status"] == "rejected" and year is not None):
+                    raise HTTPException(409, "club is not eligible for renewal")
+                cur["approval_year"] = year
+                if year is not None:
+                    cur["registered_years"] = sorted(set(cur.get("registered_years", [])) | {year})
+                cur["status"] = "pending"
+                cur["approvals"] = []
+                return cur
+
+            c = S.update("clubs", cid, renew)
+            ctx.audit.record(a["uuid"], "club.renewal_requested", f"club:{cid}", None,
+                             {"status": "pending", "previous_approval_year": c["approval_year"]})
+            return {"status": "pending"}
 
         @r.post("/clubs/{cid}/members")
         def add_member(cid: str, b: MemberIn, a: dict = verified):
@@ -180,18 +255,65 @@ class ClubsModule:
             uid, acct = (found["uuid"], found["account"]) if found else (None, None)
             if not acct or acct["status"] != "verified":
                 raise HTTPException(422, "member must be a verified account")
-            old_role = c["members"].get(uid)
-            def setrole(cur):
-                cur["members"][uid] = b.role
+            user = found.get("user")
+            if not acct.get("email_verified") or not user or not user.get("email"):
+                raise HTTPException(409, "verified member email unavailable")
+            if not ctx.email.is_configured:
+                raise HTTPException(503, "email delivery is not configured")
+            invitation_id = secrets.token_hex(16)
+            def invite(cur):
+                if not cur:
+                    raise HTTPException(404, "unknown club")
+                member(cur, a["uuid"], ("owner",))
+                if cur["members"].get(uid) == b.role or cur["members"].get(uid) == "owner":
+                    raise HTTPException(409, "account already has this club role")
+                pending = cur.setdefault("invitations", {})
+                if uid in pending:
+                    raise HTTPException(409, "an invitation is already pending for this account")
+                pending[uid] = {"id": invitation_id, "role": b.role, "by": a["uuid"], "at": ctx.now()}
                 return cur
 
-            c = S.update("clubs", cid, setrole)
-            ctx.audit.record(a["uuid"], "club.member_set", f"club:{cid}", {"role": old_role}, {"role": b.role}, {"member": uid})
-            return {"members": c["members"]}
+            c = S.update("clubs", cid, invite)
+            ctx.audit.record(a["uuid"], "club.member_invited", f"club:{cid}", None,
+                             {"role": b.role}, {"member": uid, "invitation": invitation_id})
+            try:
+                ctx.email.send_template(user["email"], "club_invitation",
+                                        {"club_name": c["name"], "role": b.role,
+                                         "link": f"{ctx.settings.sso_issuer}/static/"},
+                                        actor=a["uuid"])
+            except EmailNotConfigured as exc:
+                raise HTTPException(503, "Invitation saved, but email is not configured. The recipient can respond in the portal.") from exc
+            except EmailDeliveryUnknown as exc:
+                raise HTTPException(502, "Invitation saved, but email delivery could not be confirmed. The recipient can respond in the portal.") from exc
+            return {"status": "pending"}
+
+        @r.post("/clubs/{cid}/invitations/{invitation_id}/decision")
+        def decide_invitation(cid: str, invitation_id: str, b: Decision, a: dict = verified):
+            old_role = {}
+            def decide(cur):
+                if not cur:
+                    raise HTTPException(404, "unknown club")
+                pending = cur.get("invitations", {})
+                invitation = pending.get(a["uuid"])
+                if not invitation or invitation["id"] != invitation_id:
+                    raise HTTPException(404, "invitation not found")
+                old_role["value"] = cur["members"].get(a["uuid"])
+                if b.approve:
+                    cur["members"][a["uuid"]] = invitation["role"]
+                del pending[a["uuid"]]
+                return cur
+
+            c = S.update("clubs", cid, decide)
+            role = c["members"].get(a["uuid"])
+            ctx.audit.record(a["uuid"], "club.invitation_accepted" if b.approve else "club.invitation_declined",
+                             f"club:{cid}", {"role": old_role["value"]}, {"role": role},
+                             {"invitation": invitation_id})
+            return {"status": "accepted" if b.approve else "declined"}
 
         @r.get("/admin/clubs")
         def admin_clubs(status: str | None = None, _: dict = admin):
-            return S.list("clubs", **({"status": status} if status else {}))
+            clubs = [display_club(c) for c in S.list("clubs")]
+            return [c for c in clubs if not status or c["status"] == status]
 
         @r.post("/admin/clubs/{cid}/decision")
         def decide_club(cid: str, b: Decision, a: dict = admin):
@@ -203,13 +325,25 @@ class ClubsModule:
                 if cur["status"] != "pending":
                     raise HTTPException(409, f"club is already {cur['status']}")
                 conflict(cur, a["uuid"])
-                cur["status"] = record_decision(cur, a["uuid"], b.approve, b.note,
-                                                club_registration_approvals, ctx.now())
+                previous = next((vote for vote in cur["approvals"] if vote["by"] == a["uuid"]), None)
+                if previous and previous["approve"] and b.approve:
+                    cur["status"] = "approved"
+                else:
+                    cur["status"] = record_decision(cur, a["uuid"], b.approve, b.note, 1, ctx.now())
+                if cur["status"] == "approved":
+                    years = set(cur.get("registered_years", []))
+                    previous_year = approval_year(cur)
+                    if previous_year is not None:
+                        years.add(previous_year)
+                    cur["approval_year"] = academic_year(ctx.now())
+                    cur["registered_years"] = sorted(years | {cur["approval_year"]})
                 return cur
 
             c = S.update("clubs", cid, vote)
-            ctx.audit.record(a["uuid"], "club.decision", f"club:{cid}", {"status": "pending"}, {"status": c["status"]}, {"approve": b.approve, "note": b.note[:200]})
-            return {"status": c["status"], "approvals": len(c["approvals"])}
+            ctx.audit.record(a["uuid"], "club.decision", f"club:{cid}", {"status": "pending"},
+                             {"status": c["status"], "approval_year": c.get("approval_year")},
+                             {"approve": b.approve, "note": b.note[:200]})
+            return {"status": c["status"], "approvals": len(c["approvals"]), "approval_year": c.get("approval_year")}
 
         # ---------------- receipts ----------------
         @r.post("/clubs/{cid}/receipts", status_code=201)
@@ -219,15 +353,19 @@ class ClubsModule:
             m = re.fullmatch(r"data:(?:image/(jpeg|png|webp)|application/(pdf));base64,([A-Za-z0-9+/=]+)", b.data_url)
             if not m:
                 raise HTTPException(422, "receipt must be a base64 jpeg/png/webp/pdf data URL")
-            raw = base64.b64decode(m.group(3), validate=True)
+            try:
+                raw = base64.b64decode(m.group(3), validate=True)
+            except ValueError as exc:
+                raise HTTPException(422, "receipt could not be decoded") from exc
             if len(raw) > max_receipt_bytes:
                 raise HTTPException(413, "receipt too large")
             digest = hashlib.sha256(raw).hexdigest()
             for old in S.list("receipts", club_id=cid, sha256=digest):
                 raise HTTPException(409, {"error": "duplicate receipt", "id": old["id"]})
             rid = secrets.token_hex(8)
-            S.put("receipts", rid, {"id": rid, "club_id": cid, "sha256": digest, "data_url": b.data_url, "by": a["uuid"],
-                                    "at": ctx.now(), "transaction_id": None})
+            ctx.services["receipt_storage"].create(
+                {"id": rid, "club_id": cid, "sha256": digest, "data_url": b.data_url, "by": a["uuid"],
+                 "at": ctx.now(), "transaction_id": None})
             ctx.audit.record(a["uuid"], "receipt.uploaded", f"club:{cid}", None, None, {"receipt": rid, "sha256": digest})
             return {"id": rid, "sha256": digest}
 
@@ -244,14 +382,14 @@ class ClubsModule:
                 raise HTTPException(404, "unknown receipt") from exc
             except PermissionError as exc:
                 raise HTTPException(403, "not permitted for this club") from exc
-            return {**rc, "data_url": data_url}
+            return {**{k: v for k, v in rc.items() if k != "storage"}, "data_url": data_url}
 
         # ---------------- ledger ----------------
         @r.post("/clubs/{cid}/transactions", status_code=201)
         def add_tx(cid: str, b: TxIn, a: dict = verified):
             c = club(cid)
             member(c, a["uuid"], FINANCE_ROLES)
-            if c["status"] != "approved":
+            if effective_status(c, ctx.now()) != "approved":
                 raise HTTPException(409, "club is not approved")
             if b.kind not in ("expense", "income"):
                 raise HTTPException(422, "kind must be expense or income")
@@ -323,7 +461,7 @@ class ClubsModule:
         @r.post("/admin/clubs/{cid}/grants", status_code=201)
         def grant(cid: str, b: GrantIn, a: dict = finance):
             c = club(cid)
-            if c["status"] != "approved":
+            if effective_status(c, ctx.now()) != "approved":
                 raise HTTPException(409, "club is not approved")
             conflict(c, a["uuid"])
             tid = secrets.token_hex(8)

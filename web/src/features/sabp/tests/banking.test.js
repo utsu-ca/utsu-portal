@@ -29,7 +29,7 @@ describe("banking information verification page", () => {
     session.token = "t";
     session.me = member;
     history.replaceState(null, "", "/#sap-banking=tok123");
-    api.mockImplementation(async path => path === "/sap/banking"
+    api.mockImplementation(async path => path === "/profile/financial"
       ? { status: "reverify_requested", expires_at: 2e9 }
       : { status: "reverify_received" });
     render(BankingView);
@@ -73,6 +73,19 @@ describe("banking information verification page", () => {
     await fill();
     await fireEvent.click(screen.getByRole("button", { name: "Submit banking details" }));
     await waitFor(() => expect(api.mock.calls.some(([p, o]) => p === "/sap/banking" && o?.method === "PUT")).toBe(true));
+  });
+
+  it("saves profile banking independently of a student aid application", async () => {
+    session.token = "t";
+    session.me = member;
+    api.mockImplementation(async (path, opts) => opts?.method === "PUT" ? { status: "on_file" } : { status: "not_submitted" });
+    render(BankingView, { shared: true });
+    await screen.findByText(/Banking details are stored separately from your profile/);
+    await fill();
+    await fireEvent.click(screen.getByRole("button", { name: "Submit banking details" }));
+    await waitFor(() => expect(api).toHaveBeenCalledWith("/profile/financial", {
+      method: "PUT", body: { institution_number: "002", transit_number: "12345", account_number: "999888" },
+    }));
   });
 });
 

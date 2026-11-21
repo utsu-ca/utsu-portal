@@ -157,13 +157,17 @@ def exercise_api(csv_dir: Path, settings: Settings, store: Store) -> dict[str, C
             if len(eligible) < SUBMISSIONS_PER_PROGRAM:
                 raise RuntimeError(f"{form}: only {len(eligible)} eligible applicants; need {SUBMISSIONS_PER_PROGRAM}")
             selected = Random(f"{DEFAULT_SEED}:{form}").sample(sorted(eligible), SUBMISSIONS_PER_PROGRAM)
-            for digits in selected:
+            for index, digits in enumerate(selected):
                 student, row = eligible[digits]
                 email, headers = users[digits]
                 request("PUT", f"forms/{form}/submission",
                         {"version": definition["version"], "hash": definition["hash"],
                          "data": form_data(form, row, student, email)}, headers)
                 stats["submitted"] += 1
+                if form == "student_aid_bursary" and index < len(selected) // 2:
+                    request("PUT", "sap/banking", {"institution_number": "000", "transit_number": "12345",
+                                                   "account_number": f"12345{digits}"}, headers)
+                    stats["banking"] += 1
             stats["stored"] = stats["submitted"]
             summary[form] = stats
             print(f"{form}: {stats['checked']} checked, {stats['unmatched']} unmatched, "

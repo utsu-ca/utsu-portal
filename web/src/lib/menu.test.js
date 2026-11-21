@@ -17,6 +17,13 @@ describe("menu structure", () => {
     const menu = buildMenu();
     for (const id of ["bursaries", "club-finances", "club-registration", "agm", "senate"]) expect(actions(menu, id)).toEqual([]);
   });
+
+  it("shows the public club directory only when the clubs plug-in is enabled", () => {
+    expect(findNode(buildMenu(), n => n.id === "club-directory")).toBeUndefined();
+    const menu = buildMenu({ enabled: id => id === "clubs" });
+    expect(findNode(menu, n => n.id === "club-directory")).toMatchObject({ label: "Directory", view: "clubDirectory" });
+    expect(sectionFor(menu, { name: "clubDirectory", props: {} }).title).toBe("Clubs");
+  });
 });
 
 describe("signing in exposes program functions", () => {
@@ -26,7 +33,7 @@ describe("signing in exposes program functions", () => {
     expect(actions(member, "bursaries")).toEqual(["Apply for a bursary", "Banking information"]);
     expect(actions(member, "agm")).toEqual(["RSVP for the AGM", "My invitation"]);
     expect(actions(member, "club-registration")).toEqual(["Register or manage a club"]);
-    expect(labels(findNode(member, n => n.id === "profile").items)).toEqual(["Account", "My applications", "Sign out"]);
+    expect(labels(findNode(member, n => n.id === "profile").items)).toEqual(["Account", "Financial information", "Orders and payments", "My applications", "Sign out"]);
   });
 
   it("gives unverified accounts only the profile", () => {
@@ -50,7 +57,7 @@ describe("signing in exposes program functions", () => {
     expect(actions(admin, "senate")).toContain("Administer seating");
     expect(actions(admin, "club-registration")).toContain("Review registrations");
     expect(actions(admin, "club-finances")).toContain("Approve expenses and grants");
-    expect(labels(findNode(admin, n => n.id === "administration").items)).toEqual(["Forms", "Identity checks", "Roles", "Student roster", "Page content"]);
+    expect(labels(findNode(admin, n => n.id === "administration").items)).toEqual(["Payment orders", "Forms", "Identity checks", "Roles", "Student roster", "Page content"]);
   });
 });
 

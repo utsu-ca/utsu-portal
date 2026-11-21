@@ -42,7 +42,10 @@ hashes, so it must stay stable.
   The ingress routes roster upload and student-number confirmation to the authentication service. If the service
   cannot be reached, roster-dependent operations fail closed. Roster imports and individual reads are not a
   cross-document transaction, so administrators should avoid running seating or reviews during roster replacement.
-- Administrators upload roster CSVs in **Admin: roster**. Replacement is opt-in and requires confirmation.
+- Administrators upload roster CSVs in **Admin: roster**. Replacement is opt-in and requires confirmation. The
+  paginated roster view shows first name and last initial, masked roster digits, and the primary email and most
+  recent recorded sign-in for a uniquely matched account. A dash means the account or sign-in data is unavailable;
+  roster CSVs do not contain email addresses.
 
 ## Forms
 YAML definitions (see `src/utsu_core/forms/` for the Senate, SABP and AGM examples) are validated strictly (unknown
@@ -60,6 +63,53 @@ same way at startup. Submissions record the version and hash and are rejected if
 - Applicants see a status page (`/api/me/submissions`); admins set statuses (`submitted`, `under_review`,
   `needs_info`, `accepted`, `rejected`).
 
+## Financial profiles and payments
+
+- The core `profile` module stores banking in the separate `financial_profiles` document collection, keyed by
+  the account/profile UUID. It never adds banking fields to `users` or `accounts`. Application income, housing and
+  financial-need answers remain in program-owned submissions.
+- **Profile → Financial information** uses `GET/PUT /api/profile/financial`. Verified users can submit details
+  once, and see status without exposing account numbers. Staff with `profile_finance` (or `admin`) use
+  `GET /api/finance/profiles` and `GET/DELETE /api/finance/profiles/{uid}`. A deletion requires `{"confirm":true}`
+  and retains a destroyed tombstone. Re-verification uses `POST .../{uid}/reverify`, an emailed single-use token,
+  `PUT /api/profile/financial/reverify`, and staff `GET .../{uid}/pending`, `GET .../{uid}/cheque`,
+  `POST .../{uid}/accept` with `revision` and `confirm`. Banking numbers and cheque payloads are encrypted at rest.
+- Existing SAP banking URLs remain compatibility adapters, including the initial active-application requirement
+  and the `sap_admin`/`sap_finance` role boundaries. All adapters operate on the same financial profile.
+  Before deploying, back up the database and stop old application workers/writers. Startup copies legacy
+  `sap_banking` records (including pending verification and destroyed tombstones) to encrypted financial profiles,
+  then removes the legacy copies. Migration is restartable; conflicting copies stop startup for operator review.
+- Every financial collection read/write through the application store is logged **before access**, without
+  recording values. This includes banking, orders, payment events, club transactions/receipts, student aid
+  submissions and unfiltered submission listings (which may contain student aid data).
+  `PORTAL_AUDIT_DB_ACCESS=0` does not disable financial auditing. An audit failure blocks access. All financial
+  APIs require the existing identity boundary (local or remote auth) and verified accounts/appropriate roles.
+  Audit snapshot reads are also logged. Background operations use a system actor; verified Stripe events use
+  `stripe:webhook`. This is application-level auditing, not a database administrator access monitor.
+- **Payments setup:** install `pip install '.[payments]'`, set `PORTAL_STRIPE_SECRET_KEY` and
+  `PORTAL_STRIPE_WEBHOOK_SECRET` (both support `_FILE`), and set `PORTAL_BASE_URL` to your HTTPS portal origin.
+  Test keys may use HTTP localhost. Configure a persistent `PORTAL_STORE`; the default memory store is only for
+  testing. No Stripe keys, card numbers or billing payloads are stored in ordinary profiles or sent to the UI.
+- In **Admin mode → Administration → Payment orders**, `payments_finance`/`admin` staff create orders for a
+  verified profile. `POST /api/finance/orders` accepts `request_id` (UUID idempotency key), `uuid`, `description`,
+  `amount_cents` (integer 50–99,999,999) and `currency:"cad"`. Reusing a request ID with different data is rejected.
+  `GET /api/finance/orders` lists staff orders. Prices include any applicable tax and cannot be changed by payers;
+  this flow does not automatically calculate tax or post to the club ledger.
+- **Profile → Orders and payments** uses `GET /api/orders`, `GET /api/orders/{id}`, and
+  `POST /api/orders/{id}/checkout`. Only the payer can open their orders. Checkout uses a fixed Stripe
+  idempotency key and fixed server-side price; retries never deliberately create a second session. The order's
+  checkout window is 23 hours (new sessions need at least 30 minutes remaining). If it ends, finance must reconcile
+  the old session in Stripe before creating a replacement. Do not create replacement orders blindly after a timeout.
+- Register `POST /api/payments/stripe/webhook` in Stripe for snapshot events:
+  `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
+  `checkout.session.async_payment_failed`, and `checkout.session.expired`. Use the signing secret for this endpoint
+  and the same test/live mode as the API key. Signatures are verified against the raw request body with a
+  five-minute tolerance. Session ID, order reference, amount, currency and mode must match before a state update.
+  Event receipts are persistent and replay-safe; delayed unpaid/expired events cannot downgrade a paid order.
+  Returning from Checkout never marks an order paid; refresh to see the webhook-confirmed state.
+- Payments are explicitly unavailable (`503`) without both Stripe settings. This implementation collects card
+  payments through hosted Checkout; Connect payouts, refunds, subscriptions and fulfilment are not implemented.
+
 ## Extending
 A module is an object with `name` and `router(ctx)`; pass it via `create_app(extra_modules=(...))`. `ctx` provides
 the store, settings, mailer (`utsu_core.mailer.Mailer`, override `send` for real mail), event bus and auth
@@ -75,14 +125,33 @@ rules. AGM and Senate register roster requirements; SABP owns its application ro
 be side-effect free because optimistic retries may call them again. Register each form's policy only once.
 
 ## Clubs (`programs/clubs/module.py`)
-- **Registration:** a verified user registers a club (`POST /api/clubs`, unique name) and becomes its owner, who can add
-  `treasurer`/`executive` members. Admins approve via `POST /api/admin/clubs/{id}/decision`; it needs
-  `club_registration_approvals` (default 2) **distinct** admins, and any rejection is final. Admins who belong to a club
+- **Public directory:** `GET /api/clubs/directory` lists only clubs approved for the current academic year, exposing
+  their name, category and description (and club ID), not members, invitations, approval details or finances.
+  The public Clubs → Directory view searches these fields. Club registration tells owners these details are public.
+- **Registration:** a verified user registers a club (`POST /api/clubs`, unique name) and becomes its owner, who can invite
+  verified `treasurer`/`executive` members. Invitees are emailed and can accept or decline under Clubs → Registration;
+  membership and role changes take effect only on acceptance. Existing membership is unaffected until then.
+  Admins approve via `POST /api/admin/clubs/{id}/decision`; one administrator's approval is sufficient.
+  The approver, decision, note and time are recorded on the club and in the audit log; any rejection is final. Approval lasts through
+  August 31 of the academic year in Toronto time; expired clubs leave the approval queue until their owner requests
+  renewal, which starts a fresh review. Existing approval dates determine the year for older records.
+  Admins who belong to a club
   cannot approve its items.
 - **Finances:** an integer-cents ledger. Admins add grants; owners/treasurers record income (auto-approved) and expenses.
   Expenses need at least one receipt and admin approval: 1 approver, or 2 at/above `expense_large_cents` (default $500).
   An expense cannot be approved beyond the club balance.
 - **Receipts:** base64 jpeg/png/webp/pdf uploads (size-capped), de-duplicated per club by SHA-256, each usable once.
+  Clubs start with 1 GiB of decoded file bytes; each additional distinct approved academic year adds another
+  1 GiB, capped at 10 GiB. Pending/rejected renewals and skipped years do not increase it. Club details include
+  `storage_usage` (used/limit/remaining bytes and outstanding reservation count).
+  Archived receipts still count and retain the same authorized download endpoint. The optional nightly worker
+  selects previous academic-year receipts OR receipts not successfully accessed for 365 days; archiving is
+  report-only until explicitly enabled. See [deployment](Deployment.md#upload-quotas-and-cold-receipt-storage).
+- **Personal upload allocation:** account activation/recovery scans, AGM scans, and active/pending void cheques
+  share 15 MB (15,000,000 decoded bytes). Deleting scans or destroying/replacing banking documents releases their
+  bytes. Per-file limits are unchanged. `GET /api/auth/storage` and `GET /api/profile/storage` return the signed-in
+  user's allocation; the former is on the auth service in split deployments. These sensitive documents remain
+  encrypted in their existing databases and are not included in the receipt archive worker.
 - **Tax:** each entry stores net/tax/gross using a rate in basis points (default 1300 = Ontario HST; 0 for exempt) and
   inclusive/exclusive entry. `GET /api/clubs/{id}/summary` reports balance, tax paid (input tax credit eligible), tax
   collected, net tax position and spend by category, counting approved entries only.
@@ -117,8 +186,8 @@ be side-effect free because optimistic retries may call them again. Register eac
 - **Branding and theme.** `theme.json` and the logos live in `src/utsu_core/branding/` and are served at `/branding`, uncached, so edits show on the next page load without rebuilding. To use your own, point `PORTAL_BRANDING_DIR` at a folder with the same layout. `theme.json` sets `name`, `logo`, `favicon`, `colors.user` (`accent`, `accentHover`, `chrome`, `page`), `colors.admin` (`accent`, `accentHover`, `chrome`) and `copyright` (`holder`, `startYear`). Colours must be hex values and files bare names; anything else is ignored. Every page ends with a copyright line built from it.
 - **Loading.** Every view is a separate lazily loaded chunk with a hashed file name, so a program's code is downloaded when it is first opened and cached independently of the others.
 - **Feature ownership.** Program views, components, state and tests live under `web/src/features/{agm,clubs,sabp,senate}/`.
-  Authentication/session, navigation, layout, branding and generic form rendering remain shared. SABP owns banking
-  status and loads it independently rather than delaying session startup; emailed re-verification links and the
+  Authentication/session, navigation, layout, branding and generic form rendering remain shared. The banking UI
+  retains its SABP compatibility location but reads shared profile status independently of session startup; emailed re-verification links and the
   action-needed prompt retain their existing workflow.
 - The front end is a Svelte 5 app in `web/` (Vite, Tailwind CSS v4, Vitest). It is built into `src/utsu_core/static` and the build is **committed**, so `pip install` and the Docker image need no Node. Pages: `index.html` (the portal), `checkin.html`, `finance.html` (the financial controller's banking portal) and `sso.html`. After changing anything under `web/`, run `npm install` once, then `npm test` and `npm run build` in `web/`, and commit the result. The CSP forbids CDNs, inline scripts and inline styles; the build emits only same-origin module scripts and a stylesheet. Components: `.card`, `button.primary|secondary|danger`, `.err`, `.ok`, `.badge`, `.row`, `.banner-ok|warn` (check-in result), `.banner-action` (action needed), `.banner-admin`.
 - The front end stays same-origin with the API, which keeps the token/CSP/SSO model simple.

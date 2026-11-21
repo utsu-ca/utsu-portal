@@ -7,6 +7,7 @@ data:
   PORTAL_BASE_URL: "https://portal.example.org"
   PORTAL_ADMIN_EMAILS: "replace-me@example.com"
   PORTAL_AUTH_URL: "http://auth.utsu-portal.svc:8080"   # cluster-internal; remove for a single-deployment portal
+  PORTAL_QUOTA_STORE_FILE: "/run/secrets/portal/quota-store"  # same persistent store URI in portal + auth secrets
   PORTAL_REDIS_URL_FILE: "/run/secrets/portal/redis-url"
   PORTAL_SECRET_FILE: "/run/secrets/portal/secret"
   PORTAL_DATA_KEY_FILE: "/run/secrets/portal/data-key"
