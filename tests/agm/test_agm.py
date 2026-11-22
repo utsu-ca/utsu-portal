@@ -6,13 +6,13 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from test_financial_profiles import account
-from utsu_core import create_app
-from utsu_core.mailer import OutboxMailer
-from utsu_core.programs.agm import program as agm
-from utsu_core.resources import package_text
-from utsu_core.settings import Settings
-from utsu_core.verification import construct_lookup_tables
-from utsu_core.std.utils import absfile
+from core import create_app
+from core.mailer import OutboxMailer
+from core.programs.agm import program as agm
+from core.resources import package_text
+from core.settings import Settings
+from core.verification import construct_lookup_tables
+from core.std.utils import absfile
 
 HEADERS = ["Timestamp", "Username", "Preferred Name", "Preferred Pronouns", "ACORN-registered First Name",
            "ACORN-registered Last Name ", "UofT Email Address", "Meeting Preference",
@@ -22,7 +22,7 @@ HEADERS = ["Timestamp", "Username", "Preferred Name", "Preferred Pronouns", "ACO
 
 def test_verifier_manifest_matches_its_registered_capabilities():
     from agm.verify import AgmVerifyModule
-    from utsu_core.plugin_host import discover_manifests
+    from core.plugin_host import discover_manifests
 
     assert AgmVerifyModule.manifest == discover_manifests(external_entry_points=[])["agm_verify"]
 
@@ -75,7 +75,7 @@ def rsvp(ts, first, last, email="", dietary="", confirm="Yes", extra=None, meeti
 
 def students_db(*people):
     conn = sqlite3.connect(":memory:")
-    conn.executescript(package_text("utsu_core", "schema/uoft_data.sql"))
+    conn.executescript(package_text("core", "schema/uoft_data.sql"))
     for i, (first, last, trunc) in enumerate(people):
         conn.execute("INSERT INTO uoft_data (uuid, trunc_id, first_name, last_name, full_name, division, faculty) "
                      "VALUES (?, ?, ?, ?, ?, 'UC', 'ARTSC')", (f"u{i}", trunc, first, last, f"{first} {last}"))

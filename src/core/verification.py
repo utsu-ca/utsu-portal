@@ -5,13 +5,13 @@ import sqlite3
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from utsu_core.std.csv_safe import open_csv
-from utsu_core.services.roster import (
+from core.std.csv_safe import open_csv
+from core.services.roster import (
     FUZZY_FLAG, FUZZY_THRESHOLD, MAX_CANDIDATES, METHOD_FUZZY_NAME, METHOD_NAME,
     division_of, first_name_similarity, is_uoft_email,
 )
-from utsu_core.std.parsing_utils import get_trunc_id
-from utsu_core.std.utils import clean_text, normalize_case
+from core.std.parsing_utils import get_trunc_id
+from core.std.utils import clean_text, normalize_case
 
 logger = logging.getLogger(__name__)
 

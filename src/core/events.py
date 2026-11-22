@@ -7,7 +7,7 @@ import logging
 from collections import defaultdict
 from typing import AsyncIterator, Awaitable, Callable
 
-log = logging.getLogger("utsu_core.events")
+log = logging.getLogger("core.events")
 KEEPALIVE = 15
 
 

@@ -43,7 +43,8 @@ services:
         - action: restart
           path: ./src
           ignore:
-            - core/utsu_core/static/
+            - core/static/
+            - "**/frontend/"
             - "**/__pycache__/"
         - action: rebuild
           path: ./pyproject.toml
@@ -65,9 +66,14 @@ services:
   web:
     build:
       context: .
-      dockerfile: web/Dockerfile.dev
+      dockerfile: src/core/frontend/Dockerfile.dev
     environment:
       PORTAL_DEV_PROXY: http://portal:8080
+    volumes:
+      # vite.config.js resolves core and program frontends from src/ and the WFNI weights from data/, so mount the
+      # repository's source tree where it expects it. Edits show up without a rebuild.
+      - ./src:/repo/src:ro
+      - ./data:/repo/data:ro
     ports:
       - "127.0.0.1:${PORTAL_WEB_PORT:-5173}:5173"
     depends_on:
@@ -80,24 +86,12 @@ services:
       retries: 10
     develop:
       watch:
-        - action: sync
-          path: ./web
-          target: /app
-          initial_sync: true
-          ignore:
-            - node_modules/
-            - package.json
-            - package-lock.json
-            - Dockerfile.dev
-            - ".env*"
         - action: rebuild
-          path: ./web/package.json
+          path: ./src/core/frontend/package.json
         - action: rebuild
-          path: ./web/package-lock.json
+          path: ./src/core/frontend/package-lock.json
         - action: rebuild
-          path: ./web/Dockerfile.dev
-        - action: rebuild
-          path: ./data/wfni_weights.csv
+          path: ./src/core/frontend/Dockerfile.dev
 
   jaeger:
     image: jaegertracing/jaeger:2.9.0

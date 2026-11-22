@@ -30,7 +30,7 @@ def role_catalogue_for(manifests: Iterable[PluginManifest]) -> dict[str, str]:
 
 
 def _default_catalogue() -> dict[str, str]:
-    manifest = resources.files("utsu_core").joinpath("plugin_manifests/builtin.json")
+    manifest = resources.files("core").joinpath("plugin_manifests/builtin.json")
     try:
         value: object = json.loads(manifest.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:

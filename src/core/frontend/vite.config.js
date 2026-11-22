@@ -15,13 +15,13 @@ import {
 
 const here = path => fileURLToPath(new URL(path, import.meta.url));
 const backend = process.env.PORTAL_DEV_PROXY || "http://localhost:8000";
-const weightsFile = here("../data/wfni_weights.csv");
+const weightsFile = here("../../../data/wfni_weights.csv");
 const weightsModule = "\0virtual:wfni-weights";
 const programModuleId = "virtual:portal-programs";
 const resolvedProgramModuleId = `\0${programModuleId}`;
 
-// The build is committed to src/core/utsu_core/static so that `pip install` and the Docker image need no Node.
-// Rebuild with `npm run build` in web/ after changing anything under web/.
+// The build is committed to src/core/static so that `pip install` and the Docker image need no Node.
+// Rebuild with `npm run build` in src/core/frontend/ after changing anything under it.
 export default defineConfig(({ mode }) => {
   const requestedComposition = process.env.PORTAL_FRONTEND_COMPOSITION;
   if (["core-only", "selected"].includes(mode) && requestedComposition && requestedComposition !== mode) {
@@ -31,7 +31,7 @@ export default defineConfig(({ mode }) => {
     requestedComposition ?? (["core-only", "selected"].includes(mode) ? mode : "full"),
     process.env.PORTAL_FRONTEND_PROGRAMS,
   );
-  const fullOutputDirectory = here("../src/core/utsu_core/static");
+  const fullOutputDirectory = here("../static");
   const externalDirectories = externalContributionDirectories(composition.programs);
   const standaloneModules = standaloneModuleEntries(composition.programs);
   const input = {

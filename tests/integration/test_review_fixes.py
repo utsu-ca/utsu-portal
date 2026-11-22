@@ -11,16 +11,16 @@ import pytest
 from test_agm import students_db
 from test_mail import SETTINGS
 from test_sap import LC_ROW, fill_sheet, form_csv as sap_form, students_db as sap_students
-from utsu_core import importing_data
-from utsu_core.programs.agm import program as agm
-from utsu_core.programs.sap import program as sap, wfni
-from utsu_core.mail.campaign import Prepared, send_all
-from utsu_core.mail.notices import DIVISION_FIELD, NUMBER_FIELD, diagnose
-from utsu_core.mail.templates import RenderedMessage
-from utsu_core.mail.transport import SmtpSender
-from utsu_core.std.utils import absfile
-from utsu_core.resources import package_text
-from utsu_core.verification import construct_lookup_tables
+from core import importing_data
+from core.programs.agm import program as agm
+from core.programs.sap import program as sap, wfni
+from core.mail.campaign import Prepared, send_all
+from core.mail.notices import DIVISION_FIELD, NUMBER_FIELD, diagnose
+from core.mail.templates import RenderedMessage
+from core.mail.transport import SmtpSender
+from core.std.utils import absfile
+from core.resources import package_text
+from core.verification import construct_lookup_tables
 
 ROSTER_HEADER = "First Name,Last Name,Truncated Student Number,Faculty,Division\n"
 
@@ -207,7 +207,7 @@ def test_send_survives_a_failed_reconnect(tmp_path):
         def _connect(self):
             raise OSError("network down")
 
-    import utsu_core.mail.campaign as campaign
+    import core.mail.campaign as campaign
     original, campaign.SmtpSender = campaign.SmtpSender, Sender
     try:
         items = [Prepared(f"x{i}@b.ca", RenderedMessage("s", "t")) for i in range(3)]
@@ -219,7 +219,7 @@ def test_send_survives_a_failed_reconnect(tmp_path):
 
 def test_diagnose_asks_for_what_a_shared_name_still_needs():
     conn = sqlite3.connect(":memory:")
-    conn.executescript(package_text("utsu_core", "schema/uoft_data.sql"))
+    conn.executescript(package_text("core", "schema/uoft_data.sql"))
     conn.executemany("INSERT INTO uoft_data (uuid, trunc_id, first_name, last_name, full_name, division, faculty) "
                      "VALUES (?, 1111, 'Sam', 'Lee', 'Sam Lee', ?, 'ARTSC')", [("a", "UC"), ("b", "UC")])
     cur = conn.cursor()

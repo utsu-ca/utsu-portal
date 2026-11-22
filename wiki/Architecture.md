@@ -7,7 +7,7 @@
 
 | Package | Module | Responsibility |
 |---|---|---|
-| `utsu_core` | `spec.py` | `ProgramSpec`: the declarative description of a program (form lookup table, table and schema, identity columns, key/rank, hooks) |
+| `core` | `spec.py` | `ProgramSpec`: the declarative description of a program (form lookup table, table and schema, identity columns, key/rank, hooks) |
 | | `pipeline.py` | `Run`: the engine that runs any `ProgramSpec` (read, verify, remembered verification, selection, saving, statuses, alerts, run counts) |
 | | `importing_data.py` | Roster CSV → validated rows → `uoft_data` in one transaction (schema in `schema/uoft_data.sql`) |
 | | `verification.py` | `decide` / `match_students` (the matching rules); `setup_reader`; `is_uoft_email`; `truncated_numbers` |
@@ -17,7 +17,7 @@
 | | `senate/` | `program.py` (spec, `verify_senators`), `seating.py` (seat assignment), `schema.sql` |
 | | `sap/` | `program.py` (spec, batches, reviews, decisions), `wfni.py` (WFNI scoring), `schema.sql` |
 | | `agm/` | `program.py` (spec, RSVP processing, lists, verification report), `schema.sql` |
-| `utsu_core.std` | `utils.py` | ASCII cleaning, typed ids, project-root paths |
+| `core.std` | `utils.py` | ASCII cleaning, typed ids, project-root paths |
 | | `database.py` | Connection, consistent backups |
 | | `csv_safe.py` | Encoding-tolerant reading, formula-safe writing (`write_rows`) |
 | | `parsing_utils.py` | Student-number and division helpers |
@@ -26,8 +26,8 @@
 | | `notices.py` | Builds recipient files for rejections and more-info requests |
 
 The shared batch-processing engine does not import the program processors, and a processor does not import another
-program (`tests/test_programs.py` checks both). They are all distributed in the `utsu_core` package.
-The portal's HTTP modules and services also live under `utsu_core`.
+program (`tests/test_programs.py` checks both). They are all distributed in the `core` package.
+The portal's HTTP modules and services also live under `core`.
 
 ## Data flow
 
@@ -45,13 +45,13 @@ flowchart TD
     I --> DB[(SQLite tables)]
     I --> O[CSV / JSON outputs]
     O --> SEAT[seating.run_seating]
-    O --> MAIL[utsu_core.mail]
+    O --> MAIL[core.mail]
 ```
 
 ## The common per-program pipeline
 
-A program is declared as a `ProgramSpec` (`utsu_core/spec.py`) in its `program.py`, and the shared engine in
-`utsu_core/pipeline.py` (the `Run` class: `Run.start`, `verify`, `select`, `replace_all`, `settle`, `summary`)
+A program is declared as a `ProgramSpec` (`core/spec.py`) in its `program.py`, and the shared engine in
+`core/pipeline.py` (the `Run` class: `Run.start`, `verify`, `select`, `replace_all`, `settle`, `summary`)
 runs it, so the three programs cannot drift apart. What a program supplies itself are hooks: `build_row` (a form row →
 a row), `annotate` (what else it records about a verification), `veto` (a rule that overrides the roster, e.g. the AGM's
 email rule), `prepare` (stored rows that compete, for SABP) and what it writes afterwards. Every run reads the **full**
@@ -79,7 +79,7 @@ export:
 - **ASCII normalization** makes matching tolerant of accents and look-alike characters (documented, deliberate).
 - **Config in a project-root-relative world.** `absfile` resolves the editable data (`data/`, `templates/`, `secrets/`)
   from the folder holding `pyproject.toml` (or an enclosing `src` folder), which is why an editable install is required.
-  SQL schemas are not part of that: they ship inside their package and are read through `utsu_core.resources`.
+  SQL schemas are not part of that: they ship inside their package and are read through `core.resources`.
 - **Fail-safe outputs.** Anything a person opens in a spreadsheet goes through `SafeDictWriter` / `SafeWriter`.
 - **Human in the loop** at the high-impact points: alerts, reviewer sheets, decisions, and the `send`
   confirmation for email.

@@ -4,9 +4,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from test_portal import activate, login, register
-from utsu_core import create_app
-from utsu_core.mailer import Mailer, OutboxMailer
-from utsu_core.settings import Settings
+from core import create_app
+from core.mailer import Mailer, OutboxMailer
+from core.settings import Settings
 
 
 @pytest.mark.parametrize(("program", "form_id"), [

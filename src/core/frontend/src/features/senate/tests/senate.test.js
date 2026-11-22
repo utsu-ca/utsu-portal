@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import SenateAdminView from "../../../../../src/senate/frontend/views/SenateAdminView.svelte";
-import SenatePublicView from "../../../../../src/senate/frontend/views/SenatePublicView.svelte";
+import SenateAdminView from "../../../../../../senate/frontend/views/SenateAdminView.svelte";
+import SenatePublicView from "../../../../../../senate/frontend/views/SenatePublicView.svelte";
 
 vi.mock("@utsu/portal", async importOriginal => ({ ...(await importOriginal()), api: vi.fn(), downloadReport: vi.fn() }));
 import { api } from "@utsu/portal";

@@ -7,7 +7,7 @@
 
 | # | Severity | File | Lines | Finding | Confidence |
 |---|---|---|---|---|---|
-| 1 | 🟠 HIGH | [src/utsu_core/programs/agm/verify.py](src/utsu_core/programs/agm/verify.py) | 84–90, 97–111 | When AGM verification mode is `auto`, submitting any decodable face and ID images grants access without identity or liveness verification. This bypasses the ID-verification gate for online registrants. | 9/10 |
+| 1 | 🟠 HIGH | [src/core/programs/agm/verify.py](src/core/programs/agm/verify.py) | 84–90, 97–111 | When AGM verification mode is `auto`, submitting any decodable face and ID images grants access without identity or liveness verification. This bypasses the ID-verification gate for online registrants. | 9/10 |
 | 2 | 🟡 MEDIUM | [deploy/k8s/portal.yaml](deploy/k8s/portal.yaml), [deploy/k8s/auth.yaml](deploy/k8s/auth.yaml), [deploy/k8s/maintenance-cronjob.yaml](deploy/k8s/maintenance-cronjob.yaml) | 16, 16, 22 | The manifests use the mutable `:latest` image tag. A modified image published under that tag can run with mounted production secrets. The manifests comment that production deployments should pin by digest, but do not enforce it. | 9/10 |
 
 ### Recommendations
@@ -19,8 +19,8 @@
 
 | # | Severity | File | Lines | Finding | Confidence |
 |---|---|---|---|---|---|
-| 1 | HIGH | [src/utsu_core/programs/voting/plugin.py](src/utsu_core/programs/voting/plugin.py) | 286–315, 417–443 | Ballot tallying snapshots votes before storing the immutable result record, while an in-flight cast can write its vote, check the still-unrecorded ballot, and return success. If those operations interleave, the published record can omit an acknowledged vote. The closing grace period does not synchronize in-flight casts. | High |
-| 2 | MEDIUM | [src/utsu_core/static/index.html](src/utsu_core/static/index.html), [web/src/lib/views.js](web/src/lib/views.js), [Dockerfile](Dockerfile) | 3; 7; 14 | The source registers the admin content editor, but the committed static entrypoint still loads an older bundle. Since the Docker image copies the committed static assets without building the web client, deployments can omit the editor. | High |
+| 1 | HIGH | [src/core/programs/voting/plugin.py](src/core/programs/voting/plugin.py) | 286–315, 417–443 | Ballot tallying snapshots votes before storing the immutable result record, while an in-flight cast can write its vote, check the still-unrecorded ballot, and return success. If those operations interleave, the published record can omit an acknowledged vote. The closing grace period does not synchronize in-flight casts. | High |
+| 2 | MEDIUM | [src/core/static/index.html](src/core/static/index.html), [src/core/frontend/src/lib/views.js](src/core/frontend/src/lib/views.js), [Dockerfile](Dockerfile) | 3; 7; 14 | The source registers the admin content editor, but the committed static entrypoint still loads an older bundle. Since the Docker image copies the committed static assets without building the web client, deployments can omit the editor. | High |
 
 ### Recommendations
 

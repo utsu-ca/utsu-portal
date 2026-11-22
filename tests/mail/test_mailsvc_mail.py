@@ -8,9 +8,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import Enum as SQLEnum, MetaData, create_engine
 
-from utsu_core.mailer import Mailer, OutboxMailer
-from utsu_core.mailsvc import EmailRecord, EmailStatus, MailModule
-from utsu_core.ratelimit import RateLimiter
+from core.mailer import Mailer, OutboxMailer
+from core.mailsvc import EmailRecord, EmailStatus, MailModule
+from core.ratelimit import RateLimiter
 
 
 TOKEN = "service-token-for-mail-tests"

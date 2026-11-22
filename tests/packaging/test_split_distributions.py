@@ -12,7 +12,7 @@ from zipfile import ZipFile
 import pytest
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location("build_split_distributions", ROOT / "tools/build_split_distributions.py")
 assert spec is not None and spec.loader is not None
 build_split_distributions = importlib.util.module_from_spec(spec)
@@ -47,7 +47,7 @@ def test_split_cli_rejects_unknown_flag(tmp_path):
 
 def test_split_build_rejects_legacy_program_before_building(tmp_path, monkeypatch):
     root = tmp_path / "source"
-    manifest = root / "src/core/utsu_core/plugin_manifests/builtin.json"
+    manifest = root / "src/core/plugin_manifests/builtin.json"
     manifest.parent.mkdir(parents=True)
     (root / "pyproject.toml").write_text('[project]\nversion = "1.0"\n', encoding="utf-8")
     manifest.write_text(json.dumps({"plugins": [{"id": "example", "kind": "program"}]}), encoding="utf-8")
@@ -62,7 +62,7 @@ def test_split_build_rejects_legacy_program_before_building(tmp_path, monkeypatc
 
 def test_split_build_rejects_full_frontend_as_core_bundle(tmp_path):
     with pytest.raises(ValueError, match="must not be the full portal bundle"):
-        build_split_distributions.build("999999.0", tmp_path, ROOT / "src/core/utsu_core/static")
+        build_split_distributions.build("999999.0", tmp_path, ROOT / "src/core/static")
     assert not list(tmp_path.iterdir())
 
 
@@ -77,11 +77,11 @@ def test_split_build_rejects_missing_frontend_assets(tmp_path):
 
 def test_split_build_rejects_overlapping_wheels_without_publishing(tmp_path, monkeypatch):
     root = tmp_path / "source"
-    manifest = root / "src/core/utsu_core/plugin_manifests/builtin.json"
+    manifest = root / "src/core/plugin_manifests/builtin.json"
     manifest.parent.mkdir(parents=True)
     (root / "src/example").mkdir()
     (root / "src/branding").mkdir()
-    full_static = root / "src/core/utsu_core/static"
+    full_static = root / "src/core/static"
     make_frontend(full_static, "full", full=True)
     core_static = tmp_path / "core-static"
     make_frontend(core_static, "core")
@@ -127,10 +127,10 @@ def test_split_wheels_have_separate_packages_and_discoverable_manifests(tmp_path
             metadata_file = next(name for name in files if name.endswith(".dist-info/METADATA"))
             metadata = Parser().parsestr(wheel.read(metadata_file).decode())
             if metadata["Name"] == "utsu-core":
-                catalogue = json.loads(wheel.read("utsu_core/plugin_manifests/builtin.json"))
+                catalogue = json.loads(wheel.read("core/plugin_manifests/builtin.json"))
                 assert not any(item.get("kind") == "program" for item in catalogue["plugins"])
-                assert b"core-only frontend" in wheel.read("utsu_core/static/index.html")
-                assert "utsu_core/static/checkin.html" not in files
+                assert b"core-only frontend" in wheel.read("core/static/index.html")
+                assert "core/static/checkin.html" not in files
             elif metadata["Name"] == "utsu-portal":
                 assert all(".dist-info/" in name for name in files)
                 requirements = metadata.get_all("Requires-Dist")
@@ -162,11 +162,11 @@ def test_split_wheels_have_separate_packages_and_discoverable_manifests(tmp_path
 import sys
 from pathlib import Path
 sys.path[:0] = sys.argv[1:3]
-import utsu_core
-assert Path(utsu_core.__file__).is_relative_to(Path(sys.argv[1]))
-from utsu_core import create_app
-from utsu_core.settings import Settings
-from utsu_core.plugin_host import discover_manifests
+import core
+assert Path(core.__file__).is_relative_to(Path(sys.argv[1]))
+from core import create_app
+from core.settings import Settings
+from core.plugin_host import discover_manifests
 from fastapi.testclient import TestClient
 assert {'agm', 'agm_verify', 'sap', 'clubs', 'senate', 'discussion', 'voting'} <= discover_manifests().keys()
 create_app(Settings(secret='s' * 32, api_only=True))
@@ -182,7 +182,7 @@ assert 'id="app"' in TestClient(create_app(Settings(secret='s' * 32))).get('/').
     branding = tmp_path / "branding"
     branding.mkdir()
     (branding / "theme.json").write_text("{}", encoding="utf-8")
-    core_wheel = next(artifact for artifact in artifacts if artifact.name.startswith("utsu_core-"))
+    core_wheel = next(artifact for artifact in artifacts if artifact.name.startswith("core-"))
     subprocess.run(
         [sys.executable, "-m", "pip", "install", "--no-index", "--no-deps", "--target", str(core_only),
          str(core_wheel)],
@@ -192,12 +192,12 @@ assert 'id="app"' in TestClient(create_app(Settings(secret='s' * 32))).get('/').
 import sys
 from pathlib import Path
 sys.path[:0] = sys.argv[1:3]
-import utsu_core
-assert Path(utsu_core.__file__).is_relative_to(Path(sys.argv[1]))
-from utsu_core import create_app
-from utsu_core.crypto import Crypter
-from utsu_core.settings import Settings
-from utsu_core.store import MemoryStore
+import core
+assert Path(core.__file__).is_relative_to(Path(sys.argv[1]))
+from core import create_app
+from core.crypto import Crypter
+from core.settings import Settings
+from core.store import MemoryStore
 from fastapi.testclient import TestClient
 store = MemoryStore()
 secret = 's' * 32

@@ -7,7 +7,7 @@ when `PORTAL_STORE=firestore`.
 ## Supported entry points
 
 The root [Dockerfile](../Dockerfile) is the one supported image for the portal and authentication service.
-`PORTAL_APP` selects `utsu_core:create_app` (default) or `utsu_core.authsvc:create_auth_app`. Both use the shared
+`PORTAL_APP` selects `core:create_app` (default) or `core.authsvc:create_auth_app`. Both use the shared
 bootstrap, `/healthz` for liveness, and `/readyz` for readiness. `/docs` is deliberately disabled.
 
 The root [Compose configuration](../docker-compose.yml) runs a single portal application with PostgreSQL and Redis:
@@ -156,7 +156,7 @@ With the Compose deployment:
 
    ```sh
    docker compose --env-file secrets/dev.env -f docker-compose.yml -f docker-compose-storage.yml \
-     run --rm receipt-maintenance python -m utsu_core.receipt_maintenance --migrate
+     run --rm receipt-maintenance python -m core.receipt_maintenance --migrate
    ```
 
 4. After checking the report, testing the remote and backing up the hot directory/database, set
@@ -183,7 +183,7 @@ Interrupted writes retain conservative reservations instead of expiring them uns
 rebuilding an affected owner's quota:
 
 ```sh
-python -m utsu_core.receipt_maintenance --reconcile-owner user:UUID --quota-scope all
+python -m core.receipt_maintenance --reconcile-owner user:UUID --quota-scope all
 ```
 
 Use `club:ID` for clubs. For split deployments, run with the portal environment and `--quota-scope portal`, then
@@ -208,8 +208,8 @@ durable. Realtime publish failures are logged, never fail the write. The rate li
 attempt limits still apply); `/readyz` reports Redis health.
 
 ## Standalone authentication service
-The auth API runs independently of the portal: `PORTAL_APP=utsu_core.authsvc:create_auth_app` (same image) or
-`uvicorn --factory utsu_core.authsvc:create_auth_app`. It owns accounts, users, OTPs, identity-verification review, the
+The auth API runs independently of the portal: `PORTAL_APP=core.authsvc:create_auth_app` (same image) or
+`uvicorn --factory core.authsvc:create_auth_app`. It owns accounts, users, OTPs, identity-verification review, the
 session-signing key, its own store and audit log (`/api/admin/auth-audit`).
 
 | | Auth service | Portal (`PORTAL_AUTH_URL` set) |
@@ -241,13 +241,13 @@ metadata before importing implementations, so disabled program modules are not l
 removed from the grantable/effective role catalogue, but existing stored grants are retained; retained-data
 encryption policies also remain active independently of the allowlist. The default bundled frontend contains all
 program code, while its navigation uses `GET /api/plugins` to hide disabled actions. For a smaller browser build,
-use `npm run build:core` or `PORTAL_FRONTEND_PROGRAMS=clubs npm run build:subset` in `web/`, then point
+use `npm run build:core` or `PORTAL_FRONTEND_PROGRAMS=clubs npm run build:subset` in `src/core/frontend/`, then point
 `PORTAL_STATIC_DIR` at the resulting directory. Select frontend contributions that match the backend allowlist;
 an empty `PORTAL_ENABLED_PLUGINS` selects no programs, and AGM verification shares the AGM contribution.
 The portal warns if an enabled program declaring `"frontend": true` is missing from its frontend build. List external
 frontend packages in `PORTAL_FRONTEND_MANIFEST` at build time to include them in the composition.
 Core-only UI deployments without the default branding package also
-need `PORTAL_BRANDING_DIR`. See [frontend builds](../web/README.md) for available IDs and dependency requirements.
+need `PORTAL_BRANDING_DIR`. See [frontend builds](../src/core/frontend/README.md) for available IDs and dependency requirements.
 Changing the allowlist or static directory requires an application restart.
 
 Typed program packages may declare their own configuration keys in their manifest. Supply values as a JSON
@@ -317,7 +317,7 @@ publish/unpublish, submission edits vs. admin decisions, OTP attempt counting an
 
 ## Auth audit ledger: monthly tables, checkpoints, anchoring
 
-The identity service (`utsu_core.authsvc`) records everything in a tamper-evident log. Design choices versus a "hash the whole DB nightly / log every query" approach, which is expensive and bloats the DB:
+The identity service (`core.authsvc`) records everything in a tamper-evident log. Design choices versus a "hash the whole DB nightly / log every query" approach, which is expensive and bloats the DB:
 
 - **Monthly tables** `audit_YYYY_MM`; one HMAC hash chain spans all months. Registry: `audit_months` (hot → archived → dropped).
 - **DB access is audited per request**, not per query: with `PORTAL_AUDIT_DB_ACCESS=1` (always on in the auth service) one `db.access` entry lists the requester, collections, ops, and capped ids (never values). All state changes carry redacted, compressed, encrypted before/after snapshots, so the log fully reconstructs history.
@@ -342,7 +342,7 @@ The identity service (`utsu_core.authsvc`) records everything in a tamper-eviden
   so discussion and elections roles can be granted and projected.
 - **Archive after ~90 days**: a month is verified, gzipped into `audit_archive` (sha256, Merkle root, boundary hashes). **Drop after ~180 days** only if the archive re-verifies and an anchored checkpoint covers it. The chain stays verifiable after a drop.
 - **Weekly verify** walks the hot chain, checkpoint chain/roots, and archive checksums; results go to `audit_checks` and the log.
-- **Scheduling**: `python -m utsu_core.authsvc maintain [--force]` (k8s `deploy/k8s/maintenance-cronjob.yaml`, Cloud Scheduler, or `POST /api/admin/audit/maintenance/run`). Jobs claim themselves with optimistic locking, so duplicates are safe.
+- **Scheduling**: `python -m core.authsvc maintain [--force]` (k8s `deploy/k8s/maintenance-cronjob.yaml`, Cloud Scheduler, or `POST /api/admin/audit/maintenance/run`). Jobs claim themselves with optimistic locking, so duplicates are safe.
 - Admin API: `/api/admin/audit/{verify,checkpoints,checks,tables,archive/{month},maintenance/run}`.
   Maintenance is intentionally admin-only because it archives and drops retained log data; auditor access is read-only.
 

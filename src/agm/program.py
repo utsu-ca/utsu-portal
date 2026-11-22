@@ -15,13 +15,13 @@ import re
 import sqlite3
 from pathlib import Path
 
-from utsu_core.pipeline import Run, read_rows, verify_rows
-from utsu_core.selection import select_current
-from utsu_core.spec import ProgramSpec
-from utsu_core.verification import (MAX_CANDIDATES, METHOD_FUZZY_NAME, METHOD_NAME, Match, is_uoft_email,
+from core.pipeline import Run, read_rows, verify_rows
+from core.selection import select_current
+from core.spec import ProgramSpec
+from core.verification import (MAX_CANDIDATES, METHOD_FUZZY_NAME, METHOD_NAME, Match, is_uoft_email,
                                     truncated_numbers)
-from utsu_core.std.csv_safe import check_writable, write_rows
-from utsu_core.std.utils import (UOFT_MAIL_DOMAIN, absfile, application_uuid_for, normalize_case, normalize_uoft_email,
+from core.std.csv_safe import check_writable, write_rows
+from core.std.utils import (UOFT_MAIL_DOMAIN, absfile, application_uuid_for, normalize_case, normalize_uoft_email,
                             student_uuid_for, EMAIL_FLAGS)
 
 logger = logging.getLogger(__name__)
@@ -234,7 +234,7 @@ def fuzzy_review_rows(rsvps: list[dict]) -> list[dict]:
     first) with `selected` marking the one it was verified as. An RSVP that could not be decided has none selected.
     The last two columns are left empty for the reviewer.
 
-    >>> from utsu_core.verification import Candidate
+    >>> from core.verification import Candidate
     >>> c = Candidate("u1", "Ann Marie Lee", "xxxxx3161x", "UC", 1.0)
     >>> row, = fuzzy_review_rows([{"uuid": "a", "uoft_uuid": "u1", "name_candidates": (c,), "status": "verified"}])
     >>> row["match1_name"], row["match1_selected"], row["match2_name"], row["reviewer_decision"]

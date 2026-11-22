@@ -28,7 +28,7 @@ User-confirmed decisions:
 
 Nothing user-visible existed:
 
-- `utsu_core.contracts` has a placeholder `MessagingService` (`list_messages`, `post_message`) and
+- `core.contracts` has a placeholder `MessagingService` (`list_messages`, `post_message`) and
   `RegistrationContext.register_thread_type`, but the host rejects thread registrations and the `messaging`
   capability (`CapabilityUnavailable` / "requires unavailable core services").
 - No collections, routes, streams or UI for messages exist.
@@ -126,7 +126,7 @@ Authorization is re-evaluated on every request and every streamed batch.
 
 ### Frontend
 
-A core fetch-SSE reader (`web/src/lib/stream.js`) and a core `ThreadPanel.svelte`: message log
+A core fetch-SSE reader (`src/core/frontend/src/lib/stream.js`) and a core `ThreadPanel.svelte`: message log
 (`role="log"`), inline post errors, staff internal-note toggle and redact control, reconnect with backoff.
 No toasts, pop-ups or modal alerts.
 
@@ -288,7 +288,7 @@ plus a `ThreadPanel` on the record page. Nothing in core has to change.
 ### Differences from the plan
 
 - The ballot topic kind is `voting-ballot`, because topic kinds are namespaced to the registering plug-in. Its
-  panel is `ballot`. The frontend maps panel names to lazily loaded components in `web/src/lib/panels.js`, so the
+  panel is `ballot`. The frontend maps panel names to lazily loaded components in `src/core/frontend/src/lib/panels.js`, so the
   discussion views never import the voting plug-in.
 - `DiscussionService` also provides `boards()` and `can_read()`. Voting uses `can_read()` so that anyone who
   can read a ballot's topic can also read the ballot.
@@ -303,7 +303,7 @@ plus a `ThreadPanel` on the record page. Nothing in core has to change.
   provided service) still defaults to `sealed`.
 - Breaking the glass on an `open` ballot needs no reason (the roll view is still audited). Only `sealed` ballots
   require a reason of at least 10 characters and add an entry to the public `unsealed` list.
-- Records can be checked in the browser. `web/src/features/voting/lib/record.js` recomputes the Merkle root
+- Records can be checked in the browser. `src/core/frontend/src/features/voting/lib/record.js` recomputes the Merkle root
   and digest from `GET .../record` with Web Crypto, then confirms the voter's receipt is one of the leaves.
 - A refresh control retrieves the latest ballot, count and anchor status without losing a secret ballot's
   one-time receipt. Browser verification checks record consistency; checking the external chain is a separate step.

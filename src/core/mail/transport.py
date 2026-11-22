@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from email.message import EmailMessage
 from email.utils import formataddr, make_msgid, formatdate
 
-from utsu_core.mail.recipients import valid_email
-from utsu_core.mail.templates import RenderedMessage
+from core.mail.recipients import valid_email
+from core.mail.templates import RenderedMessage
 
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 SECURITY_MODES = ("starttls", "ssl", "none")

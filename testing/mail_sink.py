@@ -8,7 +8,7 @@ Nothing is relayed anywhere. Standard library only.
 
 Point the portal (or authsvc/mailsvc) at it; codes and notices then show up in the inbox:
 
-    PORTAL_SMTP_URL=smtp://127.0.0.1:1025 PORTAL_MAIL_FROM=portal@example.local uvicorn utsu_core:create_app --factory
+    PORTAL_SMTP_URL=smtp://127.0.0.1:1025 PORTAL_MAIL_FROM=portal@example.local uvicorn core:create_app --factory
 
 The mail campaign tool can use it too with an `smtp` config of {"host": "127.0.0.1", "port": 1025, "security": "none"}.
 It listens on the same ports as Mailhog, so either can be used.

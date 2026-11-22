@@ -347,9 +347,9 @@ docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
 
 | Component | Location |
 |-----------|----------|
-| AuthSvc | `src/core/utsu_core/authsvc/__init__.py` |
-| RBAC Module | `src/core/utsu_core/authsvc/rbac.py` |
-| MailSvc | `src/core/utsu_core/mailsvc/__init__.py` |
+| AuthSvc | `src/core/authsvc/__init__.py` |
+| RBAC Module | `src/core/authsvc/rbac.py` |
+| MailSvc | `src/core/mailsvc/__init__.py` |
 | Docker Compose | `docker-compose.yml` |
 | NGINX Config | `nginx.conf` |
 | K8s AuthSvc | `deploy/k8s/authsvc.yaml` |
@@ -384,13 +384,13 @@ docker-compose ps | grep running | wc -l
 docker-compose logs > all-logs.txt
 
 # Find all TODO comments in code
-grep -r "TODO\|FIXME" src/core/utsu_core/
+grep -r "TODO\|FIXME" src/core/
 
 # Format Python code
-black src/core/utsu_core/
+black src/core/
 
 # Type check Python
-mypy src/core/utsu_core/ --ignore-missing-imports
+mypy src/core/ --ignore-missing-imports
 ```
 
 ---

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
-import Finance from "../../../../../src/sabp/frontend/views/Finance.svelte";
+import Finance from "../../../../../../sabp/frontend/views/Finance.svelte";
 
 vi.mock("@utsu/portal", async importOriginal => ({ ...(await importOriginal()), api: vi.fn(), downloadReport: vi.fn() }));
 import { api, downloadReport } from "@utsu/portal";

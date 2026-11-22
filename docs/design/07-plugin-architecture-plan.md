@@ -60,22 +60,22 @@ The previous extraction provides useful seams, but these still prevent genuine p
 
 | Current location | Coupling to remove |
 |---|---|
-| [app.py](../../src/core/utsu_core/app.py) | Imports every program and constructs fixed local/remote module tuples. |
-| [bootstrap.py](../../src/core/utsu_core/bootstrap.py) | Seeds all bundled forms before module configuration; serves the combined program asset bundle from core. |
-| [context.py](../../src/core/utsu_core/context.py) | Hard-coded program role catalogue; unrestricted settings/store/service dictionary handed to modules. |
-| [roles.py](../../src/core/utsu_core/modules/roles.py) | Request limits, validation and effective role handling depend on that global catalogue. |
-| [crypto.py](../../src/core/utsu_core/crypto.py) | Encryption metadata explicitly names AGM media, club receipts and SABP submission/banking fields. |
-| [settings.py](../../src/core/utsu_core/settings.py) | Contains AGM/Zoom, clubs and SABP configuration. |
-| [forms.py](../../src/core/utsu_core/modules/forms.py), [formdef.py](../../src/core/utsu_core/formdef.py), [submission policies](../../src/core/utsu_core/services/submissions.py) | Generic forms already live in core, but all bundled program form resources are seeded globally and programs read/write the shared submissions collection directly. |
-| [notices.py](../../src/core/utsu_core/modules/notices.py) | Fixed AGM/Senate/SABP form/role table. Its generic preview-hash/confirm/uncertain-delivery ledger is the starting point for core notifications. |
-| [mailer.py](../../src/core/utsu_core/mailer.py), [mail/](../../src/core/utsu_core/mail/), [mailsvc](../../src/core/utsu_core/mailsvc/__init__.py) | One SMTP transport, but no single core email contract: live mailers, the optional HTTP mail API and historical CSV/SQLite campaign/recipient tooling sit side by side, and live message text is inline in feature code. |
-| [events.py](../../src/core/utsu_core/events.py), [forms editor stream](../../src/core/utsu_core/modules/forms.py) | In-process or Redis event bus with best-effort publish. The forms editor SSE stream authenticates with the session token in the query string (`allow_query_token`), which must not be copied to applicant-facing streams. |
+| [app.py](../../src/core/app.py) | Imports every program and constructs fixed local/remote module tuples. |
+| [bootstrap.py](../../src/core/bootstrap.py) | Seeds all bundled forms before module configuration; serves the combined program asset bundle from core. |
+| [context.py](../../src/core/context.py) | Hard-coded program role catalogue; unrestricted settings/store/service dictionary handed to modules. |
+| [roles.py](../../src/core/modules/roles.py) | Request limits, validation and effective role handling depend on that global catalogue. |
+| [crypto.py](../../src/core/crypto.py) | Encryption metadata explicitly names AGM media, club receipts and SABP submission/banking fields. |
+| [settings.py](../../src/core/settings.py) | Contains AGM/Zoom, clubs and SABP configuration. |
+| [forms.py](../../src/core/modules/forms.py), [formdef.py](../../src/core/formdef.py), [submission policies](../../src/core/services/submissions.py) | Generic forms already live in core, but all bundled program form resources are seeded globally and programs read/write the shared submissions collection directly. |
+| [notices.py](../../src/core/modules/notices.py) | Fixed AGM/Senate/SABP form/role table. Its generic preview-hash/confirm/uncertain-delivery ledger is the starting point for core notifications. |
+| [mailer.py](../../src/core/mailer.py), [mail/](../../src/core/mail/), [mailsvc](../../src/core/mailsvc/__init__.py) | One SMTP transport, but no single core email contract: live mailers, the optional HTTP mail API and historical CSV/SQLite campaign/recipient tooling sit side by side, and live message text is inline in feature code. |
+| [events.py](../../src/core/events.py), [forms editor stream](../../src/core/modules/forms.py) | In-process or Redis event bus with best-effort publish. The forms editor SSE stream authenticates with the session token in the query string (`allow_query_token`), which must not be copied to applicant-facing streams. |
 | Backend and frontend source | No chat, message-thread or in-app notification feature exists yet. |
-| [filesvc](../../src/core/utsu_core/filesvc/__init__.py) | Separate storage abstraction, not the service currently used by live program uploads. Pylance references found only its own implementation/example usage. |
-| [App.svelte](../../web/src/App.svelte), [boot.js](../../web/src/lib/boot.js) | Shell mounts SABP banking status and interprets the SABP emailed-link hash. |
-| [menu.js](../../web/src/lib/menu.js), [views.js](../../web/src/lib/views.js), [content.js](../../web/src/lib/content.js) | Shared code names every program, action, view and public page. |
-| [ProgramPage.svelte](../../web/src/views/ProgramPage.svelte), [StatusView.svelte](../../web/src/views/StatusView.svelte), [AdminVerifications.svelte](../../web/src/views/AdminVerifications.svelte) | Generic-looking views contain Senate, SABP-history and AGM-specific branches. |
-| [Vite config](../../web/vite.config.js), [package manifest](../../pyproject.toml) | One backend distribution owns all programs, their resources and their generated frontend assets. |
+| [filesvc](../../src/core/filesvc/__init__.py) | Separate storage abstraction, not the service currently used by live program uploads. Pylance references found only its own implementation/example usage. |
+| [App.svelte](../../src/core/frontend/src/App.svelte), [boot.js](../../src/core/frontend/src/lib/boot.js) | Shell mounts SABP banking status and interprets the SABP emailed-link hash. |
+| [menu.js](../../src/core/frontend/src/lib/menu.js), [views.js](../../src/core/frontend/src/lib/views.js), [content.js](../../src/core/frontend/src/lib/content.js) | Shared code names every program, action, view and public page. |
+| [ProgramPage.svelte](../../src/core/frontend/src/views/ProgramPage.svelte), [StatusView.svelte](../../src/core/frontend/src/views/StatusView.svelte), [AdminVerifications.svelte](../../src/core/frontend/src/views/AdminVerifications.svelte) | Generic-looking views contain Senate, SABP-history and AGM-specific branches. |
+| [Vite config](../../src/core/frontend/vite.config.js), [package manifest](../../pyproject.toml) | One backend distribution owns all programs, their resources and their generated frontend assets. |
 
 ### Stage 0 baseline (before runtime implementation)
 
@@ -111,7 +111,7 @@ Proposed layout; package names below are distribution names, with underscore equ
 
 ```text
 packages/
-  core/                         # utsu-core; src/core/utsu_core/ — auth, identity, audit, files, forms,
+  core/                         # utsu-core; src/core/ — auth, identity, audit, files, forms,
                                 #   notifications, messaging, email
   plugins/
     agm/                        # utsu-plugin-agm
@@ -120,7 +120,7 @@ packages/
     clubs/                      # utsu-plugin-clubs
   portal/                       # utsu-portal: full-site composition and compiled web artifact
   legacy/                       # optional retained processing and temporary import compatibility
-web/                            # shared Svelte host/build tooling; not a program registry
+src/core/frontend/                            # shared Svelte host/build tooling; not a program registry
 tests/                          # cross-package and deployment integration tests
 ```
 
@@ -144,7 +144,7 @@ or build orchestrator unless the actual multi-package build requires it.
   attachments through the file service and SSE live updates.
 - **Email:** the single delivery service (current SMTP transport and test/outbox mailers), live message templates,
   a delivery ledger with explicit sent/failed/unknown semantics, and the optional HTTP mail API.
-- Generic infrastructure and a small, public, typed `utsu_core.contracts` surface.
+- Generic infrastructure and a small, public, typed `core.contracts` surface.
 - Shared frontend session/API/navigation/layout/theme primitives and core account/auth/audit/file UI, plus the
   forms, notification feed/preferences, thread panel and notice preview/send UI.
   Preserve existing surfaces; this extraction does not require inventing new audit or file-management screens.
@@ -362,7 +362,7 @@ component and the notice preview/send screen. The bell is a passive unread count
 SSE streams for applicants never put the long-lived session token in a URL. Stage 1 chooses one mechanism:
 a short-lived, purpose-scoped stream ticket from `IntegrityService`, or fetch-based streaming with an
 `Authorization` header. The existing forms editor stream may move to the same mechanism with a compatibility window.
-**Chosen:** fetch-based streaming with the `Authorization` header (`web/src/lib/stream.js`), used by the core
+**Chosen:** fetch-based streaming with the `Authorization` header (`src/core/frontend/src/lib/stream.js`), used by the core
 message stream. The forms editor stream still uses its query token and has not moved yet.
 
 The backend exposes a non-secret active plug-in/capability manifest. The host enables only matching contributions
@@ -392,7 +392,7 @@ Implement one coherent stage at a time; each stage must leave a runnable, tested
 | 0. Baseline | Snapshot current routes, role IDs, protection policies, form hashes, factory behavior and standalone assets. Inventory legacy helpers and external imports. Add boundary-focused tests, not speculative new product tests. | Record the actual current suites; no assumption that plan 06 counts still describe HEAD. |
 | 1. Contracts and host | Add versioned contracts, including forms, notification, messaging and email contracts, static descriptors, entry-point discovery, explicit allowlist, dependency validation and typed registration/lifecycle. Choose the SSE stream-authentication mechanism. Initially adapt existing modules. | Core-only startup; inactive factories not imported; missing deps/cycles/duplicate IDs/routes fail explicitly; ordering and startup-cleanup tests. **Implemented and validated:** static host metadata, legacy module loading, allowlist, API-only mode, form ownership and lifecycle. The typed runtime adapter and capability gates were added in stage 2. |
 | 2. Core boundaries | Register roles/settings/protection metadata; introduce typed core services and the compatible file adapter; remove program conditionals from platform implementation. | Split-auth recognizes declared roles without importing programs; old data decrypts and stays protected with owners disabled; file authorization/encryption/read-audit parity. **Complete:** static role, setting and protection declarations; active role grants filtered per composition without deleting stored grants; retained protection policies remain independent of enabled plug-ins; typed plug-ins get declared, scoped services, exclusive store collections, owner-bound file kinds, and explicit pre-import rejection for unimplemented future services. Legacy file reads/deletes now pass through authorization and audit adapters while retaining encrypted store shapes and existing routes. Validation: **487 backend tests passed**, `git diff --check` passed, and the Python wheel built successfully. |
-| 3. Core forms and email | Make forms owner-scoped and contribution-seeded; move submission contracts into `utsu_core.contracts`; move program form resources to their owners. Put live email behind one `EmailService` and delivery ledger; move live message text into templates. Replace the notices program table with registered notification types, preserving routes, preview hashes, ledger records and uncertainty handling. | **Complete and validated:** active plug-ins contribute their own form resources; all program submission reads and CAS updates use owner-scoped `FormsService`; direct form routes and notice types disappear when owners are disabled. Core routes no longer contain a fixed program-notice table. OTP, SABP banking re-verification and staff notices use templated `EmailService` delivery with sent/failed/unknown ledger outcomes; uncertain sends are not retried. Historical campaigns remain separate. Existing form IDs, submission shapes and SABP approval/review data remain unchanged; no general data migration was added. Validation: **490 backend tests passed**, wheel contents verified, and `git diff --check` passed. |
+| 3. Core forms and email | Make forms owner-scoped and contribution-seeded; move submission contracts into `core.contracts`; move program form resources to their owners. Put live email behind one `EmailService` and delivery ledger; move live message text into templates. Replace the notices program table with registered notification types, preserving routes, preview hashes, ledger records and uncertainty handling. | **Complete and validated:** active plug-ins contribute their own form resources; all program submission reads and CAS updates use owner-scoped `FormsService`; direct form routes and notice types disappear when owners are disabled. Core routes no longer contain a fixed program-notice table. OTP, SABP banking re-verification and staff notices use templated `EmailService` delivery with sent/failed/unknown ledger outcomes; uncertain sends are not retried. Historical campaigns remain separate. Existing form IDs, submission shapes and SABP approval/review data remain unchanged; no general data migration was added. Validation: **490 backend tests passed**, wheel contents verified, and `git diff --check` passed. |
 | 4. Frontend host seams | Add contribution registry/build manifest and core-only/full-portal profiles; adapt current views behind it; remove program imports/branches from shell code. | Disabled widgets/pages/API calls absent; deep links, session cleanup, banking failure UX, menus/sidecar/staff mode and standalone URLs preserved. |
 | 5. Program extraction | Move Senate first as an end-to-end reference, then clubs, AGM, and SABP. Move each one's Python, resources, frontend, config and tests together. Preserve algorithms, URLs and persisted IDs. | For each: wheel install outside checkout, run alone with its declared dependencies and in the full profile; prove enable/disable isolation and existing behavior. |
 | 6. Packaging/cutover | Move historical orchestration and mail campaign/recipient tooling out of core; package compiled profiles; update factory/profile config, Docker/Compose/Kubernetes, test setup and developer docs. | Clean core-only and full-portal installs work without source-path leakage or Node. Do not add general data migrations or compatibility import adapters; preserve existing SABP approval/review data and record shapes. |

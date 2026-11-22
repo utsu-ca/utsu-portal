@@ -1,10 +1,10 @@
 from fastapi.testclient import TestClient
 
 from test_portal import activate, setup_admin_and_user
-from utsu_core import create_app
-from utsu_core.mailer import OutboxMailer
-from utsu_core.settings import Settings
-from utsu_core.store import MemoryStore
+from core import create_app
+from core.mailer import OutboxMailer
+from core.settings import Settings
+from core.store import MemoryStore
 
 
 def test_admin_publishes_public_copy_with_revision_guard_and_audit():

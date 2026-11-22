@@ -4,13 +4,13 @@ import { fileURLToPath } from "node:url";
 
 const webRoot = path.dirname(fileURLToPath(import.meta.url));
 const builtins = [
-  { id: "agm", sourceDirectory: "../src/agm/frontend", menu: ["agmActions"], views: true, standalone: ["checkin"] },
-  { id: "clubs", sourceDirectory: "../src/clubs/frontend",
+  { id: "agm", sourceDirectory: "../../agm/frontend", menu: ["agmActions"], views: true, standalone: ["checkin"] },
+  { id: "clubs", sourceDirectory: "../../clubs/frontend",
     menu: ["financeActions", "registrationActions"], views: true },
-  { id: "discussion", sourceDirectory: "../src/chat/frontend", views: true },
-  { id: "sap", sourceDirectory: "../src/sabp/frontend", menu: ["bursaryActions"], views: true, standalone: ["finance"] },
-  { id: "senate", sourceDirectory: "../src/senate/frontend", menu: ["navigation"], views: true, publicViews: true },
-  { id: "voting", sourceDirectory: "../src/voting/frontend",
+  { id: "discussion", sourceDirectory: "../../chat/frontend", views: true },
+  { id: "sap", sourceDirectory: "../../sabp/frontend", menu: ["bursaryActions"], views: true, standalone: ["finance"] },
+  { id: "senate", sourceDirectory: "../../senate/frontend", menu: ["navigation"], views: true, publicViews: true },
+  { id: "voting", sourceDirectory: "../../voting/frontend",
     dependencies: ["discussion"], views: true, panels: true },
 ];
 

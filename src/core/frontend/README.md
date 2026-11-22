@@ -1,24 +1,24 @@
 # Frontend builds
 
-The default `npm run build` includes all program contributions and writes to the configured full static output (`src/core/utsu_core/static` in the current layout).
+The default `npm run build` includes all program contributions and writes to the configured full static output (`src/core/static` in the current layout).
 
 ## Compositions
 
 - `npm run build`: full build (default).
-- `npm run build:core`: core-only build, written to the ignored `web/.core-dist/`.
-- `PORTAL_FRONTEND_PROGRAMS=clubs npm run build:subset`: selected program build, written to the ignored `web/.subset-dist/`.
+- `npm run build:core`: core-only build, written to the ignored `src/core/frontend/.core-dist/`.
+- `PORTAL_FRONTEND_PROGRAMS=clubs npm run build:subset`: selected program build, written to the ignored `src/core/frontend/.subset-dist/`.
 
 `PORTAL_FRONTEND_PROGRAMS` is a comma-separated list of frontend contribution IDs: `agm`, `clubs`, `discussion`, `sap`, `senate`, and `voting`. IDs are case-sensitive; duplicates and unknown IDs are errors. Selection order does not change contribution order. Program dependencies must be selected explicitly: `voting` requires `discussion`, so `PORTAL_FRONTEND_PROGRAMS=discussion,voting` is valid and `PORTAL_FRONTEND_PROGRAMS=voting` is rejected. The `agm` contribution also contains the optional AGM-verification UI. Core services and views are always included and are not selectable program contributions.
 
 The equivalent explicit modes are `PORTAL_FRONTEND_COMPOSITION=full`, `core-only`, or `selected`. The selected mode requires `PORTAL_FRONTEND_PROGRAMS`; `npm run build:subset` selects that mode. Non-full builds use isolated output directories, and Vite rejects a non-full composition if its resolved output directory targets the full static output.
 
-To serve a subset without replacing the full bundle, point the backend's `PORTAL_STATIC_DIR` at `web/.subset-dist/` (or `web/.core-dist/`). Match the selected frontend contributions, including their dependencies, to the backend's enabled program configuration. The portal warns when an enabled program that declares a frontend contribution is missing from the build. With older backends that do not report frontend declarations, only known contributions can be checked. This alignment is operational, not an authorization boundary: the backend must continue enforcing access independently.
+To serve a subset without replacing the full bundle, point the backend's `PORTAL_STATIC_DIR` at `src/core/frontend/.subset-dist/` (or `src/core/frontend/.core-dist/`). Match the selected frontend contributions, including their dependencies, to the backend's enabled program configuration. The portal warns when an enabled program that declares a frontend contribution is missing from the build. With older backends that do not report frontend declarations, only known contributions can be checked. This alignment is operational, not an authorization boundary: the backend must continue enforcing access independently.
 
 Composition controls which frontend code is present at build time. Existing server-reported plug-in enablement still gates navigation actions and runtime behavior. The full build includes the AGM check-in and SAP finance standalone pages; core-only includes the portal and SSO pages, while selected builds include standalone program pages only for their selected programs.
 
 ## External frontend contributions
 
-Set `PORTAL_FRONTEND_MANIFEST` to a JSON file listing frontend contributions supplied by installed packages. Resolve the file path from the `web/` working directory; each contribution's directory is relative to the manifest. For example:
+Set `PORTAL_FRONTEND_MANIFEST` to a JSON file listing frontend contributions supplied by installed packages. Resolve the file path from the `src/core/frontend/` working directory; each contribution's directory is relative to the manifest. For example:
 
 ```json
 {

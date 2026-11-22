@@ -1,6 +1,6 @@
-# 03 Student Aid Bursary (SAP/SABP) module (`utsu_core/programs/sap`)
+# 03 Student Aid Bursary (SAP/SABP) module (`core/programs/sap`)
 
-Ports `utsu_core/programs/sap` (`wfni.py`, `merge_docx.py`, `export_banking.py`, `eft.py`, the scoring and decision logic
+Ports `core/programs/sap` (`wfni.py`, `merge_docx.py`, `export_banking.py`, `eft.py`, the scoring and decision logic
 of `program.py`). **Re-architected from batches to a review queue.** See also [00](00-overview.md) section 3
 (stateless compute) for the rules this module follows.
 

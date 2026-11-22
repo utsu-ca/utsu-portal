@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import BallotPanel from "../../../../../src/voting/frontend/components/BallotPanel.svelte";
-import ElectionsAdmin from "../../../../../src/voting/frontend/views/ElectionsAdmin.svelte";
+import BallotPanel from "../../../../../../voting/frontend/components/BallotPanel.svelte";
+import ElectionsAdmin from "../../../../../../voting/frontend/views/ElectionsAdmin.svelte";
 import { session } from "@utsu/portal";
 
 vi.mock("@utsu/portal", async importOriginal => ({ ...(await importOriginal()), api: vi.fn() }));

@@ -5,13 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from utsu_core.mail import campaign, transport
-from utsu_core.mail.notices import NAME_FIELD, NUMBER_FIELD, build_notices, diagnose, write_notices
-from utsu_core.mail.recipients import read_csv as read_csv_rows, read_sql, split_by_validity
-from utsu_core.mailer import SMTPMailer
-from utsu_core.resources import package_text, schema_dirs
-from utsu_core.mail.schema import schema_fields
-from utsu_core.mail.templates import (
+from core.mail import campaign, transport
+from core.mail.notices import NAME_FIELD, NUMBER_FIELD, build_notices, diagnose, write_notices
+from core.mail.recipients import read_csv as read_csv_rows, read_sql, split_by_validity
+from core.mailer import SMTPMailer
+from core.resources import package_text, schema_dirs
+from core.mail.schema import schema_fields
+from core.mail.templates import (
     RenderedMessage,
     Template,
     TemplateError,
@@ -21,9 +21,9 @@ from utsu_core.mail.templates import (
     load_template,
     parse_template,
 )
-from utsu_core.std.utils import student_uuid_for
+from core.std.utils import student_uuid_for
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 SETTINGS = transport.SmtpSettings(host="localhost", from_addr="elections@utsu.ca", from_name="UTSU", security="none", delay=0)
 
 
@@ -85,7 +85,7 @@ def test_notice_templates_are_tracked_and_use_known_fields():
 
 
 def test_schema_fields_reads_sql_files():
-    fields = schema_fields(schema_dirs("utsu_core", "utsu_core.programs"))
+    fields = schema_fields(schema_dirs("core", "core.programs"))
     assert "first_name" in fields["uoft_data"]
     assert {"senate_application", "student_aid", "agm_rsvp"} <= set(fields)  # every program's schema is found
 
@@ -248,7 +248,7 @@ def test_send_all_logs_and_resumes(monkeypatch, tmp_path):
 
 def make_uoft_db(path):
     conn = sqlite3.connect(path)
-    conn.executescript(package_text("utsu_core", "schema/uoft_data.sql"))
+    conn.executescript(package_text("core", "schema/uoft_data.sql"))
     conn.executemany(
         "INSERT INTO uoft_data (uuid, trunc_id, first_name, last_name, full_name, division, faculty) "
         "VALUES (?, ?, 'f', 'l', ?, 'UC', 'A&S')",

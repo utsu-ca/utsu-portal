@@ -13,12 +13,12 @@ from collections import defaultdict
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
 
-from utsu_core.contracts import FileKind, PluginManifest, PluginServices, RegistrationContext
-from utsu_core.pagination import PageOrder, paginate_store
-from utsu_core.permissions import PERM_CLUBS_FINANCE, PERM_CLUBS_MANAGE
-from utsu_core.security import clean_text
-from utsu_core.services.email import EmailDeliveryUnknown, EmailNotConfigured
-from utsu_core.services.receipt_storage import TORONTO, academic_year
+from core.contracts import FileKind, PluginManifest, PluginServices, RegistrationContext
+from core.pagination import PageOrder, paginate_store
+from core.permissions import PERM_CLUBS_FINANCE, PERM_CLUBS_MANAGE
+from core.security import clean_text
+from core.services.email import EmailDeliveryUnknown, EmailNotConfigured
+from core.services.receipt_storage import TORONTO, academic_year
 
 name = "clubs"
 ROLES = ("owner", "treasurer", "executive")

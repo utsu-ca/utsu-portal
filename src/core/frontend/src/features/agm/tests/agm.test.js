@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import AgmAdminView from "../../../../../src/agm/frontend/views/AgmAdminView.svelte";
-import AgmView from "../../../../../src/agm/frontend/views/AgmView.svelte";
-import AgmIdQueue from "../../../../../src/agm/frontend/views/AgmIdQueue.svelte";
+import AgmAdminView from "../../../../../../agm/frontend/views/AgmAdminView.svelte";
+import AgmView from "../../../../../../agm/frontend/views/AgmView.svelte";
+import AgmIdQueue from "../../../../../../agm/frontend/views/AgmIdQueue.svelte";
 
 vi.mock("@utsu/portal", async importOriginal => ({ ...(await importOriginal()), api: vi.fn(), downloadReport: vi.fn() }));
 import { api } from "@utsu/portal";

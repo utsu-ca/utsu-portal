@@ -11,7 +11,7 @@ Key Features:
 - Cloud-agnostic configuration via environment variables
 
 Usage:
-    from utsu_core.observability import setup_observability, get_tracer, get_logger
+    from core.observability import setup_observability, get_tracer, get_logger
     
     setup_observability(service_name="mailsvc")
     tracer = get_tracer(__name__)

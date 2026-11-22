@@ -5,7 +5,7 @@
       "id": "payments",
       "version": "0.1.0",
       "core_api_major": 1,
-      "factory": "utsu_core.modules.payments:PaymentsModule",
+      "factory": "core.modules.payments:PaymentsModule",
       "kind": "core",
       "auth_modes": ["local", "remote"],
       "settings": ["stripe_secret_key", "stripe_webhook_secret"],
@@ -28,7 +28,7 @@
       "id": "profile",
       "version": "0.1.0",
       "core_api_major": 1,
-      "factory": "utsu_core.modules.profile:ProfileModule",
+      "factory": "core.modules.profile:ProfileModule",
       "kind": "core",
       "auth_modes": ["local", "remote"],
       "settings": ["max_cheque_bytes"],
@@ -54,7 +54,7 @@
       "id": "sso",
       "version": "0.1.0",
       "core_api_major": 1,
-      "factory": "utsu_core.modules.sso:SSOModule",
+      "factory": "core.modules.sso:SSOModule",
       "kind": "core",
       "auth_modes": ["local", "remote"],
       "settings": ["sso_issuer"],
@@ -64,7 +64,7 @@
       "id": "auth",
       "version": "0.1.0",
       "core_api_major": 1,
-      "factory": "utsu_core.modules.auth:AuthModule",
+      "factory": "core.modules.auth:AuthModule",
       "kind": "core",
       "auth_modes": ["local"],
       "protection": {
@@ -78,7 +78,7 @@
       "id": "admin",
       "version": "0.1.0",
       "core_api_major": 1,
-      "factory": "utsu_core.modules.admin:AdminModule",
+      "factory": "core.modules.admin:AdminModule",
       "kind": "core",
       "auth_modes": ["local"],
       "order": 90
@@ -87,7 +87,7 @@
       "id": "forms",
       "version": "0.1.0",
       "core_api_major": 1,
-      "factory": "utsu_core.modules.forms:FormsModule",
+      "factory": "core.modules.forms:FormsModule",
       "kind": "core",
       "auth_modes": ["local", "remote"],
       "protection": {
@@ -102,7 +102,7 @@
       "id": "audit",
       "version": "0.1.0",
       "core_api_major": 1,
-      "factory": "utsu_core.modules.audit:AuditModule",
+      "factory": "core.modules.audit:AuditModule",
       "kind": "core",
       "auth_modes": ["local", "remote"],
       "order": 110
@@ -111,7 +111,7 @@
       "id": "roles",
       "version": "0.1.0",
       "core_api_major": 1,
-      "factory": "utsu_core.modules.roles:RolesModule",
+      "factory": "core.modules.roles:RolesModule",
       "kind": "core",
       "auth_modes": ["local"],
       "order": 120
@@ -278,7 +278,7 @@
       "id": "notices",
       "version": "0.1.0",
       "core_api_major": 1,
-      "factory": "utsu_core.modules.notices:NoticesModule",
+      "factory": "core.modules.notices:NoticesModule",
       "kind": "core",
       "order": 80
     },
@@ -286,7 +286,7 @@
       "id": "messaging",
       "version": "0.1.0",
       "core_api_major": 1,
-      "factory": "utsu_core.modules.messaging:MessagingModule",
+      "factory": "core.modules.messaging:MessagingModule",
       "kind": "core",
       "auth_modes": ["local", "remote"],
       "protection": {
@@ -298,7 +298,7 @@
       "id": "content",
       "version": "0.1.0",
       "core_api_major": 1,
-      "factory": "utsu_core.modules.content:ContentModule",
+      "factory": "core.modules.content:ContentModule",
       "kind": "core",
       "auth_modes": ["local", "remote"],
       "order": 76

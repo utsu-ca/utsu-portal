@@ -47,7 +47,7 @@ from .services.financial_access import FinancialAccessStore
 
 STATIC = Path(__file__).parent / "static"
 RATE_LIMITED = ("/api/auth/", "/api/recovery", "/sso/token", "/api/sso/authorize", "/mail/")
-log = logging.getLogger("utsu_core")
+log = logging.getLogger("core")
 
 
 class _RequestBodyTooLarge(Exception):

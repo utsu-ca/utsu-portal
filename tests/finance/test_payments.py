@@ -9,11 +9,11 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from utsu_core import create_app
-from utsu_core.crypto import PREFIX
-from utsu_core.mailer import OutboxMailer
-from utsu_core.settings import Settings
-from utsu_core.store import MemoryStore
+from core import create_app
+from core.crypto import PREFIX
+from core.mailer import OutboxMailer
+from core.settings import Settings
+from core.store import MemoryStore
 from test_financial_profiles import account
 
 

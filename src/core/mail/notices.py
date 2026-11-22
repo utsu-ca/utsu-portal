@@ -15,11 +15,11 @@ import logging
 import sqlite3
 from pathlib import Path
 
-from utsu_core.verification import is_uoft_email, match_students
-from utsu_core.std.csv_safe import write_rows
-from utsu_core.std.utils import student_uuid_for
+from core.verification import is_uoft_email, match_students
+from core.std.csv_safe import write_rows
+from core.std.utils import student_uuid_for
 
-logger = logging.getLogger("utsu_core.mail.notices")
+logger = logging.getLogger("core.mail.notices")
 
 NAME_FIELD = "- Full name (exactly as it appears on your ACORN registration)"
 NUMBER_FIELD = "- Student number"

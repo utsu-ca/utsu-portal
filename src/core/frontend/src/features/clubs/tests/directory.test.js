@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import ClubDirectoryView from "../../../../../src/clubs/frontend/views/ClubDirectoryView.svelte";
+import ClubDirectoryView from "../../../../../../clubs/frontend/views/ClubDirectoryView.svelte";
 
 const { apiMock, apiAllPagesMock } = vi.hoisted(() => ({ apiMock: vi.fn(), apiAllPagesMock: vi.fn() }));
 vi.mock("@utsu/portal", async importOriginal => ({

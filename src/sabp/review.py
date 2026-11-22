@@ -7,10 +7,10 @@ import unicodedata
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from utsu_core.contracts import PluginServices
-from utsu_core.pagination import PageOrder, paginate_page
-from utsu_core.permissions import PERM_SAP_APPLICATIONS, PERM_SAP_REVIEW
-from utsu_core.security import clean_text
+from core.contracts import PluginServices
+from core.pagination import PageOrder, paginate_page
+from core.permissions import PERM_SAP_APPLICATIONS, PERM_SAP_REVIEW
+from core.security import clean_text
 from .redaction import redact
 from .wfni import QUESTIONS, WeightsError, compute_wfni, parse_weights
 

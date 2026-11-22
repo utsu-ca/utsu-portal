@@ -11,4 +11,7 @@ wiki
 __pycache__
 *.egg-info
 
-web/node_modules
+src/core/frontend/node_modules
+src/core/frontend/.core-dist
+src/core/frontend/.subset-dist
+.deploy

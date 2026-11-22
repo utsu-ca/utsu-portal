@@ -6,11 +6,11 @@ from datetime import date, datetime, time, timezone
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from utsu_core.contracts import PluginServices
-from utsu_core.pagination import PageOrder, paginate_page
-from utsu_core.permissions import PERM_SAP_APPLICATIONS
-from utsu_core.security import clean_text
-from utsu_core.services.exports import csv_response
+from core.contracts import PluginServices
+from core.pagination import PageOrder, paginate_page
+from core.permissions import PERM_SAP_APPLICATIONS
+from core.security import clean_text
+from core.services.exports import csv_response
 from .review import application_view
 from .terms import normalized_terms
 

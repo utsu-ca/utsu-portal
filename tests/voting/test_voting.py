@@ -9,15 +9,15 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).parent))
 from test_portal import activate, login, register  # noqa: E402
 
-from utsu_core import create_app, plugin_host
-from utsu_core.contracts import PluginManifest
-from utsu_core.mailer import OutboxMailer
-from utsu_core.programs.voting import plugin as voting
-from utsu_core.programs.voting.contracts import BallotSpec, Electorate
-from utsu_core.programs.voting.record import leaf_hash, merkle_root, record_digest
-from utsu_core.programs.voting.tally import tally
-from utsu_core.settings import Settings
-from utsu_core.store import MemoryStore
+from core import create_app, plugin_host
+from core.contracts import PluginManifest
+from core.mailer import OutboxMailer
+from core.programs.voting import plugin as voting
+from core.programs.voting.contracts import BallotSpec, Electorate
+from core.programs.voting.record import leaf_hash, merkle_root, record_digest
+from core.programs.voting.tally import tally
+from core.settings import Settings
+from core.store import MemoryStore
 
 
 # Counting

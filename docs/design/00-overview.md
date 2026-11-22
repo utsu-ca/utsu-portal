@@ -12,11 +12,11 @@ tools described below are not complete. Audience: maintainers. Companion documen
 
 ## 1. Goal
 
-The repository currently contains two workflows in the same `utsu_core` package:
+The repository currently contains two workflows in the same `core` package:
 
-1. **Batch tools** (`utsu_core`, `utsu_core/programs/{senate,sap,agm}`, `utsu_core.mail`, `utsu_core.std`): CSV-export-in, CSV/DOCX-out
+1. **Batch tools** (`core`, `core/programs/{senate,sap,agm}`, `core.mail`, `core.std`): CSV-export-in, CSV/DOCX-out
    programs driven by a SQLite file.
-2. **The portal** (`utsu_core`): a FastAPI application with accounts, ID verification, forms, clubs, SSO, audit,
+2. **The portal** (`core`): a FastAPI application with accounts, ID verification, forms, clubs, SSO, audit,
    and a module system (`Module.router(ctx)`).
 
 The goal is a repository that is **only the UTSU Portal**. Each program (Senate, SAP, AGM) becomes a **portal
@@ -31,11 +31,11 @@ core, adding a front-end framework (same-origin vanilla JS and the CSP model sta
 
 | Capability | Batch tools today | Portal today | Gap |
 |---|---|---|---|
-| Student roster (`uoft_data`) import and matching | `utsu_core.importing_data`, `verification` (exact + fuzzy match, levels) | None. Identity is OTP email + face/ID + admin approval | Roster service (01) |
+| Student roster (`uoft_data`) import and matching | `core.importing_data`, `verification` (exact + fuzzy match, levels) | None. Identity is OTP email + face/ID + admin approval | Roster service (01) |
 | Typed uuids, one binding application per person | `selection.py`, `pipeline.Run` | Per-account submissions only | Selection service (01) |
 | Integrity check (duplicates, logged) | `integrity.py` | None | Selection service (01) |
 | Form definitions | Google Form exports + lookup tables | Owner-contributed YAML; core seeds forms only for enabled programs | Program-specific fields (WFNI, banking, seat preferences) must be checked against the CSV mapping |
-| Mail-merge, templates | `utsu_core.mail` | Core `EmailService` for OTP, notices and banking re-verification; separate historical campaign tooling | Notice service (01) |
+| Mail-merge, templates | `core.mail` | Core `EmailService` for OTP, notices and banking re-verification; separate historical campaign tooling | Notice service (01) |
 | Senate verification + seating | `senate/program.py`, `seating.py` | Form only | Senate module (02) |
 | SAP batches, WFNI, review, decisions, EFT | `sap/*` | Form only | SAP module (03) |
 | AGM verification, QR, check-in, Zoom SSO | `agm/program.py` | `agm.py`, `agm_verify.py`, `sso.py` done | Eligibility from roster, reporting (04) |
@@ -50,15 +50,15 @@ Modules are plain portal modules (`name`, `router(ctx)`), one Python package per
 another program** (same rule the batch code has).
 
 ```
-src/utsu_core/
+src/core/
   app.py, context.py, store.py, ...         existing core (unchanged)
   services/                                  shared, program-neutral (see 01)
-    roster.py        student roster import + matching (port of utsu_core.verification/importing_data)
+    roster.py        student roster import + matching (port of core.verification/importing_data)
     selection.py     binding-application selection, typed uuids
     alerts.py        integrity alerts
-    notices.py       templated notices via Mailer (port of utsu_core.mail)
-    exports.py       CSV/DOCX/EFT export helpers, spreadsheet-injection-safe (port of utsu_core.std.csv_safe)
-    text.py          cleaning and parsing helpers (port of utsu_core.std.utils/parsing_utils)
+    notices.py       templated notices via Mailer (port of core.mail)
+    exports.py       CSV/DOCX/EFT export helpers, spreadsheet-injection-safe (port of core.std.csv_safe)
+    text.py          cleaning and parsing helpers (port of core.std.utils/parsing_utils)
   programs/
     senate/          module.py, seating.py, models.py
     sap/             module.py, wfni.py, queue.py, review.py, decisions.py, banking.py, eft.py, models.py
@@ -106,7 +106,7 @@ deployments that run only some programs can pass a subset (the microservice `REM
 | P3 | `programs/senate` (verification, seating, results) | P1 | Senate and seating tests pass |
 | P4 | `programs/sap` (intake, WFNI, batches, review, decisions, banking, EFT) | P1 | `test_sap`, `test_wfni`, `test_eft`, `test_export_banking`, `test_merge_docx`, `test_completed`, `test_stages` pass |
 | P5 | Admin UI pages per program (`static/`) | P2-P4 | Role-gated pages for each program |
-| P6 | Removal of batch tools and docs rewrite (05) | P2-P5 | `utsu_core`, `utsu_core.programs`, `utsu_core.mail`, `utsu_core.std` gone; wiki rewritten |
+| P6 | Removal of batch tools and docs rewrite (05) | P2-P5 | `core`, `core.programs`, `core.mail`, `core.std` gone; wiki rewritten |
 
 P2, P3 and P4 are independent after P1 and can proceed in parallel.
 

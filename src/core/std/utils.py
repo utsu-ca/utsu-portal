@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from utsu_core.services.text import (
+from core.services.text import (
     EMAIL_FLAGS, UOFT_MAIL_DOMAIN, application_uuid_for, clean_text, generate_uuid, id_kind,
     identity_key, identity_key_type, normalize_case, normalize_uoft_email, parse_id, student_uuid_for, typed_uuid,
 )

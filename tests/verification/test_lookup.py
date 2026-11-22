@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from utsu_core.verification import construct_lookup_tables, setup_reader
+from core.verification import construct_lookup_tables, setup_reader
 
 
 def write(path, text):

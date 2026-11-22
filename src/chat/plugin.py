@@ -11,7 +11,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from utsu_core.contracts import (
+from core.contracts import (
     MessageRateLimited,
     MessageRejected,
     PluginManifest,
@@ -20,8 +20,8 @@ from utsu_core.contracts import (
     ThreadAccess,
     ThreadType,
 )
-from utsu_core.permissions import PERM_DISCUSSION_MODERATE
-from utsu_core.pagination import PageOrder, paginate_page, paginate_store
+from core.permissions import PERM_DISCUSSION_MODERATE
+from core.pagination import PageOrder, paginate_page, paginate_store
 
 from .contracts import AUDIENCES, DEFAULT_KIND, THREAD_TYPE, TopicKind
 

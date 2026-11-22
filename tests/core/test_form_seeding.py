@@ -2,9 +2,9 @@ from importlib import resources
 
 import pytest
 
-from utsu_core import create_app, formdef
-from utsu_core.app import seed_forms
-from utsu_core.settings import Settings
+from core import create_app, formdef
+from core.app import seed_forms
+from core.settings import Settings
 
 
 def test_seed_upgrade_preserves_drafts_and_never_downgrades(tmp_path):

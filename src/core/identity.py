@@ -19,7 +19,7 @@ from . import security
 from .contracts import ContactSummary
 from .services.roster import StoreRoster, match_person
 
-log = logging.getLogger("utsu_core.identity")
+log = logging.getLogger("core.identity")
 
 RECOVERY_SUBJECT = "backup:"
 

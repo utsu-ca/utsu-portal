@@ -29,12 +29,12 @@ it("keeps all frontend contributions in the default full composition", () => {
 
 it("uses the installed program manifests as same-ID source overrides", () => {
   const packageManifests = [
-    "../src/agm/frontend/portal-frontend.json",
-    "../src/clubs/frontend/portal-frontend.json",
-    "../src/chat/frontend/portal-frontend.json",
-    "../src/sabp/frontend/portal-frontend.json",
-    "../src/senate/frontend/portal-frontend.json",
-    "../src/voting/frontend/portal-frontend.json",
+    "../../agm/frontend/portal-frontend.json",
+    "../../clubs/frontend/portal-frontend.json",
+    "../../chat/frontend/portal-frontend.json",
+    "../../sabp/frontend/portal-frontend.json",
+    "../../senate/frontend/portal-frontend.json",
+    "../../voting/frontend/portal-frontend.json",
   ].flatMap(file => {
     const manifestPath = path.resolve(process.cwd(), file);
     const { programs } = JSON.parse(readFileSync(manifestPath, "utf8"));
@@ -84,8 +84,8 @@ it("uses the installed program manifests as same-ID source overrides", () => {
       finance: path.resolve(process.cwd(), "finance.html"),
     });
     expect(composition.standaloneModules).toEqual({
-      checkin: path.resolve(process.cwd(), "../src/agm/frontend/checkin.js"),
-      finance: path.resolve(process.cwd(), "../src/sabp/frontend/finance.js"),
+      checkin: path.resolve(process.cwd(), "../../agm/frontend/checkin.js"),
+      finance: path.resolve(process.cwd(), "../../sabp/frontend/finance.js"),
     });
     execFileSync(process.execPath, ["node_modules/vite/bin/vite.js", "build", "--mode", "selected",
       "--outDir", output], {

@@ -8,16 +8,16 @@ import pytest
 
 from test_agm import HEADERS as AGM_HEADERS, form_csv as agm_form, rsvp, students_db
 from test_sap import AP_ROW, LC_ROW, form_csv as sap_form
-from utsu_core import verification
-from utsu_core.programs.agm import program as agm
-from utsu_core.programs.sap import program as sap
-from utsu_core.programs.senate import program as senate
-from utsu_core.mail import campaign
-from utsu_core.mail.recipients import read_csv
-from utsu_core.std.csv_safe import SafeDictWriter, read_cell, safe_cell
-from utsu_core.std.database import backup_database
-from utsu_core.std.parsing_utils import get_trunc_id
-from utsu_core.std.utils import absfile, application_uuid_for, identity_key, parse_id, student_uuid_for
+from core import verification
+from core.programs.agm import program as agm
+from core.programs.sap import program as sap
+from core.programs.senate import program as senate
+from core.mail import campaign
+from core.mail.recipients import read_csv
+from core.std.csv_safe import SafeDictWriter, read_cell, safe_cell
+from core.std.database import backup_database
+from core.std.parsing_utils import get_trunc_id
+from core.std.utils import absfile, application_uuid_for, identity_key, parse_id, student_uuid_for
 
 SENATE_HEADERS = {"ts": "Timestamp", "user": "Username", "name": "Full ACORN-registered Name",
                   "id": "Student Number", "email": "UofT Email Address", "division": "Divisional Code",
@@ -333,7 +333,7 @@ def test_a_division_that_does_not_match_the_roster_is_unverified_and_asks_for_th
     other = senate_file(tmp_path / "s2.csv", [("2026/10/02 9:00:00 a.m. AST", "Ann Lee", "1001231617", "bob@x.ca")])
     r = run_senate(other, conn, tmp_path / "other")
     assert r["verified"] == [] and len(r["unverified"]) == 1
-    from utsu_core.mail.notices import DIVISION_FIELD, diagnose
+    from core.mail.notices import DIVISION_FIELD, diagnose
     assert diagnose(r["unverified"][0], conn.cursor())[1] == [DIVISION_FIELD]
 
 

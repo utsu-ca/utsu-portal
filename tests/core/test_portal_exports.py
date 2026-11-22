@@ -1,7 +1,7 @@
 import csv
 import io
 
-from utsu_core.services.exports import csv_response
+from core.services.exports import csv_response
 
 
 def test_csv_response_escapes_spreadsheet_formulas():

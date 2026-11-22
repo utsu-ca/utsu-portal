@@ -48,21 +48,21 @@ authsvc = [
 payments = ["stripe>=17"]
 
 [tool.setuptools]
-package-dir = {"" = "src", "utsu_core" = "src/core/utsu_core"}
+package-dir = {"" = "src"}
 
 # The standard wheel is core-only. Program packages (agm, sabp, clubs, senate,
 # chat, voting, branding) ship as separate distributions built by
 # tools/build_split_distributions.py; the utsu-portal aggregate installs them.
 [tool.setuptools.packages.find]
-where = ["src/core"]
-include = ["utsu_core", "utsu_core.*"]
+where = ["src"]
+include = ["core", "core.*"]
 
 [tool.setuptools.package-data]
-utsu_core = ["schema/*.sql", "static/*", "static/assets/*", "plugin_manifests/*.json", "mail/templates/historical/*.txt", "mail/templates/historical/*.html", "mail/templates/live/*.txt"]
+core = ["schema/*.sql", "static/*", "static/assets/*", "plugin_manifests/*.json", "mail/templates/historical/*.txt", "mail/templates/historical/*.html", "mail/templates/live/*.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src", "src/core"]
+pythonpath = ["src"]
 
 [tool.pyright]
-extraPaths = ["src", "src/core"]
+extraPaths = ["src"]

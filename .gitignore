@@ -15,5 +15,6 @@ __pycache__
 *.egg-info
 *.log
 testing/output/
-web/.tailwindcss-*
-web/node_modules
+src/core/frontend/.tailwindcss-*
+src/core/frontend/node_modules
+.deploy/

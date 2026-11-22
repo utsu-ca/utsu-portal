@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from utsu_core.programs.sap import merge_docx
-from utsu_core.programs.sap import program as sap
+from core.programs.sap import merge_docx
+from core.programs.sap import program as sap
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "testing"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "testing"))
 import generate_fake_reviews as fake  # noqa: E402
 
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"

@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 import sqlite3
 
-from utsu_core.std.utils import absfile
+from core.std.utils import absfile
 
 logger = logging.getLogger(__name__)
 

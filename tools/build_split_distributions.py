@@ -52,7 +52,7 @@ def build(version: str, output: Path, core_static_dir: Path | None = None) -> No
     if any(output.glob("*.whl")):
         raise ValueError("the output directory must not already contain wheels")
 
-    manifest_path = ROOT / "src/core/utsu_core/plugin_manifests/builtin.json"
+    manifest_path = ROOT / "src/core/plugin_manifests/builtin.json"
     catalogue = json.loads(manifest_path.read_text(encoding="utf-8"))
     declarations = {item["id"]: item for item in catalogue["plugins"] if item.get("kind") == "program"}
     expected = {identifier for identifiers in PROGRAMS.values() for identifier in identifiers}
@@ -62,12 +62,12 @@ def build(version: str, output: Path, core_static_dir: Path | None = None) -> No
         if declaration.get("interface") != "plugin":
             raise ValueError(f"{identifier} must use the typed plug-in interface before the split release")
 
-    full_static_dir = (ROOT / "src/core/utsu_core/static").resolve()
+    full_static_dir = (ROOT / "src/core/static").resolve()
     if core_static_dir is None:
-        core_static_dir = ROOT / "web/.core-dist"
+        core_static_dir = ROOT / "src/core/frontend/.core-dist"
         if not core_static_dir.is_dir():
             subprocess.run(
-                ["npm", "--prefix", str(ROOT / "web"), "run", "build:core"], check=True
+                ["npm", "--prefix", str(ROOT / "src/core/frontend"), "run", "build:core"], check=True
             )
     core_static_dir = core_static_dir.resolve()
     if core_static_dir == full_static_dir or any(
@@ -84,13 +84,17 @@ def build(version: str, output: Path, core_static_dir: Path | None = None) -> No
         wheelhouse = staging / "wheelhouse"
         wheelhouse.mkdir()
 
-        def copy_package(name: str, source: Path, destination: Path, *, omit_static: bool = False) -> None:
+        def copy_package(name: str, source: Path, destination: Path, *, omit_static: bool = False,
+                         omit_frontend: bool = False) -> None:
             ignored_patterns = shutil.ignore_patterns("__pycache__", "*.pyc")
 
             def ignore(directory: str, names: list[str]) -> set[str]:
                 ignored = set(ignored_patterns(directory, names))
-                if omit_static and Path(directory) == source:
-                    ignored.add("static")
+                if Path(directory) == source:
+                    if omit_static:
+                        ignored.add("static")
+                    if omit_frontend:  # core's UI sources and node_modules are build inputs, not wheel contents
+                        ignored.add("frontend")
                 return ignored
 
             shutil.copytree(source, destination / name, ignore=ignore)
@@ -113,7 +117,7 @@ def build(version: str, output: Path, core_static_dir: Path | None = None) -> No
                 ]},
                 "package_data": {
                     "": ["*.sql", "*.svg", "*.json", "forms/*.yaml"],
-                    "utsu_core": [
+                    "core": [
                         "schema/*.sql", "static/*", "static/assets/*", "plugin_manifests/*.json",
                         "mail/templates/historical/*.txt", "mail/templates/historical/*.html",
                         "mail/templates/live/*.txt",
@@ -136,12 +140,12 @@ def build(version: str, output: Path, core_static_dir: Path | None = None) -> No
 
         core = staging / core_name
         core.mkdir()
-        copy_package("utsu_core", ROOT / "src/core/utsu_core", core, omit_static=True)
-        shutil.copytree(core_static_dir, core / "utsu_core/static")
+        copy_package("core", ROOT / "src/core", core, omit_static=True, omit_frontend=True)
+        shutil.copytree(core_static_dir, core / "core/static")
         core_catalogue = {**catalogue, "plugins": [
             item for item in catalogue["plugins"] if item.get("kind") != "program"
         ]}
-        (core / "utsu_core/plugin_manifests/builtin.json").write_text(
+        (core / "core/plugin_manifests/builtin.json").write_text(
             json.dumps(core_catalogue, indent=2) + "\n", encoding="utf-8",
         )
         from setuptools import find_packages
@@ -235,7 +239,7 @@ def main() -> None:
     parser.add_argument("--version", required=True, help="version for all split distributions")
     parser.add_argument("--out-dir", required=True, type=Path, help="directory without existing wheels")
     parser.add_argument("--core-static-dir", type=Path, default=None,
-                        help="core-only frontend bundle (default: web/.core-dist, built if missing)")
+                        help="core-only frontend bundle (default: src/core/frontend/.core-dist, built if missing)")
     args = parser.parse_args()
     build(args.version, args.out_dir, args.core_static_dir)
 

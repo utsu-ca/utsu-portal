@@ -154,7 +154,7 @@ code, not security sandboxes.
    passed 191.
    A wheel installed outside the checkout passed full-portal and disabled-program startup checks, as well as
    compatibility-import and schema-resource checks.
-   The core implementation lives in `src/core/utsu_core`; its installed import name remains `utsu_core`.
+   The core implementation lives in `src/core`; its installed import name remains `core`.
    Development Python paths, Compose watch configuration and the full frontend build output use the new location.
    A wheel installed outside the checkout preserves resources, aliases and full/core-only API startup.
    Legacy schema discovery skips genuinely uninstalled program packages while still reporting errors in installed
@@ -196,7 +196,7 @@ traffic, and keep the prior image for rollback.
 
 The builder rejects legacy-context programs, generates named program
 manifests, and checks for overlapping wheel paths before publishing. Its
-core wheel requires a core-only frontend (`web/.core-dist`, built
+core wheel requires a core-only frontend (`src/core/frontend/.core-dist`, built
 automatically if missing); a separate full-frontend wheel owns the full
 portal UI and is selected automatically when installed. `PORTAL_STATIC_DIR`
 still takes precedence. Source-isolated installations started core-only,
@@ -207,8 +207,8 @@ standalone pages. A baseline-to-split-to-baseline SQLite rollback check
 retained encrypted financial and receipt records, quota usage, and
 financial-access audits.
 The builder runs with Python 3.12+ and installed `pip`, `setuptools`, `wheel` and `packaging`. First build the
-core-only frontend with `npm --prefix web run build:core`, then run
-`python tools/build_split_distributions.py --experimental --version 0.2.0 --out-dir /tmp/utsu-split-wheels --core-static-dir web/.core-dist`.
+core-only frontend with `npm --prefix src/core/frontend run build:core`, then run
+`python tools/build_split_distributions.py --experimental --version 0.2.0 --out-dir /tmp/utsu-split-wheels --core-static-dir src/core/frontend/.core-dist`.
 The explicit experimental flag acknowledges the remaining gaps, and the version must be greater than the bundled
 release. Do not install these wheels into an environment that contains the older bundled `utsu-core`; build a
 separate environment and retain the old environment for rollback.

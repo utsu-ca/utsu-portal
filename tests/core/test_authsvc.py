@@ -7,13 +7,13 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).parent))
 from test_portal import activate, login, register  # noqa: E402
 
-from utsu_core import create_app, security
-from utsu_core.authsvc import create_auth_app
-from utsu_core.identity import RemoteIdentity
-from utsu_core.mailer import OutboxMailer
-from utsu_core.programs.senate.module import PREFERENCES
-from utsu_core.settings import Settings
-from utsu_core.store import MemoryStore
+from core import create_app, security
+from core.authsvc import create_auth_app
+from core.identity import RemoteIdentity
+from core.mailer import OutboxMailer
+from core.programs.senate.module import PREFERENCES
+from core.settings import Settings
+from core.store import MemoryStore
 
 SVC = "svc-" + "t" * 40
 
@@ -109,8 +109,8 @@ def test_split_identity_resolves_changed_username_and_primary_email():
 
 
 def test_contact_projection_matches_local_and_split_identity():
-    from utsu_core.contracts import ContactSummary
-    from utsu_core.plugin_runtime import _IdentityAdapter
+    from core.contracts import ContactSummary
+    from core.plugin_runtime import _IdentityAdapter
 
     ac, pc, mail, *_ = make()
     register(ac, mail, "ada", "ada@x.ca")

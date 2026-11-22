@@ -2,7 +2,7 @@
 
 > Historical review of the batch implementation, not a review of the current web application.
 
-**Scope:** all of `src/` (`utsu_core`, `utsu_core.std`, `utsu_core.mail`, schema), `data/`, `templates/`, and the tests.
+**Scope:** all of `src/` (`core`, `core.std`, `core.mail`, schema), `data/`, `templates/`, and the tests.
 **Method:** read the code, ran the test suite and doctests, ran the testing pipeline end to end, and wrote small
 scripts to reproduce suspected defects before fixing them.
 

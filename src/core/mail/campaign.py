@@ -8,9 +8,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-from utsu_core.mail.templates import RenderedMessage, Template
-from utsu_core.mail.transport import SmtpSender, SmtpSettings, build_message
-from utsu_core.std.csv_safe import SafeWriter, open_csv, read_cell
+from core.mail.templates import RenderedMessage, Template
+from core.mail.transport import SmtpSender, SmtpSettings, build_message
+from core.std.csv_safe import SafeWriter, open_csv, read_cell
 
 logger = logging.getLogger(__name__)
 

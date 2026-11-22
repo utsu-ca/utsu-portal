@@ -1,6 +1,6 @@
-# 02 Senate module (`utsu_core/programs/senate`)
+# 02 Senate module (`core/programs/senate`)
 
-Ports `utsu_core/programs/senate` (`program.py`, `seating.py`). **Stateless: everything is computed when an authorized
+Ports `core/programs/senate` (`program.py`, `seating.py`). **Stateless: everything is computed when an authorized
 user asks.** See [00](00-overview.md) section 3.
 
 Status: the portal exposes application views using current account and roster checks, configurable seats, deterministic

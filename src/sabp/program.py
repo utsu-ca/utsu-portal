@@ -16,13 +16,13 @@ from xml.etree import ElementTree
 from datetime import datetime
 from pathlib import Path
 
-from utsu_core.selection import parse_submission_ts
-from utsu_core.pipeline import Run, ensure_table
-from utsu_core.spec import ProgramSpec
+from core.selection import parse_submission_ts
+from core.pipeline import Run, ensure_table
+from core.spec import ProgramSpec
 from .wfni import compute_wfni, current_weights
-from utsu_core.std.csv_safe import SafeDictWriter, open_csv, write_rows
-from utsu_core.std.utils import absfile, application_uuid_for, clean_text, normalize_case, normalize_uoft_email, student_uuid_for, EMAIL_FLAGS
-from utsu_core.std.parsing_utils import get_trunc_id, split_multi
+from core.std.csv_safe import SafeDictWriter, open_csv, write_rows
+from core.std.utils import absfile, application_uuid_for, clean_text, normalize_case, normalize_uoft_email, student_uuid_for, EMAIL_FLAGS
+from core.std.parsing_utils import get_trunc_id, split_multi
 from .redaction import redact
 
 logger = logging.getLogger(__name__)

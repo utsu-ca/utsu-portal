@@ -1,5 +1,5 @@
 """
-The student roster (ported from utsu_core.verification and importing_data) and matching a person against it.
+The student roster (ported from core.verification and importing_data) and matching a person against it.
 
 The roster is a fact stored in two lookup collections written at import (`roster_name`, keyed by full name, and
 `roster_last`, keyed by last name), so matching one person is two reads and never scans. `match_people` is pure over a

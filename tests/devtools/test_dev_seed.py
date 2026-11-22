@@ -5,12 +5,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from test_portal import login, register
-from utsu_core import create_app
-from utsu_core import security
-from utsu_core.devadmin import DEV_ADMIN_EMAIL
-from utsu_core.mailer import OutboxMailer
-from utsu_core.settings import Settings
-from utsu_core.store import MemoryStore
+from core import create_app
+from core import security
+from core.devadmin import DEV_ADMIN_EMAIL
+from core.mailer import OutboxMailer
+from core.settings import Settings
+from core.store import MemoryStore
 
 
 def test_dev_restart_only_inserts_missing_seed_rows():
@@ -64,7 +64,7 @@ def test_dev_seeds_verified_roles_and_applicants(plugins):
 
 
 def test_dev_seeding_does_not_grant_roles_to_an_existing_account(monkeypatch):
-    monkeypatch.setattr("utsu_core.services.turnstile.verify_registration", lambda *_: None)
+    monkeypatch.setattr("core.services.turnstile.verify_registration", lambda *_: None)
     mail, store = OutboxMailer(), MemoryStore()
     c = TestClient(create_app(Settings(secret="s" * 40), store, mail))
     email = "admin@dev-local.test"
@@ -77,7 +77,7 @@ def test_dev_seeding_does_not_grant_roles_to_an_existing_account(monkeypatch):
 
 
 def test_generated_seed_does_not_overwrite_dev_data(monkeypatch):
-    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "testing"))
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / "testing"))
     import dev_seed
 
     def exercise(_, __, target):
@@ -103,7 +103,7 @@ def test_generated_seed_does_not_overwrite_dev_data(monkeypatch):
 
 
 def test_interrupted_generated_seed_requires_fresh_project(monkeypatch):
-    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "testing"))
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / "testing"))
     import dev_seed
 
     store = MemoryStore()
@@ -113,7 +113,7 @@ def test_interrupted_generated_seed_requires_fresh_project(monkeypatch):
 
 
 def test_generated_seed_populates_students_roster_and_program_submissions(monkeypatch):
-    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "testing"))
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / "testing"))
     import dev_seed
 
     settings = Settings(secret="s" * 40, dev_admin=True, rate_limit_auth=0)

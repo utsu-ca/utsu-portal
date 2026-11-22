@@ -7,11 +7,11 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).parent))
 from test_portal import activate, setup_admin_and_user  # noqa: E402
 
-from utsu_core import audit as A, create_app, maintenance as M
-from utsu_core.anchor import AnchorProvider, LocalLedgerProvider
-from utsu_core.mailer import OutboxMailer
-from utsu_core.settings import Settings
-from utsu_core.store import MemoryStore
+from core import audit as A, create_app, maintenance as M
+from core.anchor import AnchorProvider, LocalLedgerProvider
+from core.mailer import OutboxMailer
+from core.settings import Settings
+from core.store import MemoryStore
 
 DAY = 86_400
 

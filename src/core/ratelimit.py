@@ -5,7 +5,7 @@ import logging
 import threading
 import time
 
-log = logging.getLogger("utsu_core.ratelimit")
+log = logging.getLogger("core.ratelimit")
 
 
 class RateLimiter:

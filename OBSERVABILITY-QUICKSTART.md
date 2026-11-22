@@ -143,7 +143,7 @@ export JAEGER_AGENT_PORT=6831
 
 ```python
 from fastapi import FastAPI
-from utsu_core.observability import (
+from core.observability import (
     setup_observability,
     get_tracer,
     get_logger,
@@ -176,7 +176,7 @@ async def send_email(email: str):
 ### 2. File Storage in Your Service
 
 ```python
-from utsu_core.filesvc import FileHandler
+from core.filesvc import FileHandler
 
 # Auto-detects backend from FILE_STORAGE environment variable
 handler = FileHandler.from_env()
@@ -201,7 +201,7 @@ handler.delete(file_key)
 **In authsvc (central auth service):**
 
 ```python
-from utsu_core.authsvc.service_auth import ServiceAuthModule, ServicePermission
+from core.authsvc.service_auth import ServiceAuthModule, ServicePermission
 
 auth = ServiceAuthModule()
 
@@ -214,7 +214,7 @@ print(f"Token: {token}")
 
 ```python
 import httpx
-from utsu_core.authsvc.service_auth import ServiceAuthModule
+from core.authsvc.service_auth import ServiceAuthModule
 
 auth = ServiceAuthModule()
 token = auth.issue_token("mailsvc")
@@ -235,7 +235,7 @@ async def upload_to_filesvc(file_data):
 
 ```python
 from fastapi import Header, HTTPException
-from utsu_core.authsvc.service_auth import ServiceAuthModule, ServicePermission
+from core.authsvc.service_auth import ServiceAuthModule, ServicePermission
 
 auth = ServiceAuthModule()
 
@@ -253,7 +253,7 @@ async def upload(authorization: str = Header()):
 ### 4. Audit Logging for Compliance
 
 ```python
-from utsu_core.authsvc.audit_compliance import (
+from core.authsvc.audit_compliance import (
     build_audit_entry_read,
     build_audit_entry_write,
     AuditAction,
@@ -287,7 +287,7 @@ audit_entry = build_audit_entry_write(
 
 ```python
 import psycopg
-from utsu_core.authsvc.audit_compliance import COMPLIANCE_QUERIES
+from core.authsvc.audit_compliance import COMPLIANCE_QUERIES
 
 async with await psycopg.AsyncConnection.connect("postgresql://...") as conn:
     # Get all access to user-123's data
@@ -403,10 +403,10 @@ az storage account list
 
 ```bash
 # Check service token is issued
-python -c "from utsu_core.authsvc.service_auth import ServiceAuthModule; auth = ServiceAuthModule(); print(auth.issue_token('mailsvc'))"
+python -c "from core.authsvc.service_auth import ServiceAuthModule; auth = ServiceAuthModule(); print(auth.issue_token('mailsvc'))"
 
 # Check service is registered
-python -c "from utsu_core.authsvc.service_auth import ServiceAuthModule; auth = ServiceAuthModule(); print(list(auth.services.keys()))"
+python -c "from core.authsvc.service_auth import ServiceAuthModule; auth = ServiceAuthModule(); print(list(auth.services.keys()))"
 
 # Check token can be validated
 token = auth.issue_token('mailsvc')

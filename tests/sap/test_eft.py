@@ -4,8 +4,8 @@ import sqlite3
 
 import pytest
 
-from utsu_core.programs.sap.eft import create_eft
-from utsu_core.programs.sap import export_banking
+from core.programs.sap.eft import create_eft
+from core.programs.sap import export_banking
 from test_export_banking import inputs, write_csv
 
 

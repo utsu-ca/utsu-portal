@@ -1,4 +1,4 @@
-"""Text cleaning, email normalisation and typed ids (ported from utsu_core.std.utils)."""
+"""Text cleaning, email normalisation and typed ids (ported from core.std.utils)."""
 from __future__ import annotations
 
 import hashlib

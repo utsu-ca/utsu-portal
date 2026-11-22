@@ -1,4 +1,4 @@
-/* Global styles for the portal. Built into src/core/utsu_core/static by Vite (`npm run build` in web/).
+/* Global styles for the portal. Built into src/core/static by Vite (`npm run build` in web/).
    Colours come from the branding theme (branding/theme.json), applied at run time as --user-* and --admin-* variables;
    admin mode swaps the accent by setting data-mode="admin" on <html>. */
 @import "tailwindcss";

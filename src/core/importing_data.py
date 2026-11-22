@@ -3,10 +3,10 @@ import logging
 import sqlite3
 from pathlib import Path
 
-from utsu_core.resources import package_text
-from utsu_core.std.csv_safe import open_csv
-from utsu_core.std.database import split_statements
-from utsu_core.std.utils import clean_text, normalize_case, typed_uuid
+from core.resources import package_text
+from core.std.csv_safe import open_csv
+from core.std.database import split_statements
+from core.std.utils import clean_text, normalize_case, typed_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ def import_uoft_data(conn: sqlite3.Connection, csv_file: Path):
     rows = read_uoft_rows(Path(csv_file))
     if not rows:
         raise ValueError(f"{csv_file} has no students")
-    script = package_text("utsu_core", "schema/uoft_data.sql")
+    script = package_text("core", "schema/uoft_data.sql")
 
     conn.commit()
     try:

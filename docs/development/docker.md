@@ -106,7 +106,7 @@ For the generated stack, use `-p utsu-portal-generated`. `down -v` deletes that 
 unless you want to reset the project.
 
 Deploy the standard [portal image](../../Dockerfile), not the dev override, to Cloud Run or Azure Container Apps.
-Rebuild the production frontend bundle with `npm run build` in `web/` before building the image if frontend
+Rebuild the production frontend bundle with `npm run build` in `src/core/frontend/` before building the image if frontend
 sources changed. Set the public `PORTAL_BASE_URL`, inject secrets, and use managed persistence via `PORTAL_STORE`
 and `DATABASE_URL` (and `PORTAL_REDIS_URL` if using Redis). Keep dev sign-in accounts disabled in deployments.
 Neither managed platform nor this Compose workflow requires a local Knative installation.

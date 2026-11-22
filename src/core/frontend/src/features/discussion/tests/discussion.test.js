@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import BoardView from "../../../../../src/chat/frontend/views/BoardView.svelte";
-import DiscussionsView from "../../../../../src/chat/frontend/views/DiscussionsView.svelte";
-import TopicView from "../../../../../src/chat/frontend/views/TopicView.svelte";
+import BoardView from "../../../../../../chat/frontend/views/BoardView.svelte";
+import DiscussionsView from "../../../../../../chat/frontend/views/DiscussionsView.svelte";
+import TopicView from "../../../../../../chat/frontend/views/TopicView.svelte";
 
 const { apiMock, apiAllPagesMock, openStreamMock } = vi.hoisted(() => ({
   apiMock: vi.fn(), apiAllPagesMock: vi.fn(), openStreamMock: vi.fn(),

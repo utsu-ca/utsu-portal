@@ -5,7 +5,7 @@ import logging
 from .mail.templates import RenderedMessage
 from .mail.transport import LOCAL_HOSTS, SmtpSender, SmtpSettings, build_message
 
-log = logging.getLogger("utsu_core.mail")
+log = logging.getLogger("core.mail")
 
 
 class Mailer:

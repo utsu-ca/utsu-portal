@@ -12,13 +12,13 @@ This centralizes all authentication logic under authsvc, making it the single
 source of truth for identity verification across the entire platform.
 
 Usage:
-    from utsu_core.authsvc.service_auth import ServiceAuthModule
+    from core.authsvc.service_auth import ServiceAuthModule
     
     # In authsvc startup:
     service_auth = ServiceAuthModule()
     
     # In other microservices:
-    from utsu_core.authsvc.client import ServiceClient
+    from core.authsvc.client import ServiceClient
     client = ServiceClient(service_name="mailsvc")
     response = await client.call("authsvc", "/internal/validate-token", token)
 """

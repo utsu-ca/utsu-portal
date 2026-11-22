@@ -10,12 +10,12 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from test_portal import login, register
-from utsu_core import create_app
-from utsu_core.authsvc import create_auth_app
-from utsu_core.mailer import OutboxMailer
-from utsu_core.services import google_staff
-from utsu_core.settings import Settings
-from utsu_core.store import MemoryStore
+from core import create_app
+from core.authsvc import create_auth_app
+from core.mailer import OutboxMailer
+from core.services import google_staff
+from core.settings import Settings
+from core.store import MemoryStore
 
 BASE = "/api/auth/google"
 

@@ -275,7 +275,7 @@ def parse_manifest(value: object, source: str, default_interface: str = "plugin"
 
 
 def _read_builtin_manifests() -> list[PluginManifest]:
-    path = resources.files("utsu_core").joinpath("plugin_manifests/builtin.json")
+    path = resources.files("core").joinpath("plugin_manifests/builtin.json")
     try:
         payload: object = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -338,7 +338,8 @@ def discover_manifests(
         manifests.append(_read_external_manifest(entry_point))
     result: dict[str, PluginManifest] = {}
     for manifest in manifests:
-        if manifest.id in result:
+        existing = result.get(manifest.id)
+        if existing is not None and existing != manifest:
             raise PluginHostError(f"duplicate plug-in id: {manifest.id}")
         result[manifest.id] = manifest
     return result

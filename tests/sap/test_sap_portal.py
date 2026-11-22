@@ -11,13 +11,13 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).parent))
 from test_portal import activate, login, register, scan  # noqa: E402
 
-from utsu_core import create_app
-from utsu_core.crypto import PREFIX
-from utsu_core.mailer import Mailer, OutboxMailer
-from utsu_core.settings import Settings
-from utsu_core.store import MemoryStore
-from utsu_core.programs.sap.wfni import QUESTIONS
-from utsu_core.programs.sap.module import review_stage
+from core import create_app
+from core.crypto import PREFIX
+from core.mailer import Mailer, OutboxMailer
+from core.settings import Settings
+from core.store import MemoryStore
+from core.programs.sap.wfni import QUESTIONS
+from core.programs.sap.module import review_stage
 
 CHEQUE_BYTES = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF"
 CHEQUE = "data:application/pdf;base64," + base64.b64encode(CHEQUE_BYTES).decode()
@@ -37,7 +37,7 @@ def test_living_costs_subsidies_prioritize_emergency_reviews():
               "Ada,Lovelace,xxxxx6789x,ARTSC,UC\n"
               "Grace,Hopper,xxxxx6678x,ARTSC,UC\n")
     assert c.post("/api/admin/roster", json={"csv": roster}, headers=admin).status_code == 200
-    weights = (Path(__file__).resolve().parents[1] / "data" / "wfni_weights.csv").read_text()
+    weights = (Path(__file__).resolve().parents[2] / "data" / "wfni_weights.csv").read_text()
     assert c.put("/api/admin/sap/weights", json={"csv": weights}, headers=admin).status_code == 200
     form = c.get("/api/forms/student_aid_bursary/static").json()
     data = {"terms": ["Fall 2026"], "enrolment": "Full-time", "monthly_income": 500,
@@ -271,7 +271,7 @@ def test_sap_scoring_requires_weights_and_complete_questionnaire():
     assert submit(data).status_code == 200
     assert c.get("/api/me/sap", headers=user).json()["wfni"]["status"] == "weights_not_configured"
     assert c.get("/api/admin/sap/weights", headers=admin).status_code == 404
-    weights = (Path(__file__).resolve().parents[1] / "data" / "wfni_weights.csv").read_text()
+    weights = (Path(__file__).resolve().parents[2] / "data" / "wfni_weights.csv").read_text()
     assert c.put("/api/admin/sap/weights", json={"csv": weights}, headers=user).status_code == 403
     assert c.put("/api/admin/sap/weights", json={"csv": "bad"}, headers=admin).status_code == 422
     config = c.put("/api/admin/sap/weights", json={"csv": weights}, headers=admin).json()

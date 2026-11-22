@@ -12,19 +12,19 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, os.path.dirname(__file__))
 from test_portal import IMG, activate, login, register, scan  # noqa: E402
-from utsu_core import create_app  # noqa: E402
-from utsu_core.mailer import OutboxMailer  # noqa: E402
-from utsu_core.settings import Settings  # noqa: E402
+from core import create_app  # noqa: E402
+from core.mailer import OutboxMailer  # noqa: E402
+from core.settings import Settings  # noqa: E402
 
 REDIR = "https://zoom.example/sso/cb"
 
 
 def test_agm_client_registration_does_not_depend_on_router_order():
-    from utsu_core.bootstrap import build_app
-    from utsu_core.permissions import permission_catalogue_for, role_permissions_for
-    from utsu_core.plugin_host import load_modules
-    from utsu_core.role_catalogue import role_catalogue_for
-    from utsu_core.settings import plugin_settings_for
+    from core.bootstrap import build_app
+    from core.permissions import permission_catalogue_for, role_permissions_for
+    from core.plugin_host import load_modules
+    from core.role_catalogue import role_catalogue_for
+    from core.settings import plugin_settings_for
 
     settings = Settings(
         secret="s" * 32,

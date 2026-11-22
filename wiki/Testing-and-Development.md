@@ -27,7 +27,7 @@ python -m pytest --doctest-modules src    # doctests embedded in the source (39)
 
 Not covered by tests (see [Code Review](Code-Review#test-gaps)): `seating.py` and
 the real `SmtpSender` connection. `test_programs.py` checks that each program's spec and schema agree
-and that programs depend only on `utsu_core`.
+and that programs depend only on `core`.
 
 ## Fake data
 

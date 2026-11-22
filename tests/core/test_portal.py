@@ -6,21 +6,21 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from fastapi import HTTPException
 
-from utsu_core import create_app, formdef, security
-from utsu_core.contracts import SubmissionPolicy
-from utsu_core.mailer import OutboxMailer
-from utsu_core.services.submissions import (
+from core import create_app, formdef, security
+from core.contracts import SubmissionPolicy
+from core.mailer import OutboxMailer
+from core.services.submissions import (
     get_submission_policy,
     validate_submission_eligibility,
 )
-from utsu_core.settings import Settings
+from core.settings import Settings
 
 IMG = "data:image/png;base64," + base64.b64encode(b"\x89PNG fake").decode()
 
 
 @pytest.fixture
 def env(monkeypatch):
-    monkeypatch.setattr("utsu_core.services.turnstile.verify_registration", lambda _settings, _token: None)
+    monkeypatch.setattr("core.services.turnstile.verify_registration", lambda _settings, _token: None)
     mail = OutboxMailer()
     app = create_app(Settings(secret="s" * 32, admin_emails=("boss@x.ca",)), mailer=mail)
     return TestClient(app), mail
@@ -31,7 +31,7 @@ def code(mail):
 
 
 def register(c, mail, user, email, sn="1234567890", first="Ada", last="Lovelace"):
-    with patch("utsu_core.services.turnstile.verify_registration"):
+    with patch("core.services.turnstile.verify_registration"):
         r = c.post("/api/auth/register", json={"username": user, "email": email, "first_name": first, "last_name": last, "student_number": sn})
     assert r.status_code == 201, r.text
     assert c.post("/api/auth/verify-email", json={"username": user, "code": code(mail)}).status_code == 200
@@ -126,7 +126,7 @@ def test_admin_roster_listing_reads_archived_backup_logins(env):
     import hashlib
     import json
 
-    from utsu_core import audit
+    from core import audit
 
     c, mail = env
     ah, _ = setup_admin_and_user(c, mail)

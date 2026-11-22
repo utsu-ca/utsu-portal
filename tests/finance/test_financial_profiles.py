@@ -1,13 +1,13 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from utsu_core import create_app
-from utsu_core.crypto import Crypter, EncryptingStore, PREFIX
-from utsu_core.identity import RemoteIdentity
-from utsu_core.mailer import OutboxMailer
-from utsu_core.services.banking import BankingRoutePolicy, banking_router
-from utsu_core.settings import Settings
-from utsu_core.store import MemoryStore
+from core import create_app
+from core.crypto import Crypter, EncryptingStore, PREFIX
+from core.identity import RemoteIdentity
+from core.mailer import OutboxMailer
+from core.services.banking import BankingRoutePolicy, banking_router
+from core.settings import Settings
+from core.store import MemoryStore
 
 BANK = {"institution_number": "001", "transit_number": "12345", "account_number": "0009876"}
 
@@ -68,7 +68,7 @@ def test_financial_profiles_use_remote_authentication_and_live_account_status():
     local = create_app(Settings(secret="s" * 32, enabled_plugins=()), mailer=OutboxMailer())
     headers = account(local.state.ctx, "remote-student")
     acct = local.state.ctx.identity.account("remote-student")
-    from utsu_core import security
+    from core import security
 
     remote = RemoteIdentity(
         security.public_pem(local.state.ctx.identity.key),
@@ -111,7 +111,7 @@ def test_program_banking_policy_controls_routes_validation_and_listing():
 
 
 def test_legacy_shared_banking_router_remains_compatible():
-    from utsu_core.programs.sap.banking import banking_router as sap_banking_router
+    from core.programs.sap.banking import banking_router as sap_banking_router
 
     app = create_app(Settings(secret="s" * 32), mailer=OutboxMailer())
     ctx = app.state.ctx

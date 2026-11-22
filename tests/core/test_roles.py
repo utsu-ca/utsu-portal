@@ -6,11 +6,11 @@ sys.path.insert(0, str(Path(__file__).parent))
 from test_authsvc import make  # noqa: E402
 from test_portal import activate, login, register  # noqa: E402
 
-from utsu_core.context import ROLES
-from utsu_core.context import roles_of
-from utsu_core.permissions import PERM_AUDIT_READ, PERM_FORMS_MANAGE, permission_catalogue_for, role_permissions_for
-from utsu_core.plugin_host import discover_manifests, select_manifests
-from utsu_core.role_catalogue import role_catalogue_for
+from core.context import ROLES
+from core.context import roles_of
+from core.permissions import PERM_AUDIT_READ, PERM_FORMS_MANAGE, permission_catalogue_for, role_permissions_for
+from core.plugin_host import discover_manifests, select_manifests
+from core.role_catalogue import role_catalogue_for
 
 
 def setup():
@@ -151,10 +151,10 @@ def test_disabled_program_roles_are_ineffective_but_stored_grants_are_preserved(
 def test_role_edit_does_not_drop_disabled_program_grants():
     from fastapi.testclient import TestClient
 
-    from utsu_core.authsvc import create_auth_app
-    from utsu_core.mailer import OutboxMailer
-    from utsu_core.settings import Settings
-    from utsu_core.store import MemoryStore
+    from core.authsvc import create_auth_app
+    from core.mailer import OutboxMailer
+    from core.settings import Settings
+    from core.store import MemoryStore
 
     mail, store = OutboxMailer(), MemoryStore()
     ac = TestClient(create_auth_app(
@@ -178,10 +178,10 @@ def test_role_edit_does_not_drop_disabled_program_grants():
 def test_service_token_rotation_accepts_old_and_new():
     from fastapi.testclient import TestClient
 
-    from utsu_core.authsvc import create_auth_app
-    from utsu_core.mailer import OutboxMailer
-    from utsu_core.settings import Settings
-    from utsu_core.store import MemoryStore
+    from core.authsvc import create_auth_app
+    from core.mailer import OutboxMailer
+    from core.settings import Settings
+    from core.store import MemoryStore
 
     old, new = "o" * 40, "n" * 40
     c = TestClient(create_auth_app(Settings(secret="a" * 40, service_token=f"{old},{new}"), MemoryStore(), OutboxMailer()))

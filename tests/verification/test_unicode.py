@@ -7,13 +7,13 @@ import pytest
 from test_agm import students_db
 from test_sap import LC_ROW, form_csv as sap_form
 from test_identity import run_senate, senate_file, write_rows
-from utsu_core import verification
-from utsu_core.programs.sap import program as sap
-from utsu_core.importing_data import ascii_digits
-from utsu_core.mail.recipients import read_csv, valid_email
-from utsu_core.std.csv_safe import open_csv, read_text
-from utsu_core.std.parsing_utils import get_trunc_id
-from utsu_core.std.utils import clean_text, identity_key, normalize_case, student_uuid_for
+from core import verification
+from core.programs.sap import program as sap
+from core.importing_data import ascii_digits
+from core.mail.recipients import read_csv, valid_email
+from core.std.csv_safe import open_csv, read_text
+from core.std.parsing_utils import get_trunc_id
+from core.std.utils import clean_text, identity_key, normalize_case, student_uuid_for
 
 # (what was typed, what it should become): everything is folded to plain ASCII
 NAMES = [
@@ -121,7 +121,7 @@ def test_a_name_typed_oddly_still_matches_the_roster(tmp_path):
 
 
 def test_the_roster_is_imported_as_ascii(tmp_path):
-    from utsu_core.importing_data import import_uoft_data
+    from core.importing_data import import_uoft_data
     roster = tmp_path / "roster.csv"
     roster.write_bytes("First Name,Last Name,Truncated Student Number,Faculty,Division\r\n"
                        "Jos\u00e9,Garc\u00eda,xxxxx3971x,Arts \u00c6,UC\r\n".encode("cp1252", "ignore"))

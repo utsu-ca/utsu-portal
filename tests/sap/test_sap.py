@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from utsu_core.programs.sap import program as sap
-from utsu_core.resources import package_text
-from utsu_core.verification import construct_lookup_tables
-from utsu_core.std.utils import absfile
+from core.programs.sap import program as sap
+from core.resources import package_text
+from core.verification import construct_lookup_tables
+from core.std.utils import absfile
 
 LC_ROW = {
     "Timestamp": "2026/09/30 10:39:14 a.m. AST", "Application Semester": "Fall 2026",
@@ -42,7 +42,7 @@ def form_csv(path, rows):
 
 def students_db(*people):
     conn = sqlite3.connect(":memory:")
-    conn.executescript(package_text("utsu_core", "schema/uoft_data.sql"))
+    conn.executescript(package_text("core", "schema/uoft_data.sql"))
     for i, (first, last, trunc) in enumerate(people):
         conn.execute("INSERT INTO uoft_data (uuid, trunc_id, first_name, last_name, full_name, division, faculty) "
                      "VALUES (?, ?, ?, ?, ?, 'UC', 'ARTSC')", (f"u{i}", trunc, first, last, f"{first} {last}"))

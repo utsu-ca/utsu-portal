@@ -8,12 +8,12 @@ from importlib import resources
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from utsu_core.contracts import (
+from core.contracts import (
     FormContribution, NotificationType, PluginManifest, PluginServices, RegistrationContext, SubmissionPolicy,
 )
-from utsu_core.pagination import PageOrder, paginate_items, paginate_page
-from utsu_core.services.exports import csv_response
-from utsu_core.permissions import PERM_SENATE_APPLICATIONS
+from core.pagination import PageOrder, paginate_items, paginate_page
+from core.services.exports import csv_response
+from core.permissions import PERM_SENATE_APPLICATIONS
 from .seating import FACULTY, assign_seats, tier_index
 
 PREFERENCES = {

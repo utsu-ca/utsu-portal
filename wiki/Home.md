@@ -1,6 +1,6 @@
 # UTSU core
 
-The unified UTSU web application and its program modules live under `utsu_core`. See the repository
+The unified UTSU web application and its program modules live under `core`. See the repository
 [README](../README.md) for setup, current functionality and known limitations, and
 [Applicant Portal](Applicant-Portal.md) for portal architecture.
 

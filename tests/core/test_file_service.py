@@ -10,21 +10,21 @@ from zoneinfo import ZoneInfo
 import pytest
 from fastapi import HTTPException
 
-from utsu_core.contracts import FileKind
-from utsu_core.crypto import Crypter, EncryptingStore, PREFIX
-from utsu_core.pagination import PageOrder
-from utsu_core.services import upload_quota
-from utsu_core.services.files import DocumentService
-from utsu_core.services.financial_access import FinancialAccessStore
-from utsu_core.services.receipt_storage import ReceiptStorage, YEAR
-from utsu_core.services.upload_quota import (
+from core.contracts import FileKind
+from core.crypto import Crypter, EncryptingStore, PREFIX
+from core.pagination import PageOrder
+from core.services import upload_quota
+from core.services.files import DocumentService
+from core.services.financial_access import FinancialAccessStore
+from core.services.receipt_storage import ReceiptStorage, YEAR
+from core.services.upload_quota import (
     GIB,
     QUOTA_POLICY_ENTRY_POINT_GROUP,
     QuotaStore,
     UploadQuotaPolicy,
 )
-from utsu_core.settings import Settings
-from utsu_core.store import MemoryStore, SQLiteStore
+from core.settings import Settings
+from core.store import MemoryStore, SQLiteStore
 
 
 class RecordingAudit:
@@ -386,7 +386,7 @@ def test_club_quota_counts_distinct_registered_years_not_elapsed_time_and_caps()
 
 def receipt_storage(tmp_path, *, enabled=True, academic_year=None):
     if academic_year is None:
-        from utsu_core.programs.clubs.module import academic_year
+        from core.programs.clubs.module import academic_year
 
     settings = Settings(secret="s" * 32, receipt_storage_path=str(tmp_path), receipt_cold_remote="cold:receipts",
                         receipt_archive_enabled=enabled)
@@ -464,7 +464,7 @@ def test_receipt_archive_inactivity_boundary_and_recent_access(tmp_path):
     assert storage.archive() == []
     clock[0] += YEAR - 1
     # Isolate the inactivity rule from the separate academic-year rule.
-    from utsu_core.programs.clubs.module import academic_year
+    from core.programs.clubs.module import academic_year
     store.update("receipts", "receipt", lambda doc: {**doc, "academic_year": academic_year(clock[0] + 1)})
     assert storage.archive() == []
     clock[0] += 1
@@ -531,7 +531,7 @@ def test_one_missing_receipt_does_not_block_other_archives(tmp_path, monkeypatch
 
 
 def test_maintenance_reports_archive_failure_and_reconciles_quota(tmp_path, monkeypatch):
-    from utsu_core import receipt_maintenance
+    from core import receipt_maintenance
 
     store, storage, clock, _audit = receipt_storage(tmp_path)
     transport(monkeypatch, storage)
@@ -604,9 +604,9 @@ PROCESS_SCRIPT = """
 import sys
 sys.path[:0] = [sys.argv[1], sys.argv[2], sys.argv[3]]
 from test_file_service import data_url, program_upload_policy
-from utsu_core.services.upload_quota import QuotaStore
-from utsu_core.settings import Settings
-from utsu_core.store import MemoryStore, SQLiteStore
+from core.services.upload_quota import QuotaStore
+from core.settings import Settings
+from core.store import MemoryStore, SQLiteStore
 
 mode = sys.argv[5]
 usage = SQLiteStore(sys.argv[4])
@@ -631,12 +631,12 @@ def test_quota_catalogue_fences_and_retains_across_real_processes(tmp_path):
     import subprocess
     import sys
 
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
     quota_db = str(tmp_path / "quota.db")
 
     def command(mode):
         return [sys.executable, "-c", PROCESS_SCRIPT, str(root / "src"), str(root / "src/core"),
-                str(root / "tests"), quota_db, mode]
+                str(Path(__file__).resolve().parent), quota_db, mode]
 
     def run(mode):
         result = subprocess.run(command(mode), capture_output=True, text=True, timeout=60, check=True)

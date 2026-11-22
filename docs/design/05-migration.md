@@ -1,7 +1,7 @@
 # 05 Migration and removal of the batch tools
 
 This is a proposed future migration, not a description of completed work. All current functionality is packaged under
-`utsu_core`. Their underlying batch processing logic is retained for parity and migration work. Portal replacements are not yet complete.
+`core`. Their underlying batch processing logic is retained for parity and migration work. Portal replacements are not yet complete.
 
 ## 1. What is removed, and when
 
@@ -9,16 +9,16 @@ Removal is the last phase (P6). Nothing is deleted until its replacement passes 
 
 | Remove | Replaced by | Condition |
 |---|---|---|
-| Shared batch processing modules in `src/utsu_core/` | `utsu_core/services/` | P1 done, tests ported |
-| Batch processors in `src/utsu_core/programs/{senate,sap,agm}`, `runner.py` | Live program modules | P2-P4 done |
-| `src/utsu_core/mail/` | `services/notices.py` + `Mailer` | P1 done |
-| `src/utsu_core/std/` | `services/text.py`, `services/exports.py` | P1 done |
+| Shared batch processing modules in `src/core/` | `core/services/` | P1 done, tests ported |
+| Batch processors in `src/core/programs/{senate,sap,agm}`, `runner.py` | Live program modules | P2-P4 done |
+| `src/core/mail/` | `services/notices.py` + `Mailer` | P1 done |
+| `src/core/std/` | `services/text.py`, `services/exports.py` | P1 done |
 | `testing/generate_fake_*.py` | Keep as test fixtures; add portal-compatible seeding and parity tests as needed | Ongoing |
 | `data/*.csv` | seats/weights become stored data; conversion tables are dropped | P2-P4 |
 | Batch-tool content in `README.md` and `wiki/` (Input-and-Output-Files, Operations-Runbook, Full-Exports-and-Integrity, ...) | portal docs | P6 |
 | `IMPLEMENTATION-COMPLETE.txt`; move `SAP Reimagined Rubric & Procedures Draft.pdf` to `docs/reference/` | n/a | P6 |
 
-Kept: `utsu_core` core, `deploy/`, `infra/`, `Dockerfile*`, `docker-compose*.yml`, `nginx.conf`, observability
+Kept: `core` core, `deploy/`, `infra/`, `Dockerfile*`, `docker-compose*.yml`, `nginx.conf`, observability
 files, `LICENSE`.
 
 ## 2. Packaging
@@ -26,7 +26,7 @@ files, `LICENSE`.
 - Make the portal dependencies the base dependencies in `pyproject.toml` (`fastapi`, `uvicorn`, `pyyaml`,
   `cryptography`, `segno`, `redis`, `google-re2`); keep `dev`, `firestore`, `sql`, `observability`, `filesvc`,
   `authsvc` extras. Rename the project `utsu-portal`.
-- `[tool.setuptools.packages.find] include = ["utsu_core*"]`; package data adds the email templates.
+- `[tool.setuptools.packages.find] include = ["core*"]`; package data adds the email templates.
 - Move `templates/email` into the package so it ships with the wheel.
 
 ## 3. Data migration (one-off)

@@ -1,4 +1,4 @@
-"""Standalone authentication service: `uvicorn --factory utsu_core.authsvc:create_auth_app`.
+"""Standalone authentication service: `uvicorn --factory core.authsvc:create_auth_app`.
 
 Owns accounts, users, OTPs, identity verification review and the session-signing key. Runs with its own store,
 secret and audit log. The portal talks to it only through (a) Ed25519-signed bearer tokens it can verify offline and

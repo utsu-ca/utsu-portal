@@ -10,12 +10,12 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).parent))
 from test_voting import _app, _people  # noqa: E402
 
-from utsu_core.mailer import OutboxMailer
-from utsu_core.contracts import ThreadAccess, ThreadType
-from utsu_core.modules.messaging import thread_events
-from utsu_core.programs.discussion.contracts import THREAD_TYPE
-from utsu_core.services.messaging import MAX_PAGE, MessagingRuntime, ThreadTypeRegistry, thread_key
-from utsu_core.store import MemoryStore
+from core.mailer import OutboxMailer
+from core.contracts import ThreadAccess, ThreadType
+from core.modules.messaging import thread_events
+from core.programs.discussion.contracts import THREAD_TYPE
+from core.services.messaging import MAX_PAGE, MessagingRuntime, ThreadTypeRegistry, thread_key
+from core.store import MemoryStore
 
 THREAD = "/api/threads/discussion-topic"
 

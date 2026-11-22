@@ -10,7 +10,7 @@ Supports multiple storage backends with a unified interface:
 All backends are configured via environment variables and are vendor-agnostic.
 
 Usage:
-    from utsu_core.filesvc import FileHandler
+    from core.filesvc import FileHandler
     
     handler = FileHandler.from_env()
     

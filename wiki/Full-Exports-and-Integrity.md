@@ -73,7 +73,7 @@ of the student for that term becomes `not_considered`. Other terms are unaffecte
 
 ## Integrity checks
 
-The only integrity check is `duplicate_verified` in `src/core/utsu_core/integrity.py`: more than one verified application for
+The only integrity check is `duplicate_verified` in `src/core/integrity.py`: more than one verified application for
 a student (per term for SABP) is logged as `INTEGRITY: ...` and counted as `integrity_duplicates` in the run summary.
 There are no alert files or alert screens. Problems are prevented where the data is entered (the portal refuses a
 Senate or AGM submission when the student status cannot be verified, and Senate seating preferences are required by the

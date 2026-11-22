@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import SapAdminView from "../../../../../src/sabp/frontend/views/SapAdminView.svelte";
+import SapAdminView from "../../../../../../sabp/frontend/views/SapAdminView.svelte";
 
 vi.mock("@utsu/portal", async importOriginal => ({
   ...(await importOriginal()),

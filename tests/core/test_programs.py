@@ -4,12 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from utsu_core.spec import ProgramSpec
-from utsu_core.programs.agm.program import SPEC as AGM_SPEC
-from utsu_core.programs.sap.program import SPEC as SAP_SPEC
-from utsu_core.programs.senate.program import SPEC as SENATE_SPEC
+from core.spec import ProgramSpec
+from core.programs.agm.program import SPEC as AGM_SPEC
+from core.programs.sap.program import SPEC as SAP_SPEC
+from core.programs.senate.program import SPEC as SENATE_SPEC
 
-SRC = Path(__file__).resolve().parents[1] / "src"
+SRC = Path(__file__).resolve().parents[2] / "src"
 SPECS = [SENATE_SPEC, SAP_SPEC, AGM_SPEC]
 
 
@@ -43,10 +43,10 @@ def test_a_program_depends_on_the_core_and_not_on_the_other_programs(program):
     others = {"senate", "sabp", "agm"} - {program}
     for module in imported_packages(program):
         assert not any(module == other or module.startswith(f"{other}.") for other in others), module
-        assert not any(module.startswith(f"utsu_core.programs.{other}") for other in {"senate", "sap", "agm"}), module
-        assert not module.startswith("utsu_core.mail"), module
+        assert not any(module.startswith(f"core.programs.{other}") for other in {"senate", "sap", "agm"}), module
+        assert not module.startswith("core.mail"), module
 
 
 def test_shared_processing_engine_does_not_import_programs():
-    for module in imported_packages("core/utsu_core", recursive=False):
-        assert not module.startswith(("utsu_core.programs", "utsu_core.mail")), module
+    for module in imported_packages("core/core", recursive=False):
+        assert not module.startswith(("core.programs", "core.mail")), module

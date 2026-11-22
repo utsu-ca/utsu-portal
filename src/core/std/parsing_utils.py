@@ -1,4 +1,4 @@
-from utsu_core.services.roster import division_code, get_trunc_id
+from core.services.roster import division_code, get_trunc_id
 
 
 def split_multi(value: str) -> list[str]:

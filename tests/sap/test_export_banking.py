@@ -3,10 +3,10 @@ import sqlite3
 
 import pytest
 
-from utsu_core.verification import construct_lookup_tables, setup_reader
-from utsu_core.programs.sap.export_banking import BANK_FIELDS, export_banking, export_email
-from utsu_core.programs.sap.program import SPEC, build_row
-from utsu_core.std.utils import absfile
+from core.verification import construct_lookup_tables, setup_reader
+from core.programs.sap.export_banking import BANK_FIELDS, export_banking, export_email
+from core.programs.sap.program import SPEC, build_row
+from core.std.utils import absfile
 
 
 def write_csv(path, fields, rows):

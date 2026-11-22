@@ -17,7 +17,7 @@ from ..permissions import PERM_PAYMENTS_MANAGE
 from ..services.payments import PaymentGateway, StripeGateway
 from ..store import ACCESS, AccessLog, Conflict
 
-log = logging.getLogger("utsu_core.payments")
+log = logging.getLogger("core.payments")
 EVENT_STATES = {
     "checkout.session.completed": "processing",
     "checkout.session.async_payment_succeeded": "paid",

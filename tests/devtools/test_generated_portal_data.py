@@ -3,17 +3,17 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from utsu_core import create_app
-from utsu_core.mailer import OutboxMailer
-from utsu_core.settings import Settings
+from core import create_app
+from core.mailer import OutboxMailer
+from core.settings import Settings
 from test_portal import login, register, scan
-from utsu_core.programs.senate.module import PREFERENCES
-from utsu_core.programs.senate.seating import assign_seats, tier_index
-from utsu_core.programs.sap.wfni import compute_wfni, parse_weights
+from core.programs.senate.module import PREFERENCES
+from core.programs.senate.seating import assign_seats, tier_index
+from core.programs.sap.wfni import compute_wfni, parse_weights
 
 
 def test_generated_roster_is_processed_by_portal(tmp_path, monkeypatch):
-    testing = Path(__file__).resolve().parents[1] / "testing"
+    testing = Path(__file__).resolve().parents[2] / "testing"
     monkeypatch.syspath_prepend(str(testing))
     import generate_fake_agm
     import generate_fake_data
@@ -108,7 +108,7 @@ def test_generated_roster_is_processed_by_portal(tmp_path, monkeypatch):
     }
     answers = {key: sabp[header] for key, header in fields.items()}
     expected, unknown = compute_wfni(answers, parse_weights(
-        (Path(__file__).resolve().parents[1] / "data/wfni_weights.csv").read_text()))
+        (Path(__file__).resolve().parents[2] / "data/wfni_weights.csv").read_text()))
     assert not unknown
     if answers["disposable_income"].startswith("A negative amount"):
         answers["disposable_income"] = "A negative amount"
@@ -120,7 +120,7 @@ def test_generated_roster_is_processed_by_portal(tmp_path, monkeypatch):
     response = client.put("/api/forms/student_aid_bursary/submission",
                           json={"version": form["version"], "hash": form["hash"], "data": data}, headers=user)
     assert response.status_code == 200, response.text
-    weights = (Path(__file__).resolve().parents[1] / "data/wfni_weights.csv").read_text()
+    weights = (Path(__file__).resolve().parents[2] / "data/wfni_weights.csv").read_text()
     assert client.put("/api/admin/sap/weights", json={"csv": weights}, headers=admin).status_code == 200
     view = client.get("/api/me/sap", headers=user).json()
     assert view["eligible"] and view["wfni"]["status"] == "complete" and view["wfni"]["score"] == expected

@@ -1,19 +1,19 @@
-# 01 Shared services (`utsu_core/services`)
+# 01 Shared services (`core/services`)
 
-Program-neutral code used by Senate, SAP and AGM. Ported from `utsu_core`, `utsu_core.std` and `utsu_core.mail`.
+Program-neutral code used by Senate, SAP and AGM. Ported from `core`, `core.std` and `core.mail`.
 Sections below include proposed behavior; see [README](../../README.md) for what is currently implemented.
 
 ## 1. Module map
 
 | New module | Ported from | Public API (sketch) |
 |---|---|---|
-| `services/roster.py` | `utsu_core/importing_data.py`, `verification.py`, `schema/uoft_data.sql` | `import_roster(rows, replace=False) -> ImportReport`; `match(person) -> Match` |
-| `services/selection.py` | `utsu_core/selection.py` | `person_key`, `submission_rank`, `select_current(rows, key, rank)` |
-| `services/alerts.py` | `utsu_core/integrity.py` | `duplicate_verified(rows, cols)`, `raise_alert(kind, severity, refs)`, `list_alerts(program)` |
-| `services/notices.py` | `utsu_core/mail/{templates,notices,campaign,recipients,transport}.py` | `render(template, ctx)`, `send_notice(program, kind, record)` |
-| `services/exports.py` | `utsu_core/std/csv_safe.py`, DOCX helpers in `sap/program.py` | `csv_response(rows, columns)`, `docx_sheet(...)` |
-| `services/text.py` | `utsu_core/std/utils.py`, `parsing_utils.py` | `clean`, `normalize_email`, `parse_student_number`, `parse_amount` |
-| `services/spec.py` | `utsu_core/spec.py`, `pipeline.py` | `ProgramSpec` + `reconcile(spec, submissions)` used by every program |
+| `services/roster.py` | `core/importing_data.py`, `verification.py`, `schema/uoft_data.sql` | `import_roster(rows, replace=False) -> ImportReport`; `match(person) -> Match` |
+| `services/selection.py` | `core/selection.py` | `person_key`, `submission_rank`, `select_current(rows, key, rank)` |
+| `services/alerts.py` | `core/integrity.py` | `duplicate_verified(rows, cols)`, `raise_alert(kind, severity, refs)`, `list_alerts(program)` |
+| `services/notices.py` | `core/mail/{templates,notices,campaign,recipients,transport}.py` | `render(template, ctx)`, `send_notice(program, kind, record)` |
+| `services/exports.py` | `core/std/csv_safe.py`, DOCX helpers in `sap/program.py` | `csv_response(rows, columns)`, `docx_sheet(...)` |
+| `services/text.py` | `core/std/utils.py`, `parsing_utils.py` | `clean`, `normalize_email`, `parse_student_number`, `parse_amount` |
+| `services/spec.py` | `core/spec.py`, `pipeline.py` | `ProgramSpec` + `reconcile(spec, submissions)` used by every program |
 
 `ProgramSpec` survives as the declarative contract (slug, form id, identity columns, key/rank, veto, annotate,
 sticky). `pipeline.Run` becomes the pure `select()`: submissions + roster in, applications + alerts out, with no

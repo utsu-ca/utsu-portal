@@ -7,9 +7,9 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Callable
 
-from utsu_core.resources import package_text
-from utsu_core.selection import add_flag, person_key, submission_rank
-from utsu_core.verification import Match
+from core.resources import package_text
+from core.selection import add_flag, person_key, submission_rank
+from core.verification import Match
 
 
 def flag_fuzzy_match(row: dict, match: Match) -> None:

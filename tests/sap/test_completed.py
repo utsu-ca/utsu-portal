@@ -3,7 +3,7 @@ term are not considered. Other terms are unaffected."""
 import logging
 
 from test_sap import LC_ROW, form_csv, students_db
-from utsu_core.programs.sap import program as sap
+from core.programs.sap import program as sap
 
 FALL_1 = LC_ROW  # Ann Lee, Fall 2026
 FALL_2 = {**LC_ROW, "Timestamp": "2026/10/20 9:00:00 a.m. AST"}  # a later submission, same student and term

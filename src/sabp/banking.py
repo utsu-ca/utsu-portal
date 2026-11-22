@@ -3,10 +3,10 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from utsu_core.context import Context
-from utsu_core.contracts import FormsService
-from utsu_core.permissions import PERM_SAP_APPLICATIONS, PERM_SAP_FINANCE
-from utsu_core.services.banking import (
+from core.context import Context
+from core.contracts import FormsService
+from core.permissions import PERM_SAP_APPLICATIONS, PERM_SAP_FINANCE
+from core.services.banking import (
     BANKING_ACTIVE, BANKING_FIELDS, CHEQUE_DATA_URL,
     AcceptBankingIn, BankingIn, BankingRoutePolicy, DestroyBankingIn, ReverifyBankingIn,
     banking_router as shared_banking_router, parse_void_cheque,

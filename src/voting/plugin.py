@@ -12,8 +12,8 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from utsu_core.contracts import MessageRateLimited, PluginManifest, PluginServices, RegistrationContext
-from utsu_core.permissions import PERM_ELECTIONS_ADMIN
+from core.contracts import MessageRateLimited, PluginManifest, PluginServices, RegistrationContext
+from core.permissions import PERM_ELECTIONS_ADMIN
 from chat.contracts import DiscussionService, TopicKind
 
 from .contracts import MEMBERS, METHODS, THRESHOLDS, VISIBILITIES, BallotSpec, Electorate

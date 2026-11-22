@@ -1,6 +1,6 @@
 """Scheduled audit upkeep: nightly checkpoint+anchor, archival, drop, weekly integrity check.
 
-Run from a Kubernetes CronJob / Cloud Scheduler (`python -m utsu_core.authsvc maintain`), or POST
+Run from a Kubernetes CronJob / Cloud Scheduler (`python -m core.authsvc maintain`), or POST
 /api/admin/auth-audit/maintenance. Every job is claimed with an optimistic lock, so any number of replicas or schedulers can
 trigger it and each job runs once per interval."""
 from __future__ import annotations
@@ -13,7 +13,7 @@ import logging
 
 from . import audit as A
 
-log = logging.getLogger("utsu_core.maintenance")
+log = logging.getLogger("core.maintenance")
 DAY = 86_400
 SYSTEM = "system"
 ARCHIVE_AFTER = 90 * DAY   # months older than ~3 months are compressed into one archive blob

@@ -8,15 +8,15 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from test_portal import login, register, scan
-from utsu_core import create_app
-from utsu_core.mailer import OutboxMailer
-from utsu_core.settings import Settings
+from core import create_app
+from core.mailer import OutboxMailer
+from core.settings import Settings
 
 
 def test_generated_users_agm_workflow_at_scale(tmp_path, monkeypatch):
     count = int(os.environ.get("UTSU_FAKE_USER_COUNT", "24"))
     assert 1 <= count <= 2000, "UTSU_FAKE_USER_COUNT must be between 1 and 2000"
-    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "testing"))
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / "testing"))
     import generate_fake_agm
     import generate_fake_data
     import generate_fake_student_data

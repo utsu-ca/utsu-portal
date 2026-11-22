@@ -1,0 +1,25 @@
+# One file decides what a portal contains.
+#
+#   scripts/build.sh   installs the programs set to true into the container image and builds the matching UI.
+#   scripts/deploy.sh  enables those programs when the portal starts, and mounts ./branding.
+#
+# Changing a program from false to true needs a rebuild (scripts/build.sh); switching one off only needs a redeploy.
+
+# Authentication, identity, audit, forms, mail, files and storage. Always installed and enabled.
+core: true
+
+programs:
+  agm: true      # AGM registration, check-in and ID verification
+  sabp: true     # Student Aid Bursary Program (plug-in id: sap)
+  clubs: true    # Club registration, finances and receipts
+  senate: true   # Senate applications and seating
+  chat: true     # Discussion boards (plug-in id: discussion)
+  voting: true   # Elections and ballots; requires chat
+
+# Theme, logo and favicon, relative to this file. Mounted at run time, so edits only need a redeploy.
+branding: branding
+
+# Optional per-program settings, keyed by plug-in id (see each program's manifest for its keys).
+# plugin_config:
+#   sap:
+#     example_key: value

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { BankingView } from "@utsu/portal";
-import SapBankingView from "../../../../../src/sabp/frontend/views/SapBankingView.svelte";
+import SapBankingView from "../../../../../../sabp/frontend/views/SapBankingView.svelte";
 import { session } from "../../../lib/session.svelte.js";
 import { bankingStatus, clearBankingStatus, loadBankingStatus } from "../../profile/state/banking.svelte.js";
 

@@ -6,11 +6,11 @@ import sqlite3
 import pytest
 
 from test_agm import form_csv, rsvp, students_db
-from utsu_core import selection
-from utsu_core.programs.agm import program as agm
-from utsu_core.mail.notices import EMAIL_FIELD, diagnose
-from utsu_core.std import csv_safe
-from utsu_core.std.database import replace_table
+from core import selection
+from core.programs.agm import program as agm
+from core.mail.notices import EMAIL_FIELD, diagnose
+from core.std import csv_safe
+from core.std.database import replace_table
 
 TS = "2026/10/01 9:00:00 a.m. AST"
 
@@ -152,5 +152,5 @@ def test_output_files_open_in_excel_with_accents_and_read_back(tmp_path):
     agm.process_agm(form_csv(tmp_path / "rsvp.csv", [row]), conn, output_dir=out)
     raw = (out / "agm_list_all.csv").read_bytes()
     assert raw.startswith(b"\xef\xbb\xbf") and "Jos\u00e9".encode("utf-8") in raw
-    from utsu_core.mail.recipients import read_csv
+    from core.mail.recipients import read_csv
     assert read_csv(out / "agm_list_all.csv")[0]["preferred_name"] == "Jos\u00e9"  # the BOM is not in the first header

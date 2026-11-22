@@ -13,29 +13,29 @@ import pytest
 from fastapi import APIRouter
 from fastapi.testclient import TestClient
 
-from utsu_core import create_app
-from utsu_core.bootstrap import build_app
-from utsu_core.context import Context
-from utsu_core.contracts import (
+from core import create_app
+from core.bootstrap import build_app
+from core.context import Context
+from core.contracts import (
     FileAuthorization, FileKind, FormsService, PluginManifest, PluginServices, RegistrationContext, StoreService,
     ThreadAccess, ThreadType,
 )
-from utsu_core.pagination import PageOrder
-from utsu_core.plugin_host import (
+from core.pagination import PageOrder
+from core.plugin_host import (
     PluginHostError,
     discover_manifests,
     load_modules,
     parse_manifest,
     select_manifests,
 )
-from utsu_core.settings import Settings
-from utsu_core.store import MemoryStore, SQLiteStore, Store
+from core.settings import Settings
+from core.store import MemoryStore, SQLiteStore, Store
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_frontend_metadata_reports_only_enabled_programs(monkeypatch: pytest.MonkeyPatch):
-    from utsu_core import app as app_module
+    from core import app as app_module
 
     original = app_module.load_modules
     external = parse_manifest({
@@ -74,7 +74,7 @@ def test_frontend_metadata_reports_only_enabled_programs(monkeypatch: pytest.Mon
 
 
 def test_scoped_file_creation_authorizes_and_audits_before_writing():
-    from utsu_core.services.files import DocumentService
+    from core.services.files import DocumentService
 
     audit = Mock()
     written: list[tuple[str, str, str, bytes]] = []
@@ -110,7 +110,7 @@ def test_scoped_file_creation_authorizes_and_audits_before_writing():
 
 
 def test_file_delegation_requires_opt_in_and_declared_owner_dependency():
-    from utsu_core.services.files import DocumentService
+    from core.services.files import DocumentService
 
     files = DocumentService(Mock())
     grant = FileAuthorization(lambda _action, actor, _resource, _reference: actor == "staff")
@@ -176,7 +176,7 @@ def test_file_delegation_requires_opt_in_and_declared_owner_dependency():
 
 
 def test_typed_plugin_contributes_file_authorizer_for_a_dependency(monkeypatch: pytest.MonkeyPatch):
-    from utsu_core import plugin_host
+    from core import plugin_host
 
     provider = PluginManifest("provider", "1.0", 1, "provider:Plugin", services=("files",))
     consumer = PluginManifest("consumer", "1.0", 1, "consumer:Plugin", dependencies=("provider",),
@@ -218,7 +218,7 @@ def test_typed_plugin_contributes_file_authorizer_for_a_dependency(monkeypatch: 
 
 
 def test_sap_typed_manifest_keeps_banking_routes_core_owned():
-    from utsu_core.plugin_host import PluginHostError
+    from core.plugin_host import PluginHostError
 
     manifest = discover_manifests()["sap"]
     assert manifest.interface == "plugin"
@@ -238,8 +238,8 @@ def test_sap_typed_manifest_keeps_banking_routes_core_owned():
 
 def test_clubs_typed_manifest_and_receipt_capabilities_are_scoped():
     from clubs.module import ClubsModule
-    from utsu_core.plugin_host import PluginHostError
-    from utsu_core.plugin_runtime import _plugin_services
+    from core.plugin_host import PluginHostError
+    from core.plugin_runtime import _plugin_services
 
     manifests = discover_manifests()
     manifest = manifests["clubs"]
@@ -273,11 +273,11 @@ def test_core_only_profile_does_not_import_or_mount_programs():
         [
             sys.executable,
             "-c",
-            "from utsu_core.app import create_app; "
-            "from utsu_core.settings import Settings; "
+            "from core.app import create_app; "
+            "from core.settings import Settings; "
             "app = create_app(Settings(secret='s' * 32, enabled_plugins=(), api_only=True)); "
             "import sys; "
-            "assert not any(name.startswith('utsu_core.programs.') for name in sys.modules); "
+            "assert not any(name.startswith('core.programs.') for name in sys.modules); "
             "assert not any(name.split('.')[0] in {'agm', 'sabp', 'clubs', 'senate', 'chat', 'voting'} "
             "for name in sys.modules); "
             "paths = {route.path for route in app.routes if hasattr(route, 'path')}; "
@@ -291,8 +291,8 @@ def test_core_only_profile_does_not_import_or_mount_programs():
 
 
 def test_disabled_form_owners_hide_routes_without_deleting_submissions():
-    from utsu_core.app import create_app
-    from utsu_core.store import MemoryStore
+    from core.app import create_app
+    from core.store import MemoryStore
 
     store = MemoryStore()
     full = create_app(Settings(secret="s" * 32), store=store)
@@ -315,7 +315,7 @@ def test_disabled_form_owners_hide_routes_without_deleting_submissions():
 
 @pytest.mark.parametrize("store_factory", [MemoryStore, SQLiteStore])
 def test_typed_forms_paging_preserves_form_ownership(store_factory: Callable[[], Store]) -> None:
-    from utsu_core.services.forms import FormRegistry, FormsRuntime
+    from core.services.forms import FormRegistry, FormsRuntime
 
     store = store_factory()
     registry = FormRegistry({"student_aid_bursary": "sap", "senate_application": "senate"})
@@ -454,7 +454,7 @@ def test_legacy_plugin_services_constructor_explicitly_lacks_identity():
 
 
 def test_typed_quota_service_requires_declared_domains_and_valid_resource(monkeypatch: pytest.MonkeyPatch):
-    from utsu_core import plugin_host
+    from core import plugin_host
 
     raw = {"id": "sample", "version": "1.0", "core_api_major": 1, "factory": "sample:Plugin",
            "services": ["auth", "quotas"], "quota_domains": ["user"]}
@@ -513,7 +513,7 @@ def test_typed_store_cannot_claim_shared_core_collections(collection: str) -> No
 def test_typed_store_put_and_compare_and_swap_are_scoped(
     store_factory: Callable[[], Store], monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from utsu_core import plugin_host
+    from core import plugin_host
 
     inner = store_factory()
     stores: list[StoreService] = []
@@ -552,8 +552,8 @@ def test_typed_store_put_and_compare_and_swap_are_scoped(
 
 
 def test_typed_auth_dependencies_return_only_account_projection(monkeypatch: pytest.MonkeyPatch) -> None:
-    from utsu_core import plugin_host
-    from utsu_core.identity import Identity
+    from core import plugin_host
+    from core.identity import Identity
 
     manifest = PluginManifest("sample", "1.0", 1, "sample:Plugin", services=("auth", "identity", "messaging"))
     thread_accounts: list[dict[str, Any]] = []
@@ -673,7 +673,7 @@ def test_typed_auth_dependencies_return_only_account_projection(monkeypatch: pyt
 
 
 def test_opt_in_plugins_stay_off_by_default_and_provided_services_follow_dependencies(monkeypatch: pytest.MonkeyPatch):
-    from utsu_core import plugin_host
+    from core import plugin_host
 
     manifests = discover_manifests()
     assert {"discussion", "voting"}.isdisjoint(m.id for m in select_manifests(manifests, "local", None))
@@ -751,8 +751,8 @@ def test_program_financial_audit_declarations_require_retained_policy():
 
 
 def test_disabled_program_keeps_legacy_data_encryption():
-    from utsu_core.crypto import Crypter, EncryptingStore
-    from utsu_core.store import MemoryStore
+    from core.crypto import Crypter, EncryptingStore
+    from core.store import MemoryStore
 
     manifests = discover_manifests()
     selected = select_manifests(manifests, "local", ())
@@ -780,7 +780,7 @@ def test_disabled_programs_keep_financial_access_audits():
 
 
 def test_settings_are_scoped_to_selected_plugins():
-    from utsu_core.app import create_app
+    from core.app import create_app
 
     clubs = create_app(Settings(secret="s" * 32, enabled_plugins=("clubs",), api_only=True,
                                 max_receipt_bytes=1234))
@@ -886,7 +886,7 @@ def test_named_manifests_are_discovered_from_distribution_metadata(tmp_path: Pat
 
 
 def test_program_owned_configuration_is_scoped_and_validated():
-    from utsu_core.settings import plugin_settings_for
+    from core.settings import plugin_settings_for
 
     def manifest(name: str) -> PluginManifest:
         return parse_manifest({"id": name, "version": "1.0", "core_api_major": 1, "factory": "sample:Plugin",
@@ -906,7 +906,7 @@ def test_program_owned_configuration_is_scoped_and_validated():
 
 
 def test_program_configuration_environment_and_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    from utsu_core.settings import plugin_settings_for
+    from core.settings import plugin_settings_for
 
     config = tmp_path / "plugin-config.json"
     config.write_text('{"sample":{"limit":5}}', encoding="utf-8")
@@ -925,8 +925,8 @@ def test_program_configuration_environment_and_file(monkeypatch: pytest.MonkeyPa
 
 
 def test_typed_plugin_gets_scoped_core_services_and_file_registration(monkeypatch: pytest.MonkeyPatch):
-    from utsu_core import plugin_host
-    from utsu_core.settings import plugin_settings_for
+    from core import plugin_host
+    from core.settings import plugin_settings_for
 
     manifest = PluginManifest(
         "typed-sample",
@@ -1018,7 +1018,7 @@ def test_typed_plugin_gets_scoped_core_services_and_file_registration(monkeypatc
 
 
 def test_typed_plugin_requiring_unavailable_service_fails_before_import(monkeypatch: pytest.MonkeyPatch):
-    from utsu_core import plugin_host
+    from core import plugin_host
 
     manifest = PluginManifest(
         "typed-sample",
@@ -1133,3 +1133,27 @@ def test_enabled_plugin_environment_parses_empty_and_lists(monkeypatch: pytest.M
     assert Settings.from_env().enabled_plugins == ("agm", "clubs", "sap")
     monkeypatch.setenv("PORTAL_ENABLED_PLUGINS", "")
     assert Settings.from_env().enabled_plugins == ()
+
+
+def _installed_copy_of(identifier: str, tmp_path: Path, **overrides: object) -> metadata.EntryPoint:
+    catalogue = json.loads(
+        (Path(__file__).resolve().parents[1] / "src/core/plugin_manifests/builtin.json").read_text("utf-8")
+    )
+    declaration = {**next(item for item in catalogue["plugins"] if item["id"] == identifier), **overrides}
+    filename = f"{identifier}.utsu-plugin.json"
+    (tmp_path / filename).write_text(json.dumps({"schema_version": 1, "plugin": declaration}), encoding="utf-8")
+    distribution = SimpleNamespace(files=[Path(filename)], locate_file=lambda path: tmp_path / path)
+    return cast(metadata.EntryPoint, SimpleNamespace(
+        name=identifier, value=str(declaration["factory"]), dist=distribution,
+    ))
+
+
+def test_installed_program_matching_its_builtin_descriptor_is_not_a_duplicate(tmp_path: Path):
+    entry_point = _installed_copy_of("senate", tmp_path)
+    assert discover_manifests([entry_point])["senate"] == discover_manifests([])["senate"]
+
+
+def test_installed_program_that_differs_from_its_builtin_descriptor_is_a_duplicate(tmp_path: Path):
+    entry_point = _installed_copy_of("senate", tmp_path, version="99.0")
+    with pytest.raises(PluginHostError, match="duplicate plug-in id: senate"):
+        discover_manifests([entry_point])

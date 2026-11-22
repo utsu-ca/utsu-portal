@@ -2,10 +2,10 @@
 
 from fastapi import FastAPI
 
-from utsu_core import create_app
-from utsu_core.devadmin import check_dev_settings
-from utsu_core.mailer import SMTPMailer
-from utsu_core.settings import Settings
+from core import create_app
+from core.devadmin import check_dev_settings
+from core.mailer import SMTPMailer
+from core.settings import Settings
 
 
 class DevSinkMailer(SMTPMailer):

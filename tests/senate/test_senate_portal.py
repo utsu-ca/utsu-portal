@@ -4,10 +4,10 @@ import io
 from fastapi.testclient import TestClient
 
 from test_portal import activate, login, register
-from utsu_core import create_app
-from utsu_core.mailer import OutboxMailer
-from utsu_core.settings import Settings
-from utsu_core.programs.senate.module import PREFERENCES
+from core import create_app
+from core.mailer import OutboxMailer
+from core.settings import Settings
+from core.programs.senate.module import PREFERENCES
 
 
 def test_senate_application_views_recheck_roster_and_enforce_roles():

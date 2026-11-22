@@ -1,4 +1,4 @@
-"""Optional HTTP email API: `uvicorn --factory utsu_core.mailsvc:create_mail_app`.
+"""Optional HTTP email API: `uvicorn --factory core.mailsvc:create_mail_app`.
 
 This service records requests and can dispatch high-priority messages once through
 an in-process background task. It has no durable worker, delivery guarantee, or
@@ -28,7 +28,7 @@ from ..mailer import Mailer, mailer_from_env
 from ..settings import Settings
 from ..store import Store
 
-log = logging.getLogger("utsu_core.mail")
+log = logging.getLogger("core.mail")
 
 Base = declarative_base()
 

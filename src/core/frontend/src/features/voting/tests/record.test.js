@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { merkleRoot, recordDigest, verifyRecord } from "../../../../../src/voting/frontend/lib/record.js";
+import { merkleRoot, recordDigest, verifyRecord } from "../../../../../../voting/frontend/lib/record.js";
 
 // Reference values computed by src/voting/record.py.
 const leaves = [

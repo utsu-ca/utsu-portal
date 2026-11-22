@@ -17,14 +17,14 @@ from generate_fake_agm import MEETING
 from generate_fake_data import DEFAULT_ENCODING, DEFAULT_SEED, load_students
 from generate_fake_sabp import BURSARY_LC
 from generate_fake_senate import DELEGATE, TIERS
-from utsu_core import create_app
-from utsu_core.devadmin import DEV_DOMAIN, check_dev_settings
-from utsu_core.mailer import OutboxMailer
-from utsu_core.programs.senate.module import PREFERENCES
-from utsu_core.services.roster import get_trunc_id
-from utsu_core.services.text import normalize_case
-from utsu_core.settings import Settings
-from utsu_core.store import MemoryStore, Store, open_store
+from core import create_app
+from core.devadmin import DEV_DOMAIN, check_dev_settings
+from core.mailer import OutboxMailer
+from core.programs.senate.module import PREFERENCES
+from core.services.roster import get_trunc_id
+from core.services.text import normalize_case
+from core.settings import Settings
+from core.store import MemoryStore, Store, open_store
 
 ROOT = Path(__file__).resolve().parents[1]
 SAMPLED_ACCOUNTS = 1000

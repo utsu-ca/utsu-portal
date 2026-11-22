@@ -11,7 +11,7 @@ from typing import Any
 from ..anchor import AnchorProvider
 from ..store import Doc, Store
 
-log = logging.getLogger("utsu_core.anchors")
+log = logging.getLogger("core.anchors")
 _PURPOSE = re.compile(r"^[a-z][a-z0-9_.-]{0,63}$")
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 RETRY_AFTER = 60

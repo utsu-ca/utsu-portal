@@ -9,7 +9,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from utsu_core.contracts import (
+from core.contracts import (
     FormContribution,
     NotificationType,
     PluginManifest,
@@ -17,9 +17,9 @@ from utsu_core.contracts import (
     RegistrationContext,
     SubmissionPolicy,
 )
-from utsu_core.pagination import PageOrder, paginate_page, paginate_store
-from utsu_core.permissions import PERM_AGM_CHECKIN, PERM_AGM_REGISTRATIONS
-from utsu_core.services.exports import csv_response
+from core.pagination import PageOrder, paginate_page, paginate_store
+from core.permissions import PERM_AGM_CHECKIN, PERM_AGM_REGISTRATIONS
+from core.services.exports import csv_response
 
 from .state import AgmVerificationState
 

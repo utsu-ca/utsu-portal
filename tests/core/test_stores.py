@@ -5,11 +5,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, os.path.dirname(__file__))
-from utsu_core import create_app  # noqa: E402
-from utsu_core.mailer import OutboxMailer, SMTPMailer  # noqa: E402
-from utsu_core.pagination import PageOrder, paginate_store
-from utsu_core.settings import Settings  # noqa: E402
-from utsu_core.store import ChunkingStore, MemoryStore, SQLiteStore, SQLStore, open_store  # noqa: E402
+from core import create_app  # noqa: E402
+from core.mailer import OutboxMailer, SMTPMailer  # noqa: E402
+from core.pagination import PageOrder, paginate_store
+from core.settings import Settings  # noqa: E402
+from core.store import ChunkingStore, MemoryStore, SQLiteStore, SQLStore, open_store  # noqa: E402
 
 
 class Capped(MemoryStore):
@@ -149,7 +149,7 @@ def test_open_store_specs(tmp_path):
 
 
 def test_portal_runs_on_sql_store(tmp_path, monkeypatch):
-    monkeypatch.setattr("utsu_core.services.turnstile.verify_registration", lambda _settings, _token: None)
+    monkeypatch.setattr("core.services.turnstile.verify_registration", lambda _settings, _token: None)
     mail = OutboxMailer()
     c = TestClient(create_app(Settings(secret="s" * 32, admin_emails=("boss@x.ca",), store=f"sql:sqlite:///{tmp_path}/p.db"), mailer=mail))
     assert c.get("/healthz").json() == {"ok": True}

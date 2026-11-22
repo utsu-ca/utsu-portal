@@ -3,7 +3,7 @@
 > Historical reference only. The mail-merge command below has been removed; portal sign-in mail configuration is
 > described in [README](../README.md). Historical bulk notices are not yet a portal workflow.
 
-`utsu_core.mail` sends mail-merge emails directly over SMTP, with a safe preview-and-confirm workflow.
+`core.mail` sends mail-merge emails directly over SMTP, with a safe preview-and-confirm workflow.
 
 ## Templates
 
@@ -77,7 +77,7 @@ Subjects carry `[Ref <application uuid>]` and every body lists the application u
 submission timestamp. These are internal database keys, kept in the email only as a reference for replies; a reply is
 matched back by the student's email, student number or name, **not** by the id.
 
-`utsu_core.mail.notices` builds the recipient file. Each row keeps its columns and gains `application_uuid`, `student_uuid`
+`core.mail.notices` builds the recipient file. Each row keeps its columns and gains `application_uuid`, `student_uuid`
 and, for `more_info`, `unverified_fields` (which details could not be verified, judged from what the application actually
 gave) or, for `rejection`, `rejection_reason`:
 

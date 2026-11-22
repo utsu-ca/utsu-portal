@@ -3,8 +3,8 @@ import json
 import re
 
 from fastapi.testclient import TestClient
-from utsu_core import create_app
-from utsu_core.settings import Settings
+from core import create_app
+from core.settings import Settings
 
 HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 

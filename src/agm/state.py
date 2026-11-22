@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from typing import Any, Callable, Protocol
 
-from utsu_core.contracts import PluginServices
+from core.contracts import PluginServices
 
 
 class AgmVerificationAccess(Protocol):

@@ -53,7 +53,7 @@ blank, and is compared as a code (`UC - University College` is `UC`). The SABP f
 
 Students often leave their middle names off the form. When **no roster student has the exact name**, a second pass
 treats the **last name as correct** (the trailing words of the name, so `De La Cruz` works; it must match exactly) and
-compares only the **first names** with `first_name_similarity` (`src/core/utsu_core/verification.py`): the first parts must
+compares only the **first names** with `first_name_similarity` (`src/core/verification.py`): the first parts must
 be alike (a `difflib` ratio of at least `FUZZY_THRESHOLD`, 0.85, so `Jon` ≈ `John`), and the extra parts of the shorter
 name must be found, whole or as an initial, in the longer one (`Ann` ≈ `Ann Marie`, `Ann M` ≈ `Ann Marie`, but not
 `Ann Lynn` ≈ `Ann Marie`). The students that pass are decided exactly like exact matches (student number and
@@ -87,7 +87,7 @@ Physical (in-person) verification was removed; the division level replaces it.
 ## Text cleaning (ASCII only)
 
 The program works in plain ASCII. Everything compared or derived from a name, email or student number is first made
-ASCII by `clean_text` / `normalize_case` (`src/core/utsu_core/std/utils.py`):
+ASCII by `clean_text` / `normalize_case` (`src/core/std/utils.py`):
 
 - accents are removed (`José García` → `Jose Garcia`), including on the roster itself, which is stored this way;
 - look-alike forms become plain ones (fullwidth letters, ligatures, superscript digits, non-breaking spaces);

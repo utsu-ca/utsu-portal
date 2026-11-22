@@ -5,7 +5,7 @@ from importlib import resources
 
 from fastapi import APIRouter
 
-from utsu_core.contracts import (
+from core.contracts import (
     FileAuthorization,
     FormContribution,
     NotificationType,
@@ -14,7 +14,7 @@ from utsu_core.contracts import (
     RegistrationContext,
     SubmissionPolicy,
 )
-from utsu_core.permissions import PERM_SAP_APPLICATIONS, PERM_SAP_FINANCE, PERM_SAP_REVIEW
+from core.permissions import PERM_SAP_APPLICATIONS, PERM_SAP_FINANCE, PERM_SAP_REVIEW
 from .applications import (
     HistoricalDecision,
     HistoricalRating,

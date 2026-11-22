@@ -3,9 +3,9 @@ from types import SimpleNamespace
 import pytest
 from eth_account import Account
 
-from utsu_core.anchor import AnchorProvider, EvmJsonRpcProvider, NullProvider
-from utsu_core.services.anchors import RETRY_AFTER, AnchorRuntime
-from utsu_core.store import MemoryStore
+from core.anchor import AnchorProvider, EvmJsonRpcProvider, NullProvider
+from core.services.anchors import RETRY_AFTER, AnchorRuntime
+from core.store import MemoryStore
 
 KEY = "0x" + "11" * 32
 DIGEST = "ab" * 32

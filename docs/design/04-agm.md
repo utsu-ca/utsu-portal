@@ -1,6 +1,6 @@
-# 04 AGM module (`utsu_core/programs/agm`)
+# 04 AGM module (`core/programs/agm`)
 
-Ports `utsu_core/programs/agm/program.py` and consolidates the portal's existing AGM code (`programs/agm/module.py`,
+Ports `core/programs/agm/program.py` and consolidates the portal's existing AGM code (`programs/agm/module.py`,
 `programs/agm/verify.py`, SSO integration in `modules/sso.py`, `static/checkin.*`). **Stateless: eligibility is
 computed when it is needed.** See [00](00-overview.md) section 3.
 

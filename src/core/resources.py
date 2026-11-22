@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 def package_text(package: str, name: str) -> str:
-    """The text of a data file in a package, e.g. `package_text("utsu_core.programs.agm", "schema.sql")`."""
+    """The text of a data file in a package, e.g. `package_text("core.programs.agm", "schema.sql")`."""
     return resources.files(package).joinpath(name).read_text(encoding="utf-8-sig")
 
 
@@ -17,7 +17,7 @@ def schema_dirs(*packages: str) -> list[Path]:
     for name in packages:
         root = Path(str(resources.files(name)))
         children = sorted(p for p in root.iterdir() if p.is_dir())
-        if name == "utsu_core.programs":
+        if name == "core.programs":
             relocated = {"agm": "agm", "sap": "sabp", "senate": "senate"}
             children = [
                 Path(str(resources.files(relocated.get(child.name, f"{name}.{child.name}"))))

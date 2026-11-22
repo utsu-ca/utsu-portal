@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 
 from fastapi import HTTPException
 
-log = logging.getLogger("utsu_core.payments")
+log = logging.getLogger("core.payments")
 
 
 class PaymentGateway(Protocol):

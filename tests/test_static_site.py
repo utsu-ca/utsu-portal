@@ -1,13 +1,13 @@
-"""The committed front-end build (web/ -> src/core/utsu_core/static) is what the server ships."""
+"""The committed front-end build (src/core/frontend/ -> src/core/static) is what the server ships."""
 import importlib.util
 import re
 import sys
 
 import pytest
 from fastapi.testclient import TestClient
-from utsu_core import create_app
-from utsu_core.bootstrap import STATIC
-from utsu_core.settings import Settings
+from core import create_app
+from core.bootstrap import STATIC
+from core.settings import Settings
 
 PAGES = ["index.html", "checkin.html", "finance.html", "sso.html"]
 

@@ -20,7 +20,7 @@ pip install -e ".[dev]"
 
 With [uv](https://docs.astral.sh/uv/) instead: `uv run --extra dev python -m pytest` creates the environment on demand.
 
-The editable install puts `utsu_core` on the import path. Relative paths are always resolved from the
+The editable install puts `core` on the import path. Relative paths are always resolved from the
 project root, never from the current directory. For portal setup, see [README](../README.md).
 
 ## Synthetic data

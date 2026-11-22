@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 
 from .program import DISCUSS_SPREAD, RATING_LEVELS, _read_text_sheet, rubric_amount, suggested_amount
-from utsu_core.std.csv_safe import write_rows
+from core.std.csv_safe import write_rows
 
 logger = logging.getLogger(__name__)
 

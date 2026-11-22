@@ -1,13 +1,13 @@
-# Applicant portal (`utsu_core`)
+# Applicant portal (`core`)
 
 FastAPI, database-agnostic form application. Install with `pip install -e .` and run:
 
 ```
-PORTAL_SECRET=<long random, stable> PORTAL_ADMIN_EMAILS=alice@example.com uvicorn --factory utsu_core:create_app
+PORTAL_SECRET=<long random, stable> PORTAL_ADMIN_EMAILS=alice@example.com uvicorn --factory core:create_app
 ```
 
 `PORTAL_STORE` selects the backend: `memory` (default), `sqlite:<path>` or `firestore` (`.[firestore]`). Add a backend by
-implementing `utsu_core.store.Store` (get/put/delete/list/create). `PORTAL_SECRET` peppers the username and student-id
+implementing `core.store.Store` (get/put/delete/list/create). `PORTAL_SECRET` peppers the username and student-id
 hashes, so it must stay stable.
 
 ## Identity and accounts
@@ -55,7 +55,7 @@ changed definition under an already-published version is a `409` ("bump the vers
 same way at startup. Submissions record the version and hash and are rejected if stale.
 
 - Public `GET /api/forms/{id}/static` returns the compiled JSON (ETag = hash); the browser rebuilds, renders and
-  validates the form itself (`web/src/lib/forms.js`) and only posts the data. The server re-validates and sanitises
+  validates the form itself (`src/core/frontend/src/lib/forms.js`) and only posts the data. The server re-validates and sanitises
   (NFC, control/bidi characters stripped, length caps, unknown fields rejected).
 - Admin: draft/publish/unpublish, YAML editor with live preview and a field builder (`/api/admin/forms/convert`
   converts YAML and schema JSON), optimistic `base_rev` concurrency, and realtime draft sync over SSE
@@ -128,7 +128,7 @@ sort fields once when needed.
 
 ## Extending
 A module is an object with `name` and `router(ctx)`; pass it via `create_app(extra_modules=(...))`. `ctx` provides
-the store, settings, mailer (`utsu_core.mailer.Mailer`, override `send` for real mail), event bus and auth
+the store, settings, mailer (`core.mailer.Mailer`, override `send` for real mail), event bus and auth
 dependencies (`require_user`, `require_verified`, `require_admin`).
 
 An optional `configure(ctx)` hook runs for every module before any router is assembled. Register shared services
@@ -199,17 +199,17 @@ be side-effect free because optimistic retries may call them again. Register eac
 - A field's `pattern` is compiled with **RE2** (`google-re2`, linear time, no backreferences/lookarounds) when a form is saved and when a submission is checked. Because the browser re-runs the pattern with JavaScript's backtracking `RegExp`, patterns must also be JS-safe: only plain `(?:` groups (no `(?P<n>)`, `(?i)` flags), **no quantified groups** (`(a|b)+`, `(ab)*`), repeat counts ≤ 256, ≤ 200 characters. Use character classes and bounded repeats instead, e.g. `[A-Z]{2}\d{4}`. Existing forms with non-conforming patterns are rejected on their next save.
 - **Layout.** The main sidebar is fixed to the right (hamburger collapses it to a rail on desktop; on mobile the top-right button opens it full screen). Each program has a **public page** (overview, eligibility, how to apply, key dates; the Senate page also shows published results). Signing in adds buttons on that page and under it in the menu for what the member can do.
 - **Edit public pages.** Portal administrators can open **Admin mode → Administration → Page content**, select Home or an existing program page, edit the title, blurb and sections, then preview and publish. Use one paragraph or list item per line. Program titles and blurbs also update the home cards. Changes are audited and appear when visitors next load the portal; no rebuild is needed after the editor is deployed. If someone publishes first, keep a copy of your draft text and reload before reapplying your edits. Existing copy is the default until edited. This editor changes plain text, not Svelte templates, forms, eligibility rules, or the Git repository's wiki files.
-- **Icons and the section sidecar.** Each main category has an icon (Noto Emoji, monochrome so it takes the menu colour; a 4 KB subset of the font in `web/src/assets`, SIL OFL, built into the static files because the CSP allows only same-origin fonts). When the sidebar is collapsed to a rail only the icons show, the category being read is highlighted, and choosing a group icon opens the menu. On screens at least 80rem wide a second sidecar to the right of the content, "In this section", lists the parts of the current program page and the other pages and actions of its section.
+- **Icons and the section sidecar.** Each main category has an icon (Noto Emoji, monochrome so it takes the menu colour; a 4 KB subset of the font in `src/core/frontend/src/assets`, SIL OFL, built into the static files because the CSP allows only same-origin fonts). When the sidebar is collapsed to a rail only the icons show, the category being read is highlighted, and choosing a group icon opens the menu. On screens at least 80rem wide a second sidecar to the right of the content, "In this section", lists the parts of the current program page and the other pages and actions of its section.
 - **Admin mode.** Staff (anyone with a role) get an "Enter admin mode" button at the bottom of the sidebar. Only in that mode do staff tools appear (SABP review and admin, finance portal, Senate seating, club reviews, form editor, identity checks, roles, roster), and the page switches to the admin colours. It is a client-side convenience: the server enforces each route's permission on every request. Roles grant permissions; the `admin` role remains the explicit superuser grant.
 - **Branding and theme.** `theme.json` and the logos live in `src/branding/` and are served at `/branding`, uncached, so edits show on the next page load without rebuilding. To use your own, point `PORTAL_BRANDING_DIR` at a folder with the same layout. `theme.json` sets `name`, `logo`, `favicon`, `colors.user` (`accent`, `accentHover`, `chrome`, `page`), `colors.admin` (`accent`, `accentHover`, `chrome`) and `copyright` (`holder`, `startYear`). Colours must be hex values and files bare names; anything else is ignored. Every page ends with a copyright line built from it.
 - **Loading.** Every view is a separate lazily loaded chunk with a hashed file name, so a program's code is downloaded when it is first opened and cached independently of the others.
-- **Feature ownership.** Program views, components, state and tests live under `web/src/features/{agm,clubs,sabp,senate}/`.
+- **Feature ownership.** Program views, components, state and tests live under `src/core/frontend/src/features/{agm,clubs,sabp,senate}/`.
   Their menu actions and view loaders live with each feature; the shared navigation shows actions only when the program is enabled.
   Public information pages remain available when a program is disabled, but Senate results are loaded only when Senate is enabled.
   Authentication/session, navigation, layout, branding and generic form rendering remain shared. The shared banking UI
-  is under `web/src/features/profile/`, with a SABP-owned adapter for its legacy endpoint. It reads profile status independently
+  is under `src/core/frontend/src/features/profile/`, with a SABP-owned adapter for its legacy endpoint. It reads profile status independently
   of session startup; emailed re-verification links and the action-needed prompt retain their existing workflow.
-- The front end is a Svelte 5 app in `web/` (Vite, Tailwind CSS v4, Vitest). It is built into `src/core/utsu_core/static` and the build is **committed**, so `pip install` and the Docker image need no Node. Pages: `index.html` (the portal), `checkin.html`, `finance.html` (the financial controller's banking portal) and `sso.html`. After changing anything under `web/`, run `npm install` once, then `npm test` and `npm run build` in `web/`, and commit the result. The CSP forbids CDNs, inline scripts and inline styles; the build emits only same-origin module scripts and a stylesheet. Components: `.card`, `button.primary|secondary|danger`, `.err`, `.ok`, `.badge`, `.row`, `.banner-ok|warn` (check-in result), `.banner-action` (action needed), `.banner-admin`.
-- `npm run build:core` creates a separate `web/.core-dist/` without program contributions or the AGM and SABP
+- The front end is a Svelte 5 app in `src/core/frontend/` (Vite, Tailwind CSS v4, Vitest). It is built into `src/core/static` and the build is **committed**, so `pip install` and the Docker image need no Node. Pages: `index.html` (the portal), `checkin.html`, `finance.html` (the financial controller's banking portal) and `sso.html`. After changing anything under `src/core/frontend/`, run `npm install` once, then `npm test` and `npm run build` in `src/core/frontend/`, and commit the result. The CSP forbids CDNs, inline scripts and inline styles; the build emits only same-origin module scripts and a stylesheet. Components: `.card`, `button.primary|secondary|danger`, `.err`, `.ok`, `.badge`, `.row`, `.banner-ok|warn` (check-in result), `.banner-action` (action needed), `.banner-admin`.
+- `npm run build:core` creates a separate `src/core/frontend/.core-dist/` without program contributions or the AGM and SABP
   standalone pages. It does not replace the committed full-portal build or change what the backend serves.
 - The front end stays same-origin with the API, which keeps the token/CSP/SSO model simple.

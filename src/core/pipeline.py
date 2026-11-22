@@ -16,13 +16,13 @@ import logging
 import sqlite3
 from pathlib import Path
 
-from utsu_core.selection import (OUTCOME_COLUMNS, dedupe_by_uuid, select_current, set_statuses,
+from core.selection import (OUTCOME_COLUMNS, dedupe_by_uuid, select_current, set_statuses,
                                  warn_unreadable_timestamps)
-from utsu_core.integrity import duplicate_verified
-from utsu_core.spec import ProgramSpec
-from utsu_core.verification import match_students, setup_reader
-from utsu_core.std.database import replace_table
-from utsu_core.std.utils import absfile
+from core.integrity import duplicate_verified
+from core.spec import ProgramSpec
+from core.verification import match_students, setup_reader
+from core.std.database import replace_table
+from core.std.utils import absfile
 
 logger = logging.getLogger(__name__)
 

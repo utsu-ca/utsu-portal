@@ -1,7 +1,7 @@
 import pytest
 from fastapi import HTTPException
 
-from utsu_core.pagination import paginate_items
+from core.pagination import paginate_items
 
 
 def test_paginate_items_orders_and_continues_without_duplicates():

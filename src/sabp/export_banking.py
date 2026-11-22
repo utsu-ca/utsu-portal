@@ -8,11 +8,11 @@ from contextlib import closing
 from difflib import SequenceMatcher
 from pathlib import Path
 
-from utsu_core.verification import setup_reader
+from core.verification import setup_reader
 from .eft import create_eft
 from .program import SPEC, build_row
-from utsu_core.std.csv_safe import open_csv, read_cell, write_rows
-from utsu_core.std.utils import absfile, normalize_uoft_email
+from core.std.csv_safe import open_csv, read_cell, write_rows
+from core.std.utils import absfile, normalize_uoft_email
 
 logger = logging.getLogger(__name__)
 

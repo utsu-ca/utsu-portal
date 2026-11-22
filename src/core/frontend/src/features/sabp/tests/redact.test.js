@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { redactHardship } from "../../../../../src/sabp/frontend/lib/redact.js";
+import { redactHardship } from "../../../../../../sabp/frontend/lib/redact.js";
 
 it("redacts contact details and the applicant's own name", () => {
   const text = "Ada Lovelace (ada@x.ca, 416-555-0100, 1234567890) lives at M5S 1A1 see https://x.ca";

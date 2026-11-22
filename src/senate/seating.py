@@ -6,9 +6,9 @@ from collections import Counter
 from pathlib import Path
 
 from .preferences import PREF_PREFIX
-from utsu_core.std.csv_safe import open_csv, write_rows
-from utsu_core.std.parsing_utils import division_code
-from utsu_core.std.utils import absfile
+from core.std.csv_safe import open_csv, write_rows
+from core.std.parsing_utils import division_code
+from core.std.utils import absfile
 
 logger = logging.getLogger(__name__)
 

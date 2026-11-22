@@ -12,8 +12,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from utsu_core.std.parsing_utils import split_multi
-from utsu_core.std.utils import absfile
+from core.std.parsing_utils import split_multi
+from core.std.utils import absfile
 
 logger = logging.getLogger(__name__)
 

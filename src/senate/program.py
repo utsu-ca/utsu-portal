@@ -1,6 +1,6 @@
 """
 Historical Senate applications: read the form export, verify every applicant against uoft_data and write verified.csv /
-unverified.csv for the seating. The steps are the shared pipeline's (see utsu_core.pipeline); this module is the
+unverified.csv for the seating. The steps are the shared pipeline's (see core.pipeline); this module is the
 Senate form's `ProgramSpec` and what is written afterwards.
 """
 import logging
@@ -8,10 +8,10 @@ import re
 import sqlite3
 from pathlib import Path
 
-from utsu_core.pipeline import Run, ensure_table
-from utsu_core.spec import ProgramSpec
-from utsu_core.std.csv_safe import write_rows
-from utsu_core.std.utils import absfile, application_uuid_for, normalize_uoft_email, student_uuid_for, EMAIL_FLAGS
+from core.pipeline import Run, ensure_table
+from core.spec import ProgramSpec
+from core.std.csv_safe import write_rows
+from core.std.utils import absfile, application_uuid_for, normalize_uoft_email, student_uuid_for, EMAIL_FLAGS
 from .preferences import PREF_PREFIX
 
 logger = logging.getLogger(__name__)

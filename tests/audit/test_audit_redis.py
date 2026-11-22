@@ -15,13 +15,13 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).parent))
 from test_portal import IMG, activate, login, register, setup_admin_and_user  # noqa: E402
 
-from utsu_core import audit as A, create_app
-from utsu_core.crypto import Crypter, EncryptingStore
-from utsu_core.events import RedisEventBus
-from utsu_core.mailer import OutboxMailer
-from utsu_core.ratelimit import RateLimiter
-from utsu_core.settings import Settings
-from utsu_core.store import MemoryStore
+from core import audit as A, create_app
+from core.crypto import Crypter, EncryptingStore
+from core.events import RedisEventBus
+from core.mailer import OutboxMailer
+from core.ratelimit import RateLimiter
+from core.settings import Settings
+from core.store import MemoryStore
 
 
 def boot(**kw):
@@ -155,7 +155,7 @@ def test_security_headers_and_readyz_and_body_limit():
 
 @pytest.mark.parametrize("headers", [[], [(b"content-length", b"1")]])
 def test_actual_request_body_is_bounded_when_content_length_is_missing_or_understated(headers):
-    from utsu_core.bootstrap import RequestGuardMiddleware
+    from core.bootstrap import RequestGuardMiddleware
 
     messages = iter([
         {"type": "http.request", "body": b"x" * 60, "more_body": True},
@@ -200,7 +200,7 @@ def test_api_sso_authorize_uses_the_rate_limiter():
 
 
 def test_version_reports_configured_commit_and_ignores_junk():
-    from utsu_core.version import package_version
+    from core.version import package_version
     c, *_ = boot(commit="3D1F3C5ABCDEF0123456")
     assert c.get("/api/version").json() == {"version": package_version(), "commit": "3d1f3c5abcde", "dev_local": False}
     c, *_ = boot(commit="<script>")
@@ -209,7 +209,7 @@ def test_version_reports_configured_commit_and_ignores_junk():
 
 def test_dev_admin_is_seeded_locally_and_flags_the_server(caplog):
     import uuid
-    from utsu_core.devadmin import DEV_ADMIN_EMAIL, ConsoleMailer
+    from core.devadmin import DEV_ADMIN_EMAIL, ConsoleMailer
     c, mail, store = boot()
     assert c.get("/api/version").json()["dev_local"] is False
     c, mail, store = boot(dev_admin=True)

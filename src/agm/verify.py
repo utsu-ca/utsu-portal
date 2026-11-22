@@ -10,8 +10,8 @@ from typing import Any, cast
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from utsu_core.contracts import FileKind, PluginManifest, PluginServices, RegistrationContext
-from utsu_core.permissions import PERM_AGM_ID_REVIEW
+from core.contracts import FileKind, PluginManifest, PluginServices, RegistrationContext
+from core.permissions import PERM_AGM_ID_REVIEW
 
 from .state import AgmVerificationAccess
 

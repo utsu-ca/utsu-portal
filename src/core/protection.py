@@ -9,7 +9,7 @@ from typing import cast
 def _load_catalogue() -> tuple[
     dict[str, tuple[str, ...]], frozenset[tuple[str, str]], frozenset[str], frozenset[str],
 ]:
-    path = resources.files("utsu_core").joinpath("plugin_manifests/protection.json")
+    path = resources.files("core").joinpath("plugin_manifests/protection.json")
     try:
         payload: object = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:

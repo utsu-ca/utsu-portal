@@ -1,9 +1,9 @@
-"""Pure AGM RSVP logic (ported from utsu_core.programs.agm.program). No store, no roster, no I/O."""
+"""Pure AGM RSVP logic (ported from core.programs.agm.program). No store, no roster, no I/O."""
 from __future__ import annotations
 
 import re
 
-from utsu_core.services.text import (EMAIL_FLAGS, UOFT_MAIL_DOMAIN, application_uuid_for, normalize_case,
+from core.services.text import (EMAIL_FLAGS, UOFT_MAIL_DOMAIN, application_uuid_for, normalize_case,
                               normalize_uoft_email, student_uuid_for)
 
 EMAIL_REASON = f"email is not a {UOFT_MAIL_DOMAIN} address"

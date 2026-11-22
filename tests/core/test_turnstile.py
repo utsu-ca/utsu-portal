@@ -6,9 +6,9 @@ from urllib.parse import parse_qs
 import pytest
 from fastapi.testclient import TestClient
 
-from utsu_core import create_app
-from utsu_core.mailer import OutboxMailer
-from utsu_core.settings import Settings
+from core import create_app
+from core.mailer import OutboxMailer
+from core.settings import Settings
 
 
 BODY = {"email": "member@example.ca", "first_name": "A", "last_name": "B", "student_number": "1234567890"}
@@ -34,7 +34,7 @@ def test_explicit_local_dev_bypasses_challenge():
 
 
 def test_turnstile_verifies_token_action_and_hostname(monkeypatch):
-    from utsu_core.services import turnstile
+    from core.services import turnstile
 
     c = client(turnstile_site_key="site", turnstile_secret_key="secret", sso_issuer="https://portal.example.ca")
     assert c.get("/api/auth/registration-challenge").json() == {"site_key": "site", "local_bypass": False}
@@ -63,7 +63,7 @@ def test_turnstile_verifies_token_action_and_hostname(monkeypatch):
 
 
 def test_turnstile_network_failure_is_not_a_success(monkeypatch):
-    from utsu_core.services import turnstile
+    from core.services import turnstile
 
     def unavailable(*_args, **_kwargs):
         raise URLError("unavailable")

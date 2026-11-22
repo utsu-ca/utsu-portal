@@ -6,14 +6,14 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from utsu_core import create_app
-from utsu_core.mailer import SMTPMailer, mailer_from_env
-from utsu_core.settings import Settings
+from core import create_app
+from core.mailer import SMTPMailer, mailer_from_env
+from core.settings import Settings
 
 
 @pytest.fixture
 def sink(monkeypatch):
-    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "testing"))
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / "testing"))
     from mail_sink import MailSink
 
     with MailSink(smtp_port=0, http_port=0, reject=r"@bounce\.test$") as s:
@@ -26,7 +26,7 @@ def get_json(sink, path):
 
 
 def test_portal_sign_up_code_arrives_in_the_sink(sink, monkeypatch):
-    monkeypatch.setattr("utsu_core.services.turnstile.verify_registration", lambda _settings, _token: None)
+    monkeypatch.setattr("core.services.turnstile.verify_registration", lambda _settings, _token: None)
     monkeypatch.setenv("PORTAL_SMTP_URL", f"smtp://user:p%40ss@127.0.0.1:{sink.smtp_port}")
     monkeypatch.setenv("PORTAL_MAIL_FROM", "portal@example.local")
     c = TestClient(create_app(Settings(secret="s" * 32), mailer=mailer_from_env()))

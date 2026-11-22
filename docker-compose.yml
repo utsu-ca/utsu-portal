@@ -27,7 +27,7 @@ services:
       context: .
       dockerfile: Dockerfile
     environment: &portal-environment
-      PORTAL_APP: utsu_core:create_app
+      PORTAL_APP: core:create_app
       PORTAL_SECRET: "${PORTAL_SECRET:?Set a stable PORTAL_SECRET of at least 32 characters}"
       PORTAL_STORE: sql
       DATABASE_URL: "postgresql+psycopg://portal:${PORTAL_DB_PASSWORD:?Set PORTAL_DB_PASSWORD}@postgres:5432/portal"
@@ -68,7 +68,7 @@ services:
       context: .
       dockerfile: Dockerfile
     environment: *portal-environment
-    command: ["sh", "-ec", "while :; do python -m utsu_core.receipt_maintenance --migrate --scheduled; sleep 86400; done"]
+    command: ["sh", "-ec", "while :; do python -m core.receipt_maintenance --migrate --scheduled; sleep 86400; done"]
     restart: on-failure
     depends_on:
       postgres:
