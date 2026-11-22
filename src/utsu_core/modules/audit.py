@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import re
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Query, Response
 
 from .. import audit as A
 from ..context import Context
+from ..permissions import PERM_AUDIT_READ
 
 name = "audit"
 
@@ -19,7 +20,7 @@ class AuditModule:
 
     def router(self, ctx: Context) -> APIRouter:
         r = APIRouter(prefix=self.prefix)
-        admin = ctx.require_role("auditor")
+        admin = ctx.require_permission(PERM_AUDIT_READ)
         log: A.AuditLog = ctx.audit
 
         def entry(eid: str) -> dict:
@@ -29,13 +30,24 @@ class AuditModule:
             return d
 
         @r.get("")
-        def list_(actor: str | None = None, action: str | None = None, target: str | None = None,
-                  before_seq: int | None = None, limit: int = 50, a: dict = admin):
-            rows = [d for d in log.entries() if (not actor or d["actor"] == actor) and (not action or d["action"].startswith(action))
-                    and (not target or d["target"] == target) and (before_seq is None or d["seq"] < before_seq)]
-            page = rows[-max(1, min(limit, 200)):][::-1]
+        def list_(
+            actor: str | None = Query(default=None, max_length=255),
+            action: str | None = Query(default=None, max_length=100),
+            target: str | None = Query(default=None, max_length=200),
+            before_seq: int | None = Query(default=None, ge=1),
+            limit: int = Query(default=50, ge=1, le=200),
+            a: dict = admin,
+        ):
+            matches = lambda d: (
+                (not actor or d["actor"] == actor)
+                and (not action or d["action"].startswith(action))
+                and (not target or d["target"] == target)
+            )
+            page, has_more = log.page_entries(before_seq, limit, matches)
+            page = page[:limit]
             log.record(a["uuid"], "audit.read", meta={"returned": len(page)})
-            return {"entries": [log.public(d) for d in page], "next_before_seq": page[-1]["seq"] if len(page) == limit else None}
+            return {"entries": [log.public(d) for d in page],
+                    "next_before_seq": page[-1]["seq"] if has_more else None}
 
         @r.get("/verify")
         def verify(_: dict = admin):
@@ -55,6 +67,7 @@ class AuditModule:
 
         @r.post("/maintenance/run")
         def run(force: bool = False, a: dict = ctx.require_admin()):
+            """Admin-only: archival maintenance changes audit retention; auditor access is read-only."""
             from .. import maintenance
             log.record(a["uuid"], "audit.maintenance_run", meta={"force": force})
             return maintenance.run_due(ctx, force)

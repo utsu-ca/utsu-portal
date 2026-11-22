@@ -1,6 +1,6 @@
 <script>
   import { onMount } from "svelte";
-  import { api } from "../../../lib/api.js";
+  import { api, apiAllPages } from "../../../lib/api.js";
   import { Action } from "../../../lib/action.svelte.js";
   import { go } from "../../../lib/nav.svelte.js";
   import Status from "../../../components/Status.svelte";
@@ -9,8 +9,8 @@
   let mine = $state([]), queue = $state([]);
 
   const refresh = async () => {
-    mine = await api("/sap/my-reviews");
-    queue = await api("/sap/queue");
+    mine = await apiAllPages("/sap/my-reviews");
+    queue = await apiAllPages("/sap/queue");
   };
   onMount(() => load.run(refresh));
 

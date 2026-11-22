@@ -3,21 +3,32 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/sv
 import ClubRegistrationView from "../views/ClubRegistrationView.svelte";
 import { session } from "../../../lib/session.svelte.js";
 
-vi.mock("../../../lib/api.js", async importOriginal => ({ ...(await importOriginal()), api: vi.fn() }));
-import { api } from "../../../lib/api.js";
+const { apiMock, apiAllPagesMock } = vi.hoisted(() => ({ apiMock: vi.fn(), apiAllPagesMock: vi.fn() }));
+vi.mock("../../../lib/api.js", async importOriginal => ({
+  ...(await importOriginal()), api: apiMock, apiAllPages: apiAllPagesMock,
+}));
+import { api, apiAllPages } from "../../../lib/api.js";
 
 beforeEach(() => {
   session.me = { user: { uuid: "bob" } };
+  apiAllPages.mockImplementation(async (path, collection = "items") => {
+    const page = await api(path);
+    const items = Array.isArray(page?.[collection]) ? page[collection] : [];
+    return collection === "items" ? items : { ...page, [collection]: items, next_cursor: null };
+  });
 });
-afterEach(() => { cleanup(); api.mockReset(); session.me = null; });
+afterEach(() => { cleanup(); api.mockReset(); apiAllPages.mockReset(); session.me = null; });
 
 it.each([["Accept", true, "Invitation accepted."], ["Decline", false, "Invitation declined."]])(
   "lets the invited person %s a club invitation", async (label, approve, message) => {
     let pending = true;
     api.mockImplementation(async (path, opts) => {
       if (opts?.method === "POST") { pending = false; return { status: approve ? "accepted" : "declined" }; }
-      if (path === "/clubs/invitations") return pending ? [{ id: "i1", club_id: "c1", club_name: "Chess Club", role: "treasurer" }] : [];
-      return [];
+      if (path === "/clubs/invitations") return {
+        items: pending ? [{ id: "i1", club_id: "c1", club_name: "Chess Club", role: "treasurer" }] : [],
+        next_cursor: null,
+      };
+      return { items: [], next_cursor: null };
     });
     render(ClubRegistrationView);
     expect(await screen.findByText("Chess Club invited you to be treasurer.")).toBeInTheDocument();
@@ -32,9 +43,9 @@ it.each([["Accept", true, "Invitation accepted."], ["Decline", false, "Invitatio
 it("allows only the owner to request renewal for an expired club", async () => {
   api.mockImplementation(async (path, opts) => {
     if (opts?.method === "POST") return { status: "pending" };
-    if (path === "/clubs/invitations") return [];
-    return [{ id: "c1", name: "Chess Club", status: "expired", approval_year: 2025,
-      category: "games", description: "Chess", members: { bob: "owner" } }];
+    if (path === "/clubs/invitations") return { items: [], next_cursor: null };
+    return { items: [{ id: "c1", name: "Chess Club", status: "expired", approval_year: 2025,
+      category: "games", description: "Chess", members: { bob: "owner" } }], next_cursor: null };
   });
   render(ClubRegistrationView);
   expect(await screen.findByText(/Approved for 2025–2026/)).toBeInTheDocument();

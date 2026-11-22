@@ -3,8 +3,14 @@ import logging
 import sqlite3
 from pathlib import Path
 
+from fastapi.testclient import TestClient
+
+from test_financial_profiles import account
+from utsu_core import create_app
+from utsu_core.mailer import OutboxMailer
 from utsu_core.programs.agm import program as agm
 from utsu_core.resources import package_text
+from utsu_core.settings import Settings
 from utsu_core.verification import construct_lookup_tables
 from utsu_core.std.utils import absfile
 
@@ -12,6 +18,38 @@ HEADERS = ["Timestamp", "Username", "Preferred Name", "Preferred Pronouns", "ACO
            "ACORN-registered Last Name ", "UofT Email Address", "Meeting Preference",
            "Do you have any dietary restrictions or food allergies?", "Accessibility Requirements",
            "Data Processing Confirmation", "Contact Consent"]
+
+
+def test_attendance_paginate_in_uuid_order_and_validate_parameters():
+    app = create_app(Settings(secret="s" * 32), mailer=OutboxMailer())
+    ctx = app.state.ctx
+    admin = account(ctx, "checkin", roles=("checkin",))
+    user = account(ctx, "student")
+    client = TestClient(app)
+    path = "/api/admin/agm/attendance"
+    assert client.get(path, headers=admin).json() == {"items": [], "next_cursor": None}
+    records = []
+    for i in reversed(range(203)):
+        uid = f"00000000-0000-0000-0000-{i:012d}"
+        record = {"uuid": uid, "mode": "online" if i % 2 else "in_person", "at": i, "by": "checkin"}
+        ctx.store.put("agm_attendance", uid, record)
+        records.append(record)
+    first = client.get(path, headers=admin).json()
+    assert len(first["items"]) == 100 and first["next_cursor"]
+    large = client.get(path, headers=admin, params={"limit": 200}).json()
+    assert len(large["items"]) == 200 and large["next_cursor"]
+    second = client.get(path, headers=admin, params={"cursor": first["next_cursor"], "limit": 200}).json()
+    assert second["items"] and second["next_cursor"] is None
+    assert first["items"] + second["items"] == sorted(records, key=lambda record: record["uuid"])
+    one = client.get(path, headers=admin, params={"limit": 1}).json()
+    following = client.get(path, headers=admin, params={"cursor": one["next_cursor"], "limit": 1}).json()
+    assert [one["items"][0]["uuid"], following["items"][0]["uuid"]] == [
+        record["uuid"] for record in sorted(records, key=lambda record: record["uuid"])[:2]
+    ]
+    for params in ({"limit": 0}, {"limit": 201}, {"limit": "bad"}, {"cursor": "not!valid"},
+                   {"cursor": "WzFd"}, {"cursor": "a" * 2049}):
+        assert client.get(path, headers=admin, params=params).status_code == 422
+    assert client.get(path, headers=user).status_code == 403
 
 
 def form_csv(path, rows, extra_header=None):

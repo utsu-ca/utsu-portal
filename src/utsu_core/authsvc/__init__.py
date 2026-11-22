@@ -18,6 +18,7 @@ from ..modules.audit import AuditModule
 from ..modules.auth import AuthModule
 from ..modules.roles import RolesModule
 from ..settings import Settings
+from ..permissions import permission_catalogue_for, role_permissions_for
 from ..store import Store
 from ..services.account_check import check_account
 from ..services.roster import StoreRoster, match_person
@@ -113,4 +114,6 @@ def create_auth_app(settings: Settings | None = None, store: Store | None = None
     manifests = select_manifests(discover_manifests(), "local", settings.enabled_plugins)
     return build_app(settings, store, mailer or mailer_from_env(), mods, seed=False, ui=False,
                      role_catalogue=role_catalogue_for(manifests),
+                     permission_catalogue=permission_catalogue_for(manifests),
+                     role_permissions=role_permissions_for(manifests),
                      plugin_settings=plugin_settings_for(manifests, settings))

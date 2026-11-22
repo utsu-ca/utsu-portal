@@ -11,7 +11,7 @@ import json
 import time
 import re
 import zlib
-from typing import Any
+from typing import Any, Callable
 
 SECRET_KEYS = re.compile(r"(face|id_card|data_url|otp|code|token|secret|password|hash|challenge|body)$", re.I)
 MAX_SNAPSHOT = 512_000
@@ -201,6 +201,23 @@ class AuditLog:
                 continue  # whole month precedes the cursor
             out += [d for d in self.ctx.store.list(coll(m["month"])) if d["seq"] > since_seq]
         return sorted(out, key=lambda d: d["seq"])
+
+    def page_entries(self, before_seq: int | None, limit: int,
+                     matches: Callable[[dict], bool]) -> tuple[list[dict], bool]:
+        """Read a newest-first page, stopping after one extra matching entry."""
+        out = []
+        for month in reversed(self.months(("hot", "archived"))):
+            if before_seq is not None and month["first_seq"] >= before_seq:
+                continue
+            entries = sorted(self.ctx.store.list(coll(month["month"])), key=lambda d: d["seq"], reverse=True)
+            for entry in entries:
+                if before_seq is not None and entry["seq"] >= before_seq:
+                    continue
+                if matches(entry):
+                    out.append(entry)
+                    if len(out) > limit:
+                        return out, True
+        return out, False
 
     def get(self, seq: int) -> dict | None:
         for m in reversed(self.months(("hot", "archived"))):

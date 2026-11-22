@@ -322,7 +322,24 @@ def test_submission_validation_and_status(env):
         **current, "sap_review": {"extension": "opaque"}, "sap_previous": [{"extension": "opaque"}]})
     assert c.post(f"/api/admin/submissions/agm_rsvp/{uid}/status", json={"status": "accepted", "note": "ok"}, headers=ah).status_code == 200
     assert c.get("/api/me/submissions", headers=uh).json()[0]["status"] == "accepted"
-    assert len(c.get("/api/admin/forms/agm_rsvp/submissions", headers=ah).json()) == 1
+    ctx = c.app.state.ctx
+    other_uid = "00000000-0000-0000-0000-000000000001"
+    submission = ctx.store.get("submissions", key)
+    ctx.store.put("submissions", f"agm_rsvp:{other_uid}",
+                  {**submission, "id": f"agm_rsvp:{other_uid}", "uuid": other_uid})
+    with patch.object(ctx.identity, "user", wraps=ctx.identity.user) as user_lookup:
+        first_page = c.get("/api/admin/forms/agm_rsvp/submissions?limit=1", headers=ah).json()
+    assert [call.args[0] for call in user_lookup.call_args_list] == [other_uid]
+    assert [item["uuid"] for item in first_page["items"]] == [other_uid]
+    assert first_page["next_cursor"]
+    with patch.object(ctx.identity, "user", wraps=ctx.identity.user) as user_lookup:
+        second_page = c.get("/api/admin/forms/agm_rsvp/submissions",
+                            params={"limit": 1, "cursor": first_page["next_cursor"]}, headers=ah).json()
+    assert [call.args[0] for call in user_lookup.call_args_list] == [uid]
+    assert [item["uuid"] for item in second_page["items"]] == [uid]
+    assert second_page["next_cursor"] is None
+    assert c.get("/api/admin/forms/agm_rsvp/submissions?limit=201", headers=ah).status_code == 422
+    assert c.get("/api/admin/forms/agm_rsvp/submissions?cursor=%21", headers=ah).status_code == 422
 
 
 def test_form_versioning_and_publish(env):

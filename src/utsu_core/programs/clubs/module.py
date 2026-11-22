@@ -12,11 +12,13 @@ from collections import defaultdict
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
 
 from ...context import Context, roles_of
 from ...contracts import FileKind
+from ...pagination import PageOrder, paginate_store
+from ...permissions import PERM_CLUBS_FINANCE, PERM_CLUBS_MANAGE
 from ...security import clean_text
 from ...services.email import EmailDeliveryUnknown, EmailNotConfigured
 from ...services.receipt_storage import ReceiptStorage
@@ -26,6 +28,8 @@ ROLES = ("owner", "treasurer", "executive")
 FINANCE_ROLES = ("owner", "treasurer")
 RECEIPT_TYPES = {"jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp", "pdf": "application/pdf"}
 TORONTO = ZoneInfo("America/Toronto")
+CLUB_STATUSES = {"pending", "approved", "rejected", "expired"}
+TRANSACTION_STATUSES = {"pending", "approved", "rejected"}
 
 
 def academic_year(timestamp: int) -> int:
@@ -110,7 +114,7 @@ class ClubsModule:
     name = name
 
     def configure(self, ctx: Context) -> None:
-        storage = ReceiptStorage(ctx.store, ctx.settings, lambda: ctx.now(), ctx.audit)
+        storage = ReceiptStorage(ctx.store, ctx.settings, lambda: ctx.now(), ctx.audit, academic_year=academic_year)
         ctx.services["receipt_storage"] = storage
 
         for existing in ctx.store.list("clubs"):
@@ -158,8 +162,8 @@ class ClubsModule:
         expense_large_cents = ctx.plugin_setting("clubs", "expense_large_cents")
         default_tax_bps = ctx.plugin_setting("clubs", "default_tax_bps")
         max_receipt_bytes = ctx.plugin_setting("clubs", "max_receipt_bytes")
-        verified, admin = ctx.require_verified(), ctx.require_role("clubs")
-        finance = ctx.require_role("finance")
+        verified, admin = ctx.require_verified(), ctx.require_permission(PERM_CLUBS_MANAGE)
+        finance = ctx.require_permission(PERM_CLUBS_FINANCE)
 
         def club(cid: str) -> dict:
             c = S.get("clubs", cid)
@@ -197,25 +201,54 @@ class ClubsModule:
             return {"id": cid, "status": "pending"}
 
         @r.get("/clubs/mine")
-        def mine(a: dict = verified):
-            return [display_club(c) for c in S.list("clubs") if a["uuid"] in c["members"]]
+        def mine(a: dict = verified, cursor: str = Query("", max_length=2048),
+                 limit: int = Query(100, ge=1, le=200)):
+            clubs, next_cursor = paginate_store(
+                S,
+                "clubs",
+                cursor,
+                limit,
+                (PageOrder("id", str),),
+                predicate=lambda club: a["uuid"] in club["members"],
+            )
+            items = [display_club(club) for club in clubs]
+            return {"items": items, "next_cursor": next_cursor}
 
         @r.get("/clubs/invitations")
-        def invitations(a: dict = verified):
-            result = []
-            for c in S.list("clubs"):
-                invitation = c.get("invitations", {}).get(a["uuid"])
-                if invitation:
-                    result.append({"id": invitation["id"], "club_id": c["id"], "club_name": c["name"],
-                                   "role": invitation["role"]})
-            return result
+        def invitations(a: dict = verified, cursor: str = Query("", max_length=2048),
+                        limit: int = Query(100, ge=1, le=200)):
+            clubs, next_cursor = paginate_store(
+                S,
+                "clubs",
+                cursor,
+                limit,
+                (PageOrder("id", str),),
+                predicate=lambda club: bool(club.get("invitations", {}).get(a["uuid"])),
+            )
+            items = [
+                {"id": club["invitations"][a["uuid"]]["id"], "club_id": club["id"],
+                 "club_name": club["name"], "role": club["invitations"][a["uuid"]]["role"]}
+                for club in clubs
+            ]
+            return {"items": items, "next_cursor": next_cursor}
 
         @r.get("/clubs/directory")
-        def directory():
+        def directory(cursor: str = Query("", max_length=2048), limit: int = Query(100, ge=1, le=200)):
             now = ctx.now()
-            clubs = [{"id": c["id"], "name": c["name"], "category": c["category"], "description": c["description"]}
-                     for c in S.list("clubs") if effective_status(c, now) == "approved"]
-            return sorted(clubs, key=lambda c: (c["name"].casefold(), c["id"]))
+            clubs, next_cursor = paginate_store(
+                S,
+                "clubs",
+                cursor,
+                limit,
+                (PageOrder("name", str, casefold=True), PageOrder("id", str)),
+                predicate=lambda club: effective_status(club, now) == "approved",
+            )
+            items = [
+                {"id": club["id"], "name": club["name"], "category": club["category"],
+                 "description": club["description"]}
+                for club in clubs
+            ]
+            return {"items": items, "next_cursor": next_cursor}
 
         @r.get("/clubs/{cid}")
         def get_club(cid: str, a: dict = ctx.require_user()):
@@ -311,9 +344,20 @@ class ClubsModule:
             return {"status": "accepted" if b.approve else "declined"}
 
         @r.get("/admin/clubs")
-        def admin_clubs(status: str | None = None, _: dict = admin):
-            clubs = [display_club(c) for c in S.list("clubs")]
-            return [c for c in clubs if not status or c["status"] == status]
+        def admin_clubs(status: str | None = None, _: dict = admin, cursor: str = Query("", max_length=2048),
+                        limit: int = Query(100, ge=1, le=200)):
+            if status is not None and status not in CLUB_STATUSES:
+                raise HTTPException(422, f"status must be one of {', '.join(sorted(CLUB_STATUSES))}")
+            clubs, next_cursor = paginate_store(
+                S,
+                "clubs",
+                cursor,
+                limit,
+                (PageOrder("id", str),),
+                predicate=lambda club: status is None or display_club(club)["status"] == status,
+            )
+            items = [display_club(club) for club in clubs]
+            return {"items": items, "next_cursor": next_cursor}
 
         @r.post("/admin/clubs/{cid}/decision")
         def decide_club(cid: str, b: Decision, a: dict = admin):
@@ -430,15 +474,35 @@ class ClubsModule:
             return {k: doc[k] for k in ("id", "status", "net_cents", "tax_cents", "gross_cents", "required_approvals")}
 
         @r.get("/clubs/{cid}/transactions")
-        def list_tx(cid: str, a: dict = ctx.require_user()):
+        def list_tx(cid: str, a: dict = ctx.require_user(), cursor: str = Query("", max_length=2048),
+                    limit: int = Query(100, ge=1, le=200)):
             c = club(cid)
             if a["uuid"] not in c["members"] and "admin" not in roles_of(a, ctx.roles):
                 raise HTTPException(403, "not permitted for this club")
-            return sorted(S.list("transactions", club_id=cid), key=lambda t: (t["date"], t["created_at"]))
+            items, next_cursor = paginate_store(
+                S,
+                "transactions",
+                cursor,
+                limit,
+                (PageOrder("date", str), PageOrder("created_at", float), PageOrder("id", str)),
+                equals={"club_id": cid},
+            )
+            return {"items": items, "next_cursor": next_cursor}
 
         @r.get("/admin/transactions")
-        def pending_tx(status: str = "pending", _: dict = finance):
-            return S.list("transactions", status=status)
+        def pending_tx(status: str = "pending", _: dict = finance, cursor: str = Query("", max_length=2048),
+                       limit: int = Query(100, ge=1, le=200)):
+            if status not in TRANSACTION_STATUSES:
+                raise HTTPException(422, f"status must be one of {', '.join(sorted(TRANSACTION_STATUSES))}")
+            items, next_cursor = paginate_store(
+                S,
+                "transactions",
+                cursor,
+                limit,
+                (PageOrder("id", str),),
+                equals={"status": status},
+            )
+            return {"items": items, "next_cursor": next_cursor}
 
         @r.post("/admin/transactions/{tid}/decision")
         def decide_tx(tid: str, b: Decision, a: dict = finance):
@@ -480,7 +544,10 @@ class ClubsModule:
                 raise HTTPException(403, "not permitted for this club")
             totals = defaultdict(int)
             by_cat: dict[str, int] = defaultdict(int)
+            pending_count = 0
             for t in S.list("transactions", club_id=cid):
+                if t["status"] == "pending":
+                    pending_count += 1
                 if t["status"] != "approved":
                     continue
                 k = "expense" if t["kind"] == "expense" else "income"
@@ -494,6 +561,6 @@ class ClubsModule:
                     "tax_paid_cents": totals["expense_tax"], "tax_collected_cents": totals["income_tax"],
                     "net_tax_position_cents": totals["income_tax"] - totals["expense_tax"],
                     "expenses_by_category": dict(by_cat),
-                    "pending_expenses": sum(1 for t in S.list("transactions", club_id=cid, status="pending"))}
+                    "pending_expenses": pending_count}
 
         return r

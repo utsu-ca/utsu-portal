@@ -10,6 +10,7 @@ import base64
 import hashlib
 import hmac
 import json
+import re
 import secrets
 import time
 from dataclasses import dataclass, field
@@ -20,7 +21,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .. import security
 from ..context import Context
@@ -28,6 +29,10 @@ from ..store import Conflict
 
 name = "sso"
 CODE_TTL, TOKEN_TTL = 60, 3600
+OIDC_SCOPES = ("openid", "profile", "email")
+DEFAULT_SCOPES = OIDC_SCOPES
+_PKCE_CHALLENGE = re.compile(r"^[A-Za-z0-9_-]{43}$")
+_PKCE_VERIFIER = re.compile(r"^[A-Za-z0-9._~-]{43,128}$")
 Eligibility = Callable[[dict, dict], "str | None"]  # (account, user) -> error message, or None when allowed
 
 
@@ -48,6 +53,7 @@ class Client:
     id: str
     secret_hash: str
     redirect_uris: tuple[str, ...]
+    scopes: tuple[str, ...]
     eligibility: Eligibility = field(default=lambda a, u: None)
 
 
@@ -71,16 +77,46 @@ class SSOProvider:
     def issuer(self) -> str:
         return self.ctx.plugin_setting("sso", "sso_issuer")
 
-    def register_client(self, client_id: str, secret: str, redirect_uris: tuple[str, ...], eligibility: Eligibility | None = None) -> None:
-        self.clients[client_id] = Client(client_id, _sha(secret), tuple(redirect_uris), eligibility or (lambda a, u: None))
+    def register_client(
+        self,
+        client_id: str,
+        secret: str,
+        redirect_uris: tuple[str, ...],
+        eligibility: Eligibility | None = None,
+        scopes: tuple[str, ...] = DEFAULT_SCOPES,
+    ) -> None:
+        allowed_scopes = tuple(dict.fromkeys(scopes))
+        if "openid" not in allowed_scopes or set(allowed_scopes) - set(OIDC_SCOPES):
+            raise ValueError("SSO clients may only register supported OpenID Connect scopes")
+        self.clients[client_id] = Client(
+            client_id, _sha(secret), tuple(redirect_uris), allowed_scopes, eligibility or (lambda a, u: None)
+        )
 
     def subject(self, client_id: str, uid: str) -> str:
         return security._hid(self.ctx.settings.secret, f"sso:{client_id}", uid)
 
-    def claims(self, client_id: str, user: dict) -> dict:
-        return {"sub": self.subject(client_id, user["uuid"]), "email": user["email"], "email_verified": True,
-                "given_name": user["first_name"], "family_name": user["last_name"],
-                "name": f"{user['preferred_name']} {user['last_name']}".strip(), "preferred_username": user["email"]}
+    def claims(self, client_id: str, user: dict, scopes: tuple[str, ...]) -> dict:
+        claims = {"sub": self.subject(client_id, user["uuid"])}
+        if "email" in scopes:
+            claims.update(email=user["email"], email_verified=True)
+        if "profile" in scopes:
+            claims.update(
+                given_name=user["first_name"],
+                family_name=user["last_name"],
+                name=f"{user['preferred_name']} {user['last_name']}".strip(),
+                preferred_username=user["email"],
+            )
+        return claims
+
+    @staticmethod
+    def _parse_scopes(value: str | None) -> tuple[str, ...]:
+        if value is None:
+            return DEFAULT_SCOPES
+        scopes = value.split(" ")
+        if (not value or any(not scope or not scope.isascii() or not scope.isalnum()
+                             for scope in scopes) or "openid" not in scopes):
+            raise ValueError("invalid scope")
+        return tuple(dict.fromkeys(scopes))
 
     def _sign(self, payload: dict) -> str:
         head = _b64(json.dumps({"alg": "RS256", "typ": "JWT", "kid": self.jwk["kid"]}).encode())
@@ -90,20 +126,30 @@ class SSOProvider:
 
     # -- authorization endpoint (called with the user's portal session) ------------------------------
     def authorize(self, acct: dict, user: dict, client_id: str, redirect_uri: str, state: str = "", nonce: str = "",
-                  challenge: str = "", method: str = "S256") -> str:
+                  challenge: str = "", method: str = "S256", scope: str | None = None) -> str:
         c = self.clients.get(client_id)
         if not c or redirect_uri not in c.redirect_uris:  # never redirect to an unregistered URI
             raise HTTPException(400, "unknown client or redirect_uri")
+        try:
+            scopes = (tuple(value for value in DEFAULT_SCOPES if value in c.scopes)
+                      if scope is None else self._parse_scopes(scope))
+        except ValueError as exc:
+            raise HTTPException(400, "invalid scope") from exc
+        if not set(scopes) <= set(c.scopes):
+            raise HTTPException(400, "unsupported scope")
         if acct["status"] != "verified":
             raise HTTPException(403, "account not verified")
         if challenge and method != "S256":
             raise HTTPException(400, "only S256 PKCE is supported")
+        if challenge and not _PKCE_CHALLENGE.fullmatch(challenge):
+            raise HTTPException(400, "invalid PKCE challenge")
         why = c.eligibility(acct, user)
         if why:
             raise HTTPException(403, why)
         code = secrets.token_urlsafe(32)
         self.ctx.store.put("sso_codes", _sha(code), {"uuid": acct["uuid"], "client": client_id, "redirect_uri": redirect_uri,
-                                                      "nonce": nonce[:200], "challenge": challenge, "exp": self.ctx.now() + CODE_TTL})
+                                                      "nonce": nonce[:200], "challenge": challenge, "scopes": list(scopes),
+                                                      "exp": self.ctx.now() + CODE_TTL})
         parts = urlsplit(redirect_uri)
         q = urlencode([("code", code)] + ([("state", state)] if state else []))
         return urlunsplit((parts.scheme, parts.netloc, parts.path, f"{parts.query}&{q}" if parts.query else q, ""))
@@ -130,35 +176,51 @@ class SSOProvider:
             self.ctx.store.delete("sso_codes", key)  # single use, even on failure
         if not rec or rec["exp"] < self.ctx.now() or rec["client"] != cid or rec["redirect_uri"] != form.get("redirect_uri"):
             raise SSOError("invalid_grant")
+        scopes = tuple(rec.get("scopes", DEFAULT_SCOPES))
+        if "scope" in form:
+            try:
+                requested_scopes = self._parse_scopes(form["scope"])
+            except ValueError as exc:
+                raise SSOError("invalid_scope") from exc
+            if not set(requested_scopes) <= set(scopes):
+                raise SSOError("invalid_scope")
+            scopes = requested_scopes
         if rec["challenge"]:
-            v = _b64(hashlib.sha256(form.get("code_verifier", "").encode()).digest())
+            verifier = form.get("code_verifier", "")
+            if not _PKCE_VERIFIER.fullmatch(verifier):
+                raise SSOError("invalid_grant", "PKCE verification failed")
+            v = _b64(hashlib.sha256(verifier.encode()).digest())
             if not hmac.compare_digest(v, rec["challenge"]):
                 raise SSOError("invalid_grant", "PKCE verification failed")
         user, acct = self.ctx.identity.user(rec["uuid"]), self.ctx.identity.account(rec["uuid"])
         if not user or not acct or acct["status"] != "verified" or c.eligibility(acct, user):
             raise SSOError("invalid_grant", "no longer eligible")  # re-checked: access may have been revoked since authorize
         now = self.ctx.now()
-        cl = self.claims(cid, user)
+        cl = self.claims(cid, user, scopes)
         idt = {"iss": self.issuer, "aud": cid, "iat": now, "exp": now + TOKEN_TTL, **cl, **({"nonce": rec["nonce"]} if rec["nonce"] else {})}
         at = secrets.token_urlsafe(32)
-        self.ctx.store.put("sso_tokens", _sha(at), {"uuid": rec["uuid"], "client": cid, "exp": now + TOKEN_TTL})
-        return {"access_token": at, "token_type": "Bearer", "expires_in": TOKEN_TTL, "id_token": self._sign(idt), "scope": "openid profile email"}
+        self.ctx.store.put("sso_tokens", _sha(at), {"uuid": rec["uuid"], "client": cid, "scopes": list(scopes),
+                                                     "exp": now + TOKEN_TTL})
+        return {"access_token": at, "token_type": "Bearer", "expires_in": TOKEN_TTL, "id_token": self._sign(idt),
+                "scope": " ".join(scopes)}
 
     def userinfo(self, access_token: str) -> dict:
         t = self.ctx.store.get("sso_tokens", _sha(access_token))
         user = t and t["exp"] > self.ctx.now() and self.ctx.identity.user(t["uuid"])
         if not user:
             raise HTTPException(401, "invalid token")
-        return self.claims(t["client"], user)
+        return self.claims(t["client"], user, tuple(t.get("scopes", DEFAULT_SCOPES)))
 
 
 class AuthorizeIn(BaseModel):
-    client_id: str
-    redirect_uri: str
-    state: str = ""
-    nonce: str = ""
-    code_challenge: str = ""
-    code_challenge_method: str = "S256"
+    client_id: str = Field(min_length=1, max_length=128)
+    redirect_uri: str = Field(min_length=1, max_length=2048)
+    response_type: str = Field(default="code", max_length=16)
+    scope: str | None = Field(default=None, max_length=512)
+    state: str = Field(default="", max_length=1024)
+    nonce: str = Field(default="", max_length=200)
+    code_challenge: str = Field(default="", max_length=128)
+    code_challenge_method: str = Field(default="S256", max_length=16)
 
 
 class SSOModule:
@@ -193,13 +255,26 @@ class SSOModule:
 
         @r.post("/api/sso/authorize")
         def authorize(b: AuthorizeIn, a: dict = verified):
+            if b.response_type != "code":
+                raise HTTPException(400, "unsupported response_type")
             url = provider.authorize(a, ctx.identity.user(a["uuid"]), b.client_id, b.redirect_uri, b.state, b.nonce,
-                                     b.code_challenge, b.code_challenge_method)
+                                     b.code_challenge, b.code_challenge_method, b.scope)
             return {"redirect": url}
 
         @r.post("/sso/token")
         async def token(request: Request):
-            form = {k: v[0] for k, v in parse_qs((await request.body()).decode("utf-8", "replace")).items()}
+            raw = await request.body()
+            if len(raw) > 4096:
+                return JSONResponse({"error": "invalid_request"}, status_code=400, headers={"Cache-Control": "no-store"})
+            try:
+                fields = parse_qs(raw.decode("utf-8"), keep_blank_values=True, max_num_fields=16, strict_parsing=True)
+            except (UnicodeDecodeError, ValueError):
+                return JSONResponse({"error": "invalid_request"}, status_code=400, headers={"Cache-Control": "no-store"})
+            if any(len(values) != 1 for values in fields.values()) or any(
+                len(key) > 64 or len(values[0]) > 2048 for key, values in fields.items()
+            ):
+                return JSONResponse({"error": "invalid_request"}, status_code=400, headers={"Cache-Control": "no-store"})
+            form = {key: values[0] for key, values in fields.items()}
             basic = None
             h = request.headers.get("authorization", "")
             if h.lower().startswith("basic "):

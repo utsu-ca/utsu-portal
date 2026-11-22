@@ -7,8 +7,9 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from .. import audit
-from ..context import Context, roles_of
+from ..context import Context
 from ..contracts import FileKind
+from ..permissions import PERM_IDENTITY_VERIFICATION_REVIEW
 from ..services.account_check import check_one
 from ..services.roster import COL_NAME, Student, import_roster
 from ..services.text import normalize_case
@@ -32,7 +33,7 @@ class AdminModule:
     def configure(self, ctx: Context) -> None:
         def authorized(action: str, actor: str, resource: str, reference: str) -> bool:
             account = ctx.identity.account(actor)
-            return bool(account and roles_of(account, ctx.roles) & {"verifier", "admin"})
+            return bool(account and ctx.has_permission(account, PERM_IDENTITY_VERIFICATION_REVIEW))
 
         def read(reference: str, _resource: str) -> bytes | None:
             media = ctx.store.get("media", reference)
@@ -54,7 +55,7 @@ class AdminModule:
     def router(self, ctx: Context) -> APIRouter:
         r = APIRouter(prefix="/api/admin")
         S = ctx.store
-        admin = ctx.require_role("verifier")
+        admin = ctx.require_permission(PERM_IDENTITY_VERIFICATION_REVIEW)
 
         @r.get("/roster")
         def list_roster(offset: int = Query(0, ge=0), limit: int = Query(25, ge=1, le=100),

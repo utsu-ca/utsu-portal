@@ -7,11 +7,13 @@ from typing import Literal
 from urllib.parse import urlsplit
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, ValidationError
 
 from ..context import Context
+from ..pagination import PageOrder, paginate_store
+from ..permissions import PERM_PAYMENTS_MANAGE
 from ..services.payments import PaymentGateway, StripeGateway
 from ..store import ACCESS, AccessLog, Conflict
 
@@ -68,7 +70,7 @@ class PaymentsModule:
 
     def router(self, ctx: Context) -> APIRouter:
         router = APIRouter(prefix="/api")
-        staff = ctx.require_role("payments_finance")
+        staff = ctx.require_permission(PERM_PAYMENTS_MANAGE)
         verified = ctx.require_verified()
 
         def gateway() -> PaymentGateway:
@@ -109,13 +111,29 @@ class PaymentsModule:
             return view(order)
 
         @router.get("/finance/orders")
-        def finance_orders(actor: dict = staff):
-            return [view(order) for order in sorted(ctx.store.list("orders"), key=lambda o: o["created_at"], reverse=True)]
+        def finance_orders(cursor: str = Query("", max_length=2048), limit: int = Query(100, ge=1, le=200),
+                           actor: dict = staff):
+            page, next_cursor = paginate_store(
+                ctx.store,
+                "orders",
+                cursor,
+                limit,
+                (PageOrder("created_at", float, descending=True), PageOrder("id", str)),
+            )
+            return {"items": [view(order) for order in page], "next_cursor": next_cursor}
 
         @router.get("/orders")
-        def my_orders(actor: dict = verified):
-            return [view(order) for order in sorted(ctx.store.list("orders", uuid=actor["uuid"]),
-                                                  key=lambda o: o["created_at"], reverse=True)]
+        def my_orders(cursor: str = Query("", max_length=2048), limit: int = Query(100, ge=1, le=200),
+                      actor: dict = verified):
+            page, next_cursor = paginate_store(
+                ctx.store,
+                "orders",
+                cursor,
+                limit,
+                (PageOrder("created_at", float, descending=True), PageOrder("id", str)),
+                equals={"uuid": actor["uuid"]},
+            )
+            return {"items": [view(order) for order in page], "next_cursor": next_cursor}
 
         @router.get("/orders/{oid}")
         def my_order(oid: str, actor: dict = verified):

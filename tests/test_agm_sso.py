@@ -217,6 +217,7 @@ def test_online_verifier_gates_zoom_sso(env, monkeypatch):
     tok = c.post("/sso/token", data={**form, "code_verifier": v})
     assert tok.status_code == 200, tok.text
     t = tok.json()
+    assert t["scope"] == "openid profile email"
     payload = json.loads(base64.urlsafe_b64decode(t["id_token"].split(".")[1] + "=="))
     assert payload["aud"] == "zoom" and payload["nonce"] == "n1" and payload["email"] == "ada@x.ca"
     assert payload["sub"] != uid(c, h, "ada")  # pairwise
@@ -228,7 +229,29 @@ def test_online_verifier_gates_zoom_sso(env, monkeypatch):
     hd, bd, sg = t["id_token"].split(".")
     pub.verify(base64.urlsafe_b64decode(sg + "=" * (-len(sg) % 4)), f"{hd}.{bd}".encode(), padding.PKCS1v15(), hashes.SHA256())
     ui = c.get("/sso/userinfo", headers={"Authorization": "Bearer " + t["access_token"]}).json()
-    assert ui["sub"] == payload["sub"]
+    assert ui["sub"] == payload["sub"] and ui["email"] == "ada@x.ca"
+    assert c.post("/api/sso/authorize", json={**body, "response_type": "token"}, headers=h["ada"]).status_code == 400
+    assert c.post("/api/sso/authorize", json={**body, "scope": "openid admin"}, headers=h["ada"]).status_code == 400
+    assert c.post(
+        "/api/sso/authorize", json={**body, "code_challenge": "invalid"}, headers=h["ada"]
+    ).status_code == 400
+    oversized_form = {"grant_type": "authorization_code", "client_id": "zoom", "client_secret": "x" * 5000}
+    assert c.post("/sso/token", data=oversized_form).json() == {"error": "invalid_request"}
+    too_many_fields = {"grant_type": "authorization_code", **{f"extra{n}": "x" for n in range(16)}}
+    assert c.post("/sso/token", data=too_many_fields).json() == {"error": "invalid_request"}
+
+    scoped = c.post(
+        "/api/sso/authorize", json={**body, "scope": "openid profile profile"}, headers=h["ada"]
+    ).json()
+    scoped_code = parse_qs(urlsplit(scoped["redirect"]).query)["code"][0]
+    scoped_token = c.post("/sso/token", data={**form, "code": scoped_code, "code_verifier": v}).json()
+    scoped_payload = json.loads(base64.urlsafe_b64decode(scoped_token["id_token"].split(".")[1] + "=="))
+    assert scoped_token["scope"] == "openid profile"
+    assert "email" not in scoped_payload and "given_name" in scoped_payload
+    scoped_userinfo = c.get("/sso/userinfo", headers={
+        "Authorization": "Bearer " + scoped_token["access_token"],
+    }).json()
+    assert "email" not in scoped_userinfo and scoped_userinfo["sub"] == scoped_payload["sub"]
     assert c.get("/sso/.well-known/openid-configuration").json()["jwks_uri"].endswith("/sso/jwks")
     assert c.get("/sso/authorize").status_code == 200
     approved_check = ctx.store.get("agm_checks", r["id"])

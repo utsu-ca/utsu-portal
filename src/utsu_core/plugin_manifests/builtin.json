@@ -12,6 +12,12 @@
       "roles": {
         "payments_finance": "create and inspect payment orders"
       },
+      "permissions": {
+        "utsu:payments:orders:manage": "Create and inspect payment orders."
+      },
+      "role_permissions": {
+        "payments_finance": ["utsu:payments:orders:manage"]
+      },
       "protection": {
         "orders": ["description", "checkout_url", "payment_intent"]
       },
@@ -33,6 +39,12 @@
       },
       "roles": {
         "profile_finance": "access and verify profile banking details"
+      },
+      "permissions": {
+        "utsu:profile:financial:manage": "Access and verify profile banking details."
+      },
+      "role_permissions": {
+        "profile_finance": ["utsu:profile:financial:manage"]
       },
       "order": 25
     },
@@ -121,6 +133,14 @@
         "checkin": "AGM check-in and attendance",
         "agm_admin": "view AGM registrations and verify roster matches"
       },
+      "permissions": {
+        "utsu:agm:checkin:manage": "Manage AGM check-in and attendance.",
+        "utsu:agm:registrations:manage": "View AGM registrations and verify roster matches."
+      },
+      "role_permissions": {
+        "checkin": ["utsu:agm:checkin:manage"],
+        "agm_admin": ["utsu:agm:registrations:manage"]
+      },
       "order": 40
     },
     {
@@ -132,6 +152,12 @@
       "dependencies": ["agm"],
       "roles": {
         "agm_id_reviewer": "review AGM online ID scans and approve Zoom sign-on"
+      },
+      "permissions": {
+        "utsu:agm:identity:review": "Review AGM online ID scans and approve Zoom sign-on."
+      },
+      "role_permissions": {
+        "agm_id_reviewer": ["utsu:agm:identity:review"]
       },
       "order": 30
     },
@@ -145,6 +171,12 @@
       "form_ids": ["senate_application"],
       "roles": {
         "senate_admin": "view Senate applications"
+      },
+      "permissions": {
+        "utsu:senate:applications:manage": "View and administer Senate applications."
+      },
+      "role_permissions": {
+        "senate_admin": ["utsu:senate:applications:manage"]
       },
       "order": 50
     },
@@ -170,6 +202,16 @@
         "sap_finance": "student aid banking: flag details that fail validation, review void cheques",
         "sap_reviewer": "review student aid applications"
       },
+      "permissions": {
+        "utsu:sap:applications:manage": "View and administer student aid applications.",
+        "utsu:sap:banking:manage": "Review and manage student aid banking details.",
+        "utsu:sap:reviews:manage": "Review student aid applications."
+      },
+      "role_permissions": {
+        "sap_admin": ["utsu:sap:applications:manage"],
+        "sap_finance": ["utsu:sap:banking:manage"],
+        "sap_reviewer": ["utsu:sap:reviews:manage"]
+      },
       "order": 60
     },
     {
@@ -188,6 +230,14 @@
       "roles": {
         "finance": "club transactions and grants",
         "clubs": "club registration decisions"
+      },
+      "permissions": {
+        "utsu:clubs:finance:manage": "Manage club transactions and grants.",
+        "utsu:clubs:applications:manage": "Review club registration applications."
+      },
+      "role_permissions": {
+        "finance": ["utsu:clubs:finance:manage"],
+        "clubs": ["utsu:clubs:applications:manage"]
       },
       "order": 100
     },
@@ -230,10 +280,16 @@
       "default_enabled": false,
       "dependencies": ["messaging"],
       "services": ["audit", "auth", "messaging", "now", "store"],
-      "collections": ["discussion_boards", "discussion_topics"],
+      "collections": ["discussion_boards", "discussion_topics", "discussion_pagination_migrations"],
       "provides": ["discussion"],
       "roles": {
         "discussion_moderator": "moderate discussions: boards, locking, pinning and redaction"
+      },
+      "permissions": {
+        "utsu:discussion:moderate": "Moderate discussion boards, topics, and messages."
+      },
+      "role_permissions": {
+        "discussion_moderator": ["utsu:discussion:moderate"]
       },
       "order": 130
     },
@@ -258,6 +314,12 @@
       },
       "roles": {
         "elections_admin": "run ballots and polls, and break the seal on sealed ballots (every opening is logged)"
+      },
+      "permissions": {
+        "utsu:voting:elections:manage": "Manage ballots, polls, and sealed-ballot unsealing."
+      },
+      "role_permissions": {
+        "elections_admin": ["utsu:voting:elections:manage"]
       },
       "order": 140
     }

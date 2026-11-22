@@ -75,7 +75,7 @@ def test_orders_are_server_priced_private_and_retry_safe(env):
     assert c.post("/api/finance/orders", headers=staff, json={**body, "amount_cents": 1.5}).status_code == 422
     assert c.get(f"/api/orders/{oid}").status_code == 401
     assert c.get(f"/api/orders/{oid}", headers=other).status_code == 404
-    assert c.get("/api/orders", headers=other).json() == []
+    assert c.get("/api/orders", headers=other).json() == {"items": [], "next_cursor": None}
     path = f"/api/orders/{oid}/checkout"
     assert c.post(path, headers=other).status_code == 404
     with ThreadPoolExecutor(max_workers=2) as pool:
@@ -87,6 +87,45 @@ def test_orders_are_server_priced_private_and_retry_safe(env):
     assert inner.get("orders", oid)["description"].startswith(PREFIX)
     assert inner.get("orders", oid)["checkout_url"].startswith(PREFIX)
     assert "checkout_url" not in c.get(f"/api/orders/{oid}", headers=user).json()
+
+
+def test_order_lists_paginate_with_stable_ties_and_validate_parameters():
+    app = create_app(Settings(secret="s" * 32, enabled_plugins=()), mailer=OutboxMailer())
+    ctx = app.state.ctx
+    user = account(ctx, "student")
+    other = account(ctx, "other")
+    staff = account(ctx, "finance", roles=("payments_finance",))
+    c = TestClient(app)
+    orders = []
+    for i in range(205):
+        order = {"id": f"order-{i:03}", "uuid": "student" if i < 203 else "other",
+                 "description": "Fee", "amount_cents": 100, "currency": "cad",
+                 "status": "awaiting_payment", "created_at": i // 3, "private": "secret"}
+        ctx.store.put("orders", order["id"], order)
+        orders.append(order)
+
+    for path, headers, expected in (
+        ("/api/orders", user, [o for o in orders if o["uuid"] == "student"]),
+        ("/api/finance/orders", staff, orders),
+    ):
+        expected = sorted(expected, key=lambda o: (-float(o["created_at"]), o["id"]))
+        first = c.get(path, headers=headers).json()
+        assert len(first["items"]) == 100 and first["next_cursor"]
+        large = c.get(path, headers=headers, params={"limit": 200}).json()
+        assert len(large["items"]) == 200 and large["next_cursor"]
+        second = c.get(path, headers=headers, params={"cursor": first["next_cursor"], "limit": 200}).json()
+        assert second["next_cursor"] is None
+        combined = first["items"] + second["items"]
+        assert [o["id"] for o in combined] == [o["id"] for o in expected]
+        assert all(set(o) == {"id", "uuid", "description", "amount_cents", "currency", "status", "created_at"}
+                   for o in combined)
+        one = c.get(path, headers=headers, params={"limit": 1}).json()
+        following = c.get(path, headers=headers, params={"cursor": one["next_cursor"], "limit": 1}).json()
+        assert [one["items"][0]["id"], following["items"][0]["id"]] == [o["id"] for o in expected[:2]]
+        for params in ({"limit": 0}, {"limit": 201}, {"limit": "bad"}, {"cursor": "not!valid"},
+                       {"cursor": "WzFd"}, {"cursor": "a" * 2049}):
+            assert c.get(path, headers=headers, params=params).status_code == 422
+    assert c.get("/api/finance/orders", headers=other).status_code == 403
 
 
 def test_signed_webhooks_validate_order_and_do_not_regress_paid_status(env):

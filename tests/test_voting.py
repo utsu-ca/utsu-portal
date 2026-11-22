@@ -183,6 +183,17 @@ def test_secret_ballot_keeps_no_link_and_cannot_be_unsealed(env):
     assert record["leaves"] == [cast["receipt"]] and record["committed"]["visibility"] == "secret"
 
 
+def test_ballot_listing_does_not_apply_scheduled_transitions(env):
+    base = env.ctx.now()
+    ballot = _ballot(env, opens_at=base + 10, closes_at=base + 20)
+    env.ctx.now = lambda: base + 15
+
+    listed = env.c.get("/api/voting/ballots", headers=env.h["boss"]).json()["ballots"]
+    assert next(row for row in listed if row["id"] == ballot["id"])["status"] == "draft"
+    assert env.store.get("ballots", ballot["id"])["status"] == "draft"
+    assert env.c.get(f"/api/voting/ballots/{ballot['id']}", headers=env.h["ada"]).json()["status"] == "open"
+
+
 def test_open_ballot_roll_and_cancellation(env):
     c, h = env.c, env.h
     bid = _ballot(env, title="Lunch", method="ranked", options=["Pizza", "Salad", "Wraps"], visibility="open")["id"]

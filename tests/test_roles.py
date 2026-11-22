@@ -8,6 +8,7 @@ from test_portal import activate, login, register  # noqa: E402
 
 from utsu_core.context import ROLES
 from utsu_core.context import roles_of
+from utsu_core.permissions import PERM_AUDIT_READ, PERM_FORMS_MANAGE, permission_catalogue_for, role_permissions_for
 from utsu_core.plugin_host import discover_manifests, select_manifests
 from utsu_core.role_catalogue import role_catalogue_for
 
@@ -34,7 +35,14 @@ def test_roles_scope_access_and_are_issued_by_auth_service():
     pc.app.state.ctx.identity._cache.clear()
     # auditor reads the audit log on the portal, but cannot verify identities, edit forms or run maintenance
     assert pc.get("/api/admin/audit", headers=uh).status_code == 200
-    assert pc.get("/api/admin/forms", headers=uh).status_code == 403
+    denied = pc.get("/api/admin/forms", headers=uh)
+    assert denied.status_code == 403
+    assert denied.headers["www-authenticate"] == (
+        'Bearer error="insufficient_scope", scope="utsu:forms:manage"'
+    )
+    ada = pc.app.state.ctx.identity.account(ac.app.state.ctx.uid("ada"))
+    assert pc.app.state.ctx.has_permission(ada, PERM_AUDIT_READ)
+    assert not pc.app.state.ctx.has_permission(ada, PERM_FORMS_MANAGE)
     assert ac.get("/api/admin/verifications", headers=uh).status_code == 403
     assert ac.post("/api/admin/auth-audit/maintenance/run", headers=uh).status_code == 403
     assert put(ac, ah, "ada", ["forms_editor", "checkin"]).status_code == 200
@@ -60,8 +68,41 @@ def test_grant_rules():
     uh2 = login(ac, mail, "ada")
     assert put(ac, uh2, "boss", []).status_code == 200  # a second admin may demote the first
     assert put(ac, ah, "ada", []).status_code == 403  # ...who is no longer admin
-    holders = ac.get("/api/admin/roles/holders", headers=uh2).json()
+    holders = ac.get("/api/admin/roles/holders", headers=uh2).json()["items"]
     assert [h["roles"] for h in holders] == [["admin"]]
+
+
+def test_role_holders_paginate_in_uuid_order_and_validate_parameters():
+    ac, _, _, _, ah, uh = setup()
+    store = ac.app.state.ctx.store
+    assert put(ac, ah, "ada", ["auditor"]).status_code == 200
+    for i in reversed(range(202)):
+        uid = f"00000000-0000-0000-0000-{i:012d}"
+        store.put("accounts", uid, {"uuid": uid, "status": "verified", "roles": ["auditor"]})
+        store.put("users", uid, {"uuid": uid, "preferred_name": f"Holder {i}"})
+    staff_uid = "ffffffff-ffff-ffff-ffff-ffffffffffff"
+    store.put("accounts", staff_uid, {"uuid": staff_uid, "status": "verified", "roles": [],
+                                      "google_staff_username": "staff"})
+    store.put("users", staff_uid, {"uuid": staff_uid, "preferred_name": "Staff", "email": "staff@example.test"})
+    path = "/api/admin/roles/holders"
+    first = ac.get(path, headers=ah).json()
+    assert len(first["items"]) == 100 and first["next_cursor"]
+    large = ac.get(path, headers=ah, params={"limit": 200}).json()
+    assert len(large["items"]) == 200 and large["next_cursor"]
+    second = ac.get(path, headers=ah, params={"cursor": first["next_cursor"], "limit": 200}).json()
+    holders = first["items"] + second["items"]
+    ids = [holder["uuid"] for holder in holders]
+    assert len(ids) == 205 and ids == sorted(set(ids))
+    assert second["next_cursor"] is None
+    assert holders[-1] == {"uuid": staff_uid, "preferred_name": "Staff", "roles": [],
+                           "username": "staff", "email": "staff@example.test"}
+    one = ac.get(path, headers=ah, params={"limit": 1}).json()
+    following = ac.get(path, headers=ah, params={"cursor": one["next_cursor"], "limit": 1}).json()
+    assert [one["items"][0]["uuid"], following["items"][0]["uuid"]] == ids[:2]
+    for params in ({"limit": 0}, {"limit": 201}, {"limit": "bad"}, {"cursor": "not!valid"},
+                   {"cursor": "WzFd"}, {"cursor": "a" * 2049}):
+        assert ac.get(path, headers=ah, params=params).status_code == 422
+    assert ac.get(path, headers=uh).status_code == 403
 
 
 def test_sole_remaining_admin_cannot_demote_self():
@@ -91,12 +132,17 @@ def test_concurrent_admin_demotions_cannot_remove_the_last_admin():
 
 
 def test_disabled_program_roles_are_ineffective_but_stored_grants_are_preserved():
-    manifests = select_manifests(discover_manifests(), "local", ())
+    selected = discover_manifests()
+    manifests = select_manifests(selected, "local", ())
     active_roles = role_catalogue_for(manifests)
+    active_permissions = permission_catalogue_for(manifests)
+    active_role_permissions = role_permissions_for(manifests)
     account = {"roles": ["checkin", "auditor"]}
 
     assert "checkin" not in active_roles
     assert roles_of(account, active_roles) == {"auditor"}
+    assert "utsu:agm:checkin:manage" not in active_permissions
+    assert "checkin" not in active_role_permissions
     assert account["roles"] == ["checkin", "auditor"]
 
 

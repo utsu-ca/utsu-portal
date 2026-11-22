@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from .. import formdef
 from ..context import Context
+from ..pagination import PageOrder, paginate_page
+from ..permissions import PERM_FORMS_MANAGE
 from ..services.submissions import get_submission_policy, validate_submission_eligibility
 
 name = "forms"
@@ -41,7 +43,7 @@ class FormsModule:
         r = APIRouter(prefix="/api")
         S = ctx.store
         forms = ctx.forms.core_view()
-        admin = ctx.require_role("forms_editor")
+        admin = ctx.require_permission(PERM_FORMS_MANAGE)
         verified = ctx.require_verified()
 
         def published(fid: str) -> dict:
@@ -231,14 +233,28 @@ class FormsModule:
 
         # ---------- admin: submissions ----------
         @r.get("/admin/forms/{fid}/submissions")
-        def admin_submissions(fid: str, _: dict = admin):
+        def admin_submissions(
+            fid: str,
+            cursor: str = Query("", max_length=2048),
+            limit: int = Query(100, ge=1, le=200),
+            _: dict = admin,
+        ):
             _ensure(fid)
+            order_by = (PageOrder("id", str),)
+            page, next_cursor = paginate_page(
+                lambda after, page_limit: forms.page_submissions(
+                    fid, order_by=order_by, after=after, limit=page_limit
+                ),
+                cursor,
+                limit,
+                order_by,
+            )
             out = []
-            for s in forms.submissions(fid):
+            for s in page:
                 u = ctx.identity.user(s["uuid"]) or {}
                 out.append({k: s[k] for k in ("id", "form_id", "uuid", "version", "hash", "data", "status", "updated_at", "history")}
                            | {"applicant": {k: u.get(k) for k in ("preferred_name", "first_name", "last_name", "email", "student_number")}})
-            return out
+            return {"items": out, "next_cursor": next_cursor}
 
         @r.post("/admin/submissions/{fid}/{uid}/status")
         def set_status(fid: str, uid: str, b: StatusIn, a: dict = admin):

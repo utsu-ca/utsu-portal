@@ -1,17 +1,27 @@
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import ClubDirectoryView from "../views/ClubDirectoryView.svelte";
 
-vi.mock("../../../lib/api.js", async importOriginal => ({ ...(await importOriginal()), api: vi.fn() }));
-import { api } from "../../../lib/api.js";
+const { apiMock, apiAllPagesMock } = vi.hoisted(() => ({ apiMock: vi.fn(), apiAllPagesMock: vi.fn() }));
+vi.mock("../../../lib/api.js", async importOriginal => ({
+  ...(await importOriginal()), api: apiMock, apiAllPages: apiAllPagesMock,
+}));
+import { api, apiAllPages } from "../../../lib/api.js";
 
-afterEach(() => { cleanup(); api.mockReset(); });
+beforeEach(() => {
+  apiAllPages.mockImplementation(async (path, collection = "items") => {
+    const page = await api(path);
+    const items = Array.isArray(page?.[collection]) ? page[collection] : [];
+    return collection === "items" ? items : { ...page, [collection]: items, next_cursor: null };
+  });
+});
+afterEach(() => { cleanup(); api.mockReset(); apiAllPages.mockReset(); });
 
 it("shows public clubs and filters by name, category or description", async () => {
-  api.mockResolvedValue([
+  api.mockResolvedValue({ items: [
     { id: "1", name: "Chess Club", category: "Games", description: "Weekly matches" },
     { id: "2", name: "Art Club", category: "Arts", description: "Watercolour classes" },
-  ]);
+  ], next_cursor: null });
   render(ClubDirectoryView);
   expect(await screen.findByRole("heading", { name: "Chess Club" })).toBeInTheDocument();
   const search = screen.getByLabelText("Search clubs");
@@ -25,7 +35,8 @@ it("shows public clubs and filters by name, category or description", async () =
 });
 
 it("shows loading failures instead of an empty directory and can retry", async () => {
-  api.mockRejectedValueOnce(new Error("Directory unavailable")).mockResolvedValueOnce([]);
+  api.mockRejectedValueOnce(new Error("Directory unavailable"))
+    .mockResolvedValueOnce({ items: [], next_cursor: null });
   render(ClubDirectoryView);
   expect(await screen.findByText("Directory unavailable")).toBeInTheDocument();
   expect(screen.queryByText("No approved clubs are listed yet.")).not.toBeInTheDocument();

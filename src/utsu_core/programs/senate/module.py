@@ -4,14 +4,16 @@ from __future__ import annotations
 import hashlib
 import json
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from ...context import Context
 from ...contracts import NotificationType, SubmissionPolicy
+from ...pagination import PageOrder, paginate_items, paginate_page
 from ...services.exports import csv_response
 from ...services.forms import register_form_resource
 from ...services.submissions import register_submission_policy
+from ...permissions import PERM_SENATE_APPLICATIONS
 from .seating import FACULTY, assign_seats, tier_index
 
 PREFERENCES = {
@@ -112,18 +114,25 @@ class SenateModule:
     def router(self, ctx: Context) -> APIRouter:
         router = APIRouter(prefix="/api")
         forms = ctx.forms.for_owner(self.name)
-        admin = ctx.require_role("senate_admin")
+        admin = ctx.require_permission(PERM_SENATE_APPLICATIONS)
 
         @router.get("/admin/senate/applications")
-        def applications(cursor: str = "", limit: int = 100, _: dict = admin):
-            if not 1 <= limit <= 200:
-                raise HTTPException(422, "limit must be between 1 and 200")
-            submissions = sorted(
-                (s for s in forms.submissions("senate_application") if s["id"] > cursor),
-                key=lambda s: s["id"],
+        def applications(
+            cursor: str = Query("", max_length=2048),
+            limit: int = Query(100, ge=1, le=200),
+            _: dict = admin,
+        ):
+            order_by = (PageOrder("id", str),)
+            page, next_cursor = paginate_page(
+                lambda after, page_limit: forms.page_submissions(
+                    "senate_application", order_by=order_by, after=after, limit=page_limit
+                ),
+                cursor,
+                limit,
+                order_by,
             )
-            items = [application_view(ctx, s) for s in submissions[:limit]]
-            return {"items": items, "next_cursor": items[-1]["id"] if len(submissions) > limit else None}
+            return {"items": [application_view(ctx, submission) for submission in page],
+                    "next_cursor": next_cursor}
 
         @router.get("/me/senate")
         def my_application(account: dict = ctx.require_verified()):
@@ -179,8 +188,19 @@ class SenateModule:
             return snapshot
 
         @router.get("/admin/senate/results")
-        def results(_: dict = admin):
-            return (ctx.store.get("senate_published", "history") or {}).get("versions", [])
+        def results(
+            cursor: str = Query("", max_length=2048),
+            limit: int = Query(100, ge=1, le=200),
+            _: dict = admin,
+        ):
+            page, next_cursor = paginate_items(
+                (ctx.store.get("senate_published", "history") or {}).get("versions", []),
+                cursor,
+                limit,
+                key=lambda version: (version["version"],),
+                key_types=(int,),
+            )
+            return {"items": page, "next_cursor": next_cursor}
 
         @router.get("/admin/senate/results.csv")
         def export_results(actor: dict = admin):

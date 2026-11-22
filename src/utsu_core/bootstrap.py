@@ -14,6 +14,8 @@ from fastapi import APIRouter, FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.requests import ClientDisconnect
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from . import formdef
 from .audit import AuditLog
@@ -21,7 +23,7 @@ from .crypto import Crypter, EncryptingStore
 from .identity import Identity, LocalIdentity
 from .events import bus_from_settings
 from .anchor import provider_from_settings
-from .ratelimit import limiter_from_settings
+from .ratelimit import RateLimiter, limiter_from_settings
 from .context import Context
 from .mailer import Mailer, mailer_from_env
 from .role_catalogue import ROLES
@@ -36,12 +38,20 @@ from .services.files import DocumentService
 from .services.forms import FormRegistry, FormsRuntime
 from .services.messaging import MessagingRuntime, ThreadTypeRegistry
 from .services.notifications import NotificationTypeRegistry
+from .permissions import (
+    permission_catalogue_for,
+    role_permissions_for,
+)
 from .services.financial_access import FinancialAccessStore
 
 STATIC = Path(__file__).parent / "static"
 BRANDING = Path(__file__).parent / "branding"
-RATE_LIMITED = ("/api/auth/", "/api/recovery", "/sso/token", "/sso/authorize")
+RATE_LIMITED = ("/api/auth/", "/api/recovery", "/sso/token", "/api/sso/authorize", "/mail/")
 log = logging.getLogger("utsu_core")
+
+
+class _RequestBodyTooLarge(Exception):
+    pass
 
 
 class Module(Protocol):
@@ -54,6 +64,103 @@ def _route_methods(value: object) -> tuple[str, ...]:
     if not isinstance(value, (set, frozenset, list, tuple)):
         return ()
     return tuple(method for method in cast(Iterable[object], value) if isinstance(method, str))
+
+
+async def _read_bounded_body(receive: Receive, maximum: int, expected_size: int | None = None) -> bytes:
+    chunks: list[bytes] = []
+    size = 0
+    while True:
+        message = await receive()
+        if message["type"] == "http.disconnect":
+            if size == 0 and expected_size in (None, 0):
+                return b""
+            raise ClientDisconnect()
+        if message["type"] != "http.request":
+            continue
+        chunk = message.get("body", b"")
+        size += len(chunk)
+        if size > maximum:
+            raise _RequestBodyTooLarge
+        chunks.append(chunk)
+        if not message.get("more_body", False):
+            return b"".join(chunks)
+
+
+class RequestGuardMiddleware:
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        max_body_bytes: int,
+        limiter: RateLimiter,
+        rate_limit_auth: int,
+        rate_window: int,
+    ) -> None:
+        self.app = app
+        self.max_body_bytes = max_body_bytes
+        self.limiter = limiter
+        self.rate_limit_auth = rate_limit_auth
+        self.rate_window = rate_window
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        headers = {key.lower(): value for key, value in scope["headers"]}
+        path, method = scope["path"], scope["method"]
+        client = scope.get("client")
+        client_ip = client[0] if client else "unknown"
+        if method == "POST" and path.startswith(RATE_LIMITED):
+            key = f"auth:{path}:{client_ip}"
+            allowed = await run_in_threadpool(
+                self.limiter.allow, key, self.rate_limit_auth, self.rate_window
+            )
+            if not allowed:
+                await JSONResponse(
+                    {"detail": "too many requests"},
+                    429,
+                    headers={"Retry-After": str(self.rate_window)},
+                )(scope, receive, send)
+                return
+
+        raw_length = headers.get(b"content-length")
+        declared_size = None
+        if raw_length is not None:
+            try:
+                declared_size = int(raw_length)
+            except ValueError:
+                await JSONResponse({"detail": "invalid content length"}, 400)(scope, receive, send)
+                return
+            if declared_size < 0:
+                await JSONResponse({"detail": "invalid content length"}, 400)(scope, receive, send)
+                return
+            if declared_size > self.max_body_bytes:
+                await JSONResponse({"detail": "request too large"}, 413)(scope, receive, send)
+                return
+
+        if (method not in ("POST", "PUT", "PATCH", "DELETE")
+                and not (declared_size and declared_size > 0)
+                and b"transfer-encoding" not in headers):
+            await self.app(scope, receive, send)
+            return
+
+        try:
+            body = await _read_bounded_body(receive, self.max_body_bytes, declared_size)
+        except _RequestBodyTooLarge:
+            await JSONResponse({"detail": "request too large"}, 413)(scope, receive, send)
+            return
+
+        body_sent = False
+
+        async def replay_body() -> Message:
+            nonlocal body_sent
+            if body_sent:
+                return {"type": "http.disconnect"}
+            body_sent = True
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        await self.app(scope, replay_body, send)
 
 
 def seed_forms(ctx: Context, directory: Path | None = None) -> None:
@@ -159,6 +266,8 @@ def build_app(settings: Settings, store: Store | None, mailer: Mailer | None, mo
               identity: Identity | None = None,
               seed: bool = True, ui: bool = True, form_owners: Mapping[str, str] | None = None,
               role_catalogue: dict[str, str] | None = None,
+              permission_catalogue: Mapping[str, str] | None = None,
+              role_permissions: Mapping[str, frozenset[str]] | None = None,
               plugin_settings: Mapping[str, Mapping[str, Any]] | None = None) -> FastAPI:
     check_dev_settings(settings)
     mailer = mailer or mailer_from_env()
@@ -167,8 +276,19 @@ def build_app(settings: Settings, store: Store | None, mailer: Mailer | None, mo
     store = EncryptingStore(store or open_store(settings.store), Crypter(settings.data_key, settings.secret))
     if settings.audit_db_access:
         store = AuditedStore(store)
+    if permission_catalogue is None or role_permissions is None:
+        from .plugin_host import discover_manifests, select_manifests
+
+        manifests = select_manifests(discover_manifests(), "local", settings.enabled_plugins)
+        if permission_catalogue is None:
+            permission_catalogue = permission_catalogue_for(manifests)
+        if role_permissions is None:
+            role_permissions = role_permissions_for(manifests)
+    assert permission_catalogue is not None and role_permissions is not None
     ctx = Context(store, settings, mailer, bus=bus_from_settings(settings),
                   roles=ROLES if role_catalogue is None else role_catalogue,
+                  permissions=permission_catalogue,
+                  role_permissions=role_permissions,
                   plugin_settings=plugin_settings)
     ctx.identity = identity or LocalIdentity(ctx)
     if identity is None and store.get("roster_meta", "current"):
@@ -253,6 +373,13 @@ def build_app(settings: Settings, store: Store | None, mailer: Mailer | None, mo
 
     app = FastAPI(title="UTSU applicant portal", docs_url=None, redoc_url=None, lifespan=lifespan)
     app.state.ctx = ctx
+    app.add_middleware(
+        RequestGuardMiddleware,
+        max_body_bytes=settings.max_body_bytes,
+        limiter=ctx.limiter,
+        rate_limit_auth=settings.rate_limit_auth,
+        rate_window=settings.rate_window,
+    )
     for router in routers:
         app.include_router(router)
 
@@ -290,15 +417,6 @@ def build_app(settings: Settings, store: Store | None, mailer: Mailer | None, mo
             except Exception:
                 log.exception("audit write failed")
         return resp
-
-    @app.middleware("http")
-    async def guard(request: Request, call_next):
-        if int(request.headers.get("content-length") or 0) > settings.max_body_bytes:
-            return JSONResponse({"detail": "request too large"}, 413)
-        if request.method == "POST" and request.url.path.startswith(RATE_LIMITED):
-            if not await run_in_threadpool(ctx.limiter.allow, f"auth:{client_ip(request)}", settings.rate_limit_auth, settings.rate_window):
-                return JSONResponse({"detail": "too many requests"}, 429, headers={"Retry-After": str(settings.rate_window)})
-        return await call_next(request)
 
     @app.middleware("http")
     async def headers(request, call_next):

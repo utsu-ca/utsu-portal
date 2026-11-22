@@ -13,7 +13,7 @@ from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 import jwt
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request as APIRequest
 from pydantic import BaseModel, Field
 
 from .. import security
@@ -126,10 +126,17 @@ def register_routes(router: APIRouter, ctx: Context) -> None:
     def available():
         return {"enabled": enabled}
 
+    def enforce_rate_limit(request: APIRequest) -> None:
+        client = request.client.host if request.client else "unknown"
+        limit = min(cfg.rate_limit_auth, 20) if cfg.rate_limit_auth > 0 else 0
+        if not ctx.limiter.allow(f"google-staff:{client}", limit, cfg.rate_window):
+            raise HTTPException(429, "too many requests", headers={"Retry-After": str(cfg.rate_window)})
+
     @router.post("/auth/google/start")
-    def start():
+    def start(request: APIRequest):
         if not enabled:
             raise HTTPException(404, "Google staff sign-in is not enabled")
+        enforce_rate_limit(request)
         verifier = secrets.token_urlsafe(32)
         challenge = _challenge(verifier)
         state = "google." + security.sign_token(cfg.secret, challenge, 600, SCOPE)
@@ -141,9 +148,10 @@ def register_routes(router: APIRouter, ctx: Context) -> None:
         return {"url": f"{AUTHORIZE}?{urlencode(params)}", "state": state, "verifier": verifier}
 
     @router.post("/auth/google/complete")
-    def complete(body: Completion):
+    def complete(body: Completion, request: APIRequest):
         if not enabled or client_id is None or secret is None:
             raise HTTPException(404, "Google staff sign-in is not enabled")
+        enforce_rate_limit(request)
         challenge = (security.read_token(cfg.secret, body.state[7:], SCOPE)
                      if body.state.startswith("google.") else None)
         if challenge is None or not hmac.compare_digest(challenge, _challenge(body.verifier)):

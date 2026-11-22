@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { api, downloadReport, setToken } from "./api.js";
+import { api, apiAllPages, downloadReport, setToken } from "./api.js";
 
 beforeEach(() => setToken("session"));
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); setToken(null); });
@@ -20,6 +20,32 @@ describe("api", () => {
     await expect(api("/x")).rejects.toMatchObject({ status: 422, detail: { name: "required" } });
     vi.stubGlobal("fetch", async () => ({ ok: false, status: 403, json: async () => ({ detail: "not on the student roster" }) }));
     await expect(api("/x")).rejects.toThrow("not on the student roster");
+  });
+});
+
+describe("apiAllPages", () => {
+  it("follows bounded cursors and preserves collection metadata and query filters", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({
+        boards: [{ id: "a" }], moderator: true, member: false, next_cursor: "page-2",
+      }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({
+        boards: [{ id: "b" }], moderator: true, member: false, next_cursor: null,
+      }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await apiAllPages("/discussion/boards?audience=members", "boards");
+    expect(result).toEqual({ boards: [{ id: "a" }, { id: "b" }], moderator: true, member: false, next_cursor: null });
+    expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
+      "/api/discussion/boards?audience=members&limit=100",
+      "/api/discussion/boards?audience=members&limit=100&cursor=page-2",
+    ]);
+  });
+
+  it("rejects a cursor that repeats", async () => {
+    vi.stubGlobal("fetch", async () => ({ ok: true, status: 200, json: async () => ({
+      items: [], next_cursor: "stuck",
+    }) }));
+    await expect(apiAllPages("/x")).rejects.toThrow("pagination cursor did not advance");
   });
 });
 

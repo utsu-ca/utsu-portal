@@ -2,12 +2,12 @@
   import { onMount } from "svelte";
   import Status from "../../../components/Status.svelte";
   import { Action } from "../../../lib/action.svelte.js";
-  import { api } from "../../../lib/api.js";
+  import { api, apiAllPages } from "../../../lib/api.js";
 
   const load = new Action(), save = new Action();
   let orders = $state([]), uuid = $state(""), description = $state(""), cents = $state(100);
   let pending = $state(null);
-  const refresh = () => load.run(async () => { orders = await api("/finance/orders"); });
+  const refresh = () => load.run(async () => { orders = await apiAllPages("/finance/orders"); });
   onMount(refresh);
   const create = () => save.run(async () => {
     if (!pending) {

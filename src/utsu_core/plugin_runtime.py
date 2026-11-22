@@ -33,6 +33,7 @@ from .contracts import (
     StoreService,
     ThreadType,
 )
+from .pagination import PageOrder
 from .store import Doc, Store, unlinked_access
 
 SUPPORTED_PLUGIN_SERVICES = frozenset({
@@ -90,6 +91,15 @@ class _AuthAdapter:
     def require_role(self, *roles: str) -> AuthDependency:
         return self._ctx.require_role(*roles)
 
+    def require_permission(self, *permissions: str) -> AuthDependency:
+        return self._ctx.require_permission(*permissions)
+
+    def has_permission(self, account: Mapping[str, Any], *permissions: str) -> bool:
+        return self._ctx.has_permission(account, *permissions)
+
+    def has_any_permission(self, account: Mapping[str, Any], *permissions: str) -> bool:
+        return self._ctx.has_any_permission(account, *permissions)
+
     def has_role(self, account: Mapping[str, Any], *roles: str) -> bool:
         return account.get("status") == "verified" and bool(roles_of(account, self._ctx.roles) & {"admin", *roles})
 
@@ -126,6 +136,20 @@ class _StoreAdapter:
     def list(self, collection: str, **equals: Any) -> list[Doc]:
         with self._check(collection):
             return self._store.list(collection, **equals)
+
+    def page(
+        self,
+        collection: str,
+        *,
+        order_by: tuple[PageOrder, ...],
+        after: tuple[Any, ...] | None,
+        limit: int,
+        equals: Mapping[str, Any] | None = None,
+    ) -> list[Doc]:
+        with self._check(collection):
+            return self._store.page(
+                collection, order_by=order_by, after=after, limit=limit, equals=equals
+            )
 
     def create(self, collection: str, key: str, value: Doc) -> bool:
         with self._check(collection):

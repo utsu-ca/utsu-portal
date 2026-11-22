@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..contracts import MessageRateLimited, MessageRejected, ThreadAccess, ThreadDenied, ThreadType
+from ..pagination import PageOrder
 from ..store import Doc, Store
 
 _TYPE_ID = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
@@ -219,6 +220,57 @@ class MessagingRuntime:
         return {"seq": int(thread.get("seq", 0)), "created_at": thread.get("created_at"),
                 "last_at": thread.get("last_at")}
 
+    def set_thread_metadata(
+        self, thread_type: str, record_id: str, owner: str, metadata: Mapping[str, Any]
+    ) -> None:
+        registered = self._registry.get(thread_type)
+        if registered is None or registered.owner != owner:
+            raise PermissionError(f"thread type {thread_type} is outside this messaging scope")
+        if not _RECORD_ID.fullmatch(record_id or ""):
+            raise ValueError("invalid thread record id")
+        key = thread_key(thread_type, record_id)
+
+        def update(current: Doc | None) -> Doc:
+            if current is not None and (
+                current.get("type") != thread_type or current.get("owner") != owner
+            ):
+                raise PermissionError("thread metadata cannot be changed outside its owner scope")
+            base = current or {
+                "type": thread_type,
+                "owner": owner,
+                "record_id": record_id,
+                "seq": 0,
+                "created_at": self._now(),
+                "last_at": self._now(),
+            }
+            return {**base, "metadata": {**base.get("metadata", {}), **metadata}}
+
+        self._store.update("message_threads", key, update)
+
+    def page_threads(
+        self,
+        thread_type: str,
+        owner: str,
+        *,
+        order_by: tuple[PageOrder, ...],
+        after: tuple[Any, ...] | None,
+        limit: int,
+        equals: Mapping[str, Any] | None = None,
+    ) -> list[Doc]:
+        registered = self._registry.get(thread_type)
+        if registered is None or registered.owner != owner:
+            raise PermissionError(f"thread type {thread_type} is outside this messaging scope")
+        filters = dict(equals or {})
+        if "type" in filters or "owner" in filters:
+            raise ValueError("thread type and owner filters are controlled by the messaging service")
+        return self._store.page(
+            "message_threads",
+            order_by=order_by,
+            after=after,
+            limit=limit,
+            equals={"type": thread_type, "owner": owner, **filters},
+        )
+
     def _read_marker(self, key: str, uid: str) -> int:
         marker = self._store.get("message_reads", f"{key}:{uid}")
         return int(marker["seq"]) if marker else 0
@@ -283,3 +335,28 @@ class MessagingView:
     def thread_info(self, thread_type: str, record_id: str) -> Doc | None:
         self._check(thread_type)
         return self._runtime.thread_info(thread_type, record_id)
+
+    def set_thread_metadata(
+        self, thread_type: str, record_id: str, metadata: Mapping[str, Any]
+    ) -> None:
+        self._check(thread_type)
+        self._runtime.set_thread_metadata(thread_type, record_id, self._owner, metadata)
+
+    def page_threads(
+        self,
+        thread_type: str,
+        *,
+        order_by: tuple[PageOrder, ...],
+        after: tuple[Any, ...] | None,
+        limit: int,
+        equals: Mapping[str, Any] | None = None,
+    ) -> list[Doc]:
+        self._check(thread_type)
+        return self._runtime.page_threads(
+            thread_type,
+            self._owner,
+            order_by=order_by,
+            after=after,
+            limit=limit,
+            equals=equals,
+        )

@@ -8,7 +8,7 @@ import unicodedata
 from collections.abc import Callable, Mapping
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from utsu_core.contracts import (
@@ -20,10 +20,11 @@ from utsu_core.contracts import (
     ThreadAccess,
     ThreadType,
 )
+from utsu_core.permissions import PERM_DISCUSSION_MODERATE
+from utsu_core.pagination import PageOrder, paginate_page, paginate_store
 
 from .contracts import AUDIENCES, DEFAULT_KIND, THREAD_TYPE, TopicKind
 
-MODERATOR = "discussion_moderator"
 MAX_POST = 8000
 _BOARD_ID = re.compile(r"^[a-z0-9][a-z0-9-]{1,47}$")
 _KIND_ID = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
@@ -103,7 +104,7 @@ class DiscussionRuntime:
         """(moderator, member) for a verified account; one roster lookup per call."""
         if account.get("status") != "verified":
             return False, False
-        moderator = self._s.auth.has_role(account, MODERATOR)
+        moderator = self._s.auth.has_permission(account, PERM_DISCUSSION_MODERATE)
         return moderator, moderator or self._s.auth.is_rostered(account)
 
     @staticmethod
@@ -131,7 +132,32 @@ class DiscussionRuntime:
 
     def all_boards(self) -> list[dict[str, Any]]:
         boards = [_board_public(board) for board in self._s.store.list("discussion_boards")]
-        return sorted(boards, key=lambda board: (bool(board["archived"]), str(board["title"]).casefold()))
+        return sorted(boards, key=lambda board: (
+            bool(board["archived"]), str(board["title"]).casefold(), str(board["id"])
+        ))
+
+    def ensure_thread_page_metadata(self) -> None:
+        migration_id = "thread_page_metadata_v1"
+        if self._s.store.get("discussion_pagination_migrations", migration_id):
+            return
+        topics = self._s.store.list("discussion_topics")
+        for topic in topics:
+            self._s.messaging.set_thread_metadata(
+                THREAD_TYPE,
+                topic["id"],
+                {"board": topic["board"], "pinned": bool(topic.get("pinned"))},
+            )
+        self._s.store.create(
+            "discussion_pagination_migrations", migration_id, {"id": migration_id}
+        )
+        if topics:
+            self._s.audit.record(
+                "system",
+                "discussion.pagination_migrated",
+                "discussion_topics",
+                None,
+                {"threads_updated": len(topics)},
+            )
 
     def create_board(self, board_id: str, title: str, description: str, audience: str, actor: str | None,
                      owner: str = "discussion") -> dict[str, Any]:
@@ -179,11 +205,16 @@ class DiscussionRuntime:
 
     # Topics
 
-    def public_topic(self, topic: Mapping[str, Any], names: dict[str, str | None] | None = None) -> dict[str, Any]:
+    def public_topic(
+        self,
+        topic: Mapping[str, Any],
+        names: dict[str, str | None] | None = None,
+        thread: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
         names = {} if names is None else names
         kind = topic.get("kind") or DEFAULT_KIND
         entry = self._kinds.get(kind)
-        info = self._s.messaging.thread_info(THREAD_TYPE, topic["id"]) or {}
+        info = thread if thread is not None else self._s.messaging.thread_info(THREAD_TYPE, topic["id"]) or {}
         author = topic.get("author") or ""
         if author not in names:
             names[author] = self._s.auth.display_name(author) if author else None
@@ -209,9 +240,9 @@ class DiscussionRuntime:
     def topics(self, board_id: str) -> list[dict[str, Any]]:
         names: dict[str, str | None] = {}
         rows = [self.public_topic(row, names) for row in self._s.store.list("discussion_topics", board=board_id)]
-        rows.sort(key=lambda row: int(row["last_at"] or 0), reverse=True)
-        rows.sort(key=lambda row: not row["pinned"])
-        return rows
+        return sorted(rows, key=lambda row: (
+            not bool(row["pinned"]), -int(row["last_at"] or 0), str(row["id"])
+        ))
 
     def create_topic(self, board_id: str, title: str, body: str, author: Mapping[str, Any],
                      kind: str = DEFAULT_KIND, ref: str = "", name_choice: str = "real") -> dict[str, Any]:
@@ -235,6 +266,9 @@ class DiscussionRuntime:
         if not self._s.store.create("discussion_topics", topic_id, topic):
             raise RuntimeError("topic ID collision")
         try:
+            self._s.messaging.set_thread_metadata(
+                THREAD_TYPE, topic_id, {"board": board_id, "pinned": False}
+            )
             opening = self._s.messaging.post(THREAD_TYPE, topic_id, author, body, name_choice=name_choice)
             topic = self._s.store.update("discussion_topics", topic_id, lambda current: {**current, "author_name": opening["author_name"]})
         except BaseException:
@@ -260,6 +294,10 @@ class DiscussionRuntime:
             raise LookupError("topic not found")
         topic = self._s.store.update("discussion_topics", topic_id, apply)
         assert topic is not None
+        if "pinned" in changes:
+            self._s.messaging.set_thread_metadata(
+                THREAD_TYPE, topic_id, {"board": topic["board"], "pinned": bool(topic["pinned"])}
+            )
         if before != changes:
             self._s.audit.record(actor, "discussion.topic.moderated", f"discussion_topics/{topic_id}", before, changes)
         return self.public_topic(topic)
@@ -379,7 +417,7 @@ class DiscussionPlugin:
             raise RuntimeError("discussion services were not built")
         r = APIRouter(prefix="/api/discussion")
         verified = services.auth.require_verified()
-        moderator_only = services.auth.require_role(MODERATOR)
+        moderator_only = services.auth.require_permission(PERM_DISCUSSION_MODERATE)
 
         def visible_board(board_id: str, account: Mapping[str, Any]) -> tuple[dict[str, Any], bool, bool]:
             board = runtime.board(board_id)
@@ -389,10 +427,26 @@ class DiscussionPlugin:
             return board, moderator, member
 
         @r.get("/boards")
-        def boards(a: dict = verified):
+        def boards(a: dict = verified, cursor: str = Query("", max_length=2048),
+                   limit: int = Query(100, ge=1, le=200)):
             moderator, member = runtime.viewer(a)
-            visible = [board for board in runtime.all_boards() if runtime.board_visible(board, moderator, member)]
-            return {"boards": visible, "moderator": moderator, "member": member}
+            if moderator or member:
+                page, next_cursor = paginate_store(
+                    services.store,
+                    "discussion_boards",
+                    cursor,
+                    limit,
+                    (PageOrder("archived", bool), PageOrder("title", str, casefold=True), PageOrder("id", str)),
+                    equals={} if moderator else {"audience": "members"},
+                )
+            else:
+                page, next_cursor = [], None
+            return {
+                "boards": [_board_public(board) for board in page],
+                "next_cursor": next_cursor,
+                "moderator": moderator,
+                "member": member,
+            }
 
         @r.post("/boards")
         def create_board(b: BoardIn, a: dict = moderator_only):
@@ -403,10 +457,35 @@ class DiscussionPlugin:
             return _call(runtime.update_board, board_id, b.model_dump(), a["uuid"])
 
         @r.get("/boards/{board_id}/topics")
-        def topics(board_id: str, a: dict = verified):
+        def topics(board_id: str, a: dict = verified, cursor: str = Query("", max_length=2048),
+                   limit: int = Query(100, ge=1, le=200)):
             board, moderator, _ = visible_board(board_id, a)
-            return {"board": _board_public(board), "topics": runtime.topics(board_id), "moderator": moderator,
-                    "can_post": not board.get("archived")}
+            runtime.ensure_thread_page_metadata()
+            order_by = (
+                PageOrder("metadata.pinned", bool, descending=True),
+                PageOrder("last_at", int, descending=True),
+                PageOrder("record_id", str),
+            )
+            threads, next_cursor = paginate_page(
+                lambda after, page_limit: services.messaging.page_threads(
+                    THREAD_TYPE,
+                    order_by=order_by,
+                    after=after,
+                    limit=page_limit,
+                    equals={"metadata.board": board_id},
+                ),
+                cursor,
+                limit,
+                order_by,
+            )
+            names: dict[str, str | None] = {}
+            page = []
+            for thread in threads:
+                topic = runtime.topic(thread["record_id"])
+                if topic is not None:
+                    page.append(runtime.public_topic(topic, names, thread))
+            return {"board": _board_public(board), "topics": page, "next_cursor": next_cursor,
+                    "moderator": moderator, "can_post": not board.get("archived")}
 
         @r.post("/boards/{board_id}/topics")
         def create_topic(board_id: str, b: TopicIn, a: dict = verified):

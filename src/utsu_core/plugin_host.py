@@ -14,6 +14,7 @@ from .bootstrap import Module
 from .contracts import CORE_PLUGIN_API_MAJOR, PLUGIN_MANIFEST_SCHEMA_VERSION, PluginManifest
 from .protection import JSON_SENSITIVE, SENSITIVE
 from .plugin_runtime import KNOWN_PLUGIN_SERVICES, SUPPORTED_PLUGIN_SERVICES, TypedPluginAdapter
+from .permissions import is_oauth_scope_token
 from .settings import Settings
 
 ENTRY_POINT_GROUP = "utsu.portal.plugins"
@@ -65,6 +66,7 @@ def parse_manifest(value: object, source: str, default_interface: str = "plugin"
         "id", "version", "core_api_major", "factory", "kind", "auth_modes", "dependencies", "order", "form_ids",
         "interface", "roles", "protection", "json_protection", "settings",
         "services", "collections", "provides", "unlinkable", "default_enabled",
+        "permissions", "role_permissions",
     }
     unknown = set(raw) - allowed
     if unknown:
@@ -78,6 +80,8 @@ def parse_manifest(value: object, source: str, default_interface: str = "plugin"
     order = raw.get("order", 1000)
     interface = raw.get("interface", default_interface)
     roles_raw = raw.get("roles", {})
+    permissions_raw = raw.get("permissions", {})
+    role_permissions_raw = raw.get("role_permissions", {})
     protection_raw = raw.get("protection", {})
     json_protection_raw = raw.get("json_protection", {})
     settings = _string_tuple(raw, "settings", (), source)
@@ -163,6 +167,24 @@ def parse_manifest(value: object, source: str, default_interface: str = "plugin"
         if not _PLUGIN_ID.fullmatch(role_id) or not isinstance(description, str) or not description.strip():
             raise PluginHostError(f"{source}: invalid role declaration")
         roles.append((role_id, description))
+    permission_mapping = _object_mapping(permissions_raw, f"{source} permissions")
+    permissions: list[tuple[str, str]] = []
+    for scope, description in permission_mapping.items():
+        if not is_oauth_scope_token(scope) or not scope.startswith("utsu:"):
+            raise PluginHostError(f"{source}: permission identifiers must be namespaced OAuth scope tokens")
+        if not isinstance(description, str) or not description.strip():
+            raise PluginHostError(f"{source}: invalid permission description for {scope}")
+        permissions.append((scope, description))
+    role_permission_mapping = _object_mapping(role_permissions_raw, f"{source} role_permissions")
+    role_permissions: list[tuple[str, tuple[str, ...]]] = []
+    declared_roles, declared_permissions = {role for role, _ in roles}, {scope for scope, _ in permissions}
+    for role, scope_values in role_permission_mapping.items():
+        if role not in declared_roles:
+            raise PluginHostError(f"{source}: permissions reference undeclared role {role}")
+        scopes = _string_tuple({"scopes": scope_values}, "scopes", (), source)
+        if not scopes or len(set(scopes)) != len(scopes) or not set(scopes) <= declared_permissions:
+            raise PluginHostError(f"{source}: role {role} references invalid or undeclared permissions")
+        role_permissions.append((role, tuple(sorted(scopes))))
     protection_mapping = _object_mapping(protection_raw, f"{source} protection")
     protection: list[tuple[str, tuple[str, ...]]] = []
     for collection, fields_raw in protection_mapping.items():
@@ -198,7 +220,7 @@ def parse_manifest(value: object, source: str, default_interface: str = "plugin"
                           dependencies, order, form_ids, interface, tuple(sorted(roles)), tuple(sorted(protection)),
                           tuple(sorted(json_protection)), tuple(sorted(settings)), tuple(sorted(services)),
                           tuple(sorted(collections)), tuple(sorted(provides)), tuple(sorted(unlinkable)),
-                          default_enabled)
+                          default_enabled, tuple(sorted(permissions)), tuple(sorted(role_permissions)))
 
 
 def _read_builtin_manifests() -> list[PluginManifest]:

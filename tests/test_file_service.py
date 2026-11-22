@@ -126,14 +126,17 @@ def test_club_quota_counts_distinct_registered_years_not_elapsed_time_and_caps()
     assert store.limit("club:club") == 10 * GIB
 
 
-def receipt_storage(tmp_path, *, enabled=True):
+def receipt_storage(tmp_path, *, enabled=True, academic_year=None):
+    if academic_year is None:
+        from utsu_core.programs.clubs.module import academic_year
+
     settings = Settings(secret="s" * 32, receipt_storage_path=str(tmp_path), receipt_cold_remote="cold:receipts",
                         receipt_archive_enabled=enabled)
     store = quota(settings)
     store.put("clubs", "club", {"id": "club", "registered_years": [2025, 2026]})
     clock = [int(datetime(2026, 10, 1, tzinfo=ZoneInfo("America/Toronto")).timestamp())]
     audit = RecordingAudit()
-    storage = ReceiptStorage(store, settings, lambda: clock[0], audit)
+    storage = ReceiptStorage(store, settings, lambda: clock[0], audit, academic_year=academic_year)
     return store, storage, clock, audit
 
 
@@ -185,6 +188,16 @@ def test_receipt_report_only_then_previous_year_archive_and_cold_read(tmp_path, 
     assert storage.read("receipt", "club") == data_url().encode()
     assert store.get("receipts", "receipt")["last_accessed_at"] == clock[0]
     assert any(record[1] == "receipt.archived" for record in audit.records)
+
+
+def test_receipt_storage_uses_supplied_year_policy(tmp_path):
+    store, storage, clock, _audit = receipt_storage(tmp_path, academic_year=lambda timestamp: timestamp // 100)
+    clock[0] = clock[0] // 100 * 100
+    storage.create(receipt_record(clock[0]))
+    assert store.get("receipts", "receipt")["academic_year"] == clock[0] // 100
+    assert storage.archive() == []
+    clock[0] += 100
+    assert storage.archive()[0]["reason"] == "previous_academic_year"
 
 
 def test_receipt_archive_inactivity_boundary_and_recent_access(tmp_path):

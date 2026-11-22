@@ -73,6 +73,14 @@ def test_audit_chain_diff_and_tamper_detection():
     ah, uh = setup_admin_and_user(c, mail)
     activate(c, ah, uh)
     c.patch("/api/me", json={"preferred_name": "Countess"}, headers=uh)
+    first_page = c.get("/api/admin/audit?limit=2", headers=ah).json()
+    assert first_page["next_before_seq"] is not None
+    second_page = c.get(f"/api/admin/audit?limit=2&before_seq={first_page['next_before_seq']}", headers=ah).json()
+    first_seqs = [entry["seq"] for entry in first_page["entries"]]
+    second_seqs = [entry["seq"] for entry in second_page["entries"]]
+    assert first_seqs and second_seqs and min(first_seqs) > max(second_seqs)
+    assert c.get("/api/admin/audit?limit=0", headers=ah).status_code == 422
+    assert c.get("/api/admin/audit?actor=" + "a" * 256, headers=ah).status_code == 422
     rows = c.get("/api/admin/audit?limit=200", headers=ah).json()["entries"]
     actions = {e["action"] for e in rows}
     assert {"account.registered", "auth.login", "verification.decided", "user.preferred_name_changed", "http.POST"} <= actions
@@ -141,7 +149,54 @@ def test_security_headers_and_readyz_and_body_limit():
     r = c.get("/healthz")
     assert "max-age" in r.headers["strict-transport-security"] and r.headers["x-frame-options"] == "DENY"
     assert c.get("/readyz").status_code == 200
-    assert c.post("/api/auth/login-email", content=b"x" * 500, headers={"content-type": "application/json"}).status_code == 413
+    too_large = c.post("/api/auth/login-email", content=b"x" * 500, headers={"content-type": "application/json"})
+    assert too_large.status_code == 413 and too_large.headers["x-content-type-options"] == "nosniff"
+
+
+@pytest.mark.parametrize("headers", [[], [(b"content-length", b"1")]])
+def test_actual_request_body_is_bounded_when_content_length_is_missing_or_understated(headers):
+    from utsu_core.bootstrap import RequestGuardMiddleware
+
+    messages = iter([
+        {"type": "http.request", "body": b"x" * 60, "more_body": True},
+        {"type": "http.request", "body": b"x" * 60, "more_body": False},
+    ])
+    sent = []
+
+    async def receive():
+        return next(messages)
+
+    async def send(message):
+        sent.append(message)
+
+    async def app(_scope, _receive, _send):
+        raise AssertionError("an oversized request reached the application")
+
+    middleware = RequestGuardMiddleware(
+        app, max_body_bytes=100, limiter=RateLimiter(), rate_limit_auth=0, rate_window=60
+    )
+    scope = {
+        "type": "http",
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": "/oversized",
+        "raw_path": b"/oversized",
+        "query_string": b"",
+        "root_path": "",
+        "headers": headers,
+        "client": ("127.0.0.1", 12345),
+        "server": ("test", 80),
+    }
+
+    asyncio.run(middleware(scope, receive, send))
+    assert sent[0]["status"] == 413
+
+
+def test_api_sso_authorize_uses_the_rate_limiter():
+    c, *_ = boot(rate_limit_auth=1)
+    assert c.post("/api/sso/authorize", json={}).status_code == 401
+    assert c.post("/api/sso/authorize", json={}).status_code == 429
 
 
 def test_version_reports_configured_commit_and_ignores_junk():

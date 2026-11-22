@@ -13,6 +13,7 @@ from fastapi.params import Depends as AuthDependency
 from . import security
 from .events import EventBus
 from .mailer import Mailer
+from .permissions import CORE_PERMISSIONS, CORE_ROLE_PERMISSIONS
 from .role_catalogue import ROLES
 from .services.anchors import AnchorRuntime
 from .services.email import EmailDeliveryService, EmailDeliveryUnknown, EmailNotConfigured
@@ -46,6 +47,8 @@ class Context:
     limiter: Any = None
     services: dict = field(default_factory=dict)  # shared objects between modules (e.g. the SSO provider)
     roles: Mapping[str, str] = field(default_factory=lambda: ROLES)
+    permissions: Mapping[str, str] = field(default_factory=lambda: CORE_PERMISSIONS)
+    role_permissions: Mapping[str, frozenset[str]] = field(default_factory=lambda: CORE_ROLE_PERMISSIONS)
     plugin_settings: Mapping[str, Mapping[str, Any]] | None = None
     files: DocumentService = field(init=False)
     upload_quotas: QuotaStore = field(init=False)
@@ -195,6 +198,61 @@ class Context:
             if a["status"] != "verified" or not (roles_of(a, self.roles) & want):
                 raise HTTPException(403, "insufficient role")
             return a
+        return Depends(dep)
+
+    def permissions_for_roles(self, *roles: str) -> frozenset[str]:
+        """Return the permissions granted by active roles; used for compatibility integrations."""
+        unknown = set(roles) - set(self.roles)
+        if unknown:
+            raise ValueError(f"unknown roles: {', '.join(sorted(unknown))}")
+        return frozenset(scope for role in roles for scope in self.role_permissions.get(role, ()))
+
+    def _validate_permissions(self, permissions: tuple[str, ...]) -> None:
+        unknown = set(permissions) - set(self.permissions)
+        if unknown:
+            raise ValueError(f"unknown permissions: {', '.join(sorted(unknown))}")
+
+    def has_permission(self, account: Mapping[str, Any], *permissions: str) -> bool:
+        if not permissions:
+            raise ValueError("at least one permission is required")
+        self._validate_permissions(permissions)
+        if account.get("status") != "verified":
+            return False
+        granted_roles = roles_of(account, self.roles)
+        if "admin" in granted_roles:
+            return True
+        granted = {scope for role in granted_roles for scope in self.role_permissions.get(role, ())}
+        return set(permissions) <= granted
+
+    def has_any_permission(self, account: Mapping[str, Any], *permissions: str) -> bool:
+        if not permissions:
+            raise ValueError("at least one permission is required")
+        self._validate_permissions(permissions)
+        if account.get("status") != "verified":
+            return False
+        granted_roles = roles_of(account, self.roles)
+        if "admin" in granted_roles:
+            return True
+        granted = {scope for role in granted_roles for scope in self.role_permissions.get(role, ())}
+        return bool(set(permissions) & granted)
+
+    def require_permission(self, *permissions: str) -> AuthDependency:
+        """Require all named permissions on a verified account (OAuth scope semantics)."""
+        required = frozenset(permissions)
+        if not required:
+            raise ValueError("at least one permission is required")
+        self._validate_permissions(tuple(required))
+
+        def dep(authorization: str | None = Header(None)) -> dict[str, Any]:
+            account = self._account(authorization, None)
+            if not self.has_permission(account, *required):
+                scope = " ".join(sorted(required))
+                raise HTTPException(
+                    403,
+                    "insufficient_scope",
+                    headers={"WWW-Authenticate": f'Bearer error="insufficient_scope", scope="{scope}"'},
+                )
+            return account
         return Depends(dep)
 
     def require_admin(self) -> AuthDependency:

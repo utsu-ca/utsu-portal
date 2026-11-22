@@ -74,6 +74,14 @@ def test_google_staff_is_opt_in():
     assert client.post(BASE + "/start").status_code == 404
 
 
+def test_google_staff_sign_in_has_a_tighter_ip_limit(workspace):
+    client, *_ = workspace
+    assert all(client.post(BASE + "/start").status_code == 200 for _ in range(20))
+    limited = client.post(BASE + "/start")
+    assert limited.status_code == 429
+    assert limited.headers["retry-after"]
+
+
 def test_staff_provisioning_promotion_and_replay(workspace):
     client, store, mail, attempt = workspace
     body = attempt()
@@ -92,7 +100,7 @@ def test_staff_provisioning_promotion_and_replay(workspace):
 
     register(client, mail, "boss", "boss@example.ca")
     admin = login(client, mail, "boss")
-    holders = client.get("/api/admin/roles/holders", headers=admin).json()
+    holders = client.get("/api/admin/roles/holders", headers=admin).json()["items"]
     holder = next(h for h in holders if h.get("email") == "staff@example.ca")
     username = holder["username"]
     change = {"username": username, "roles": ["staff", "admin"]}

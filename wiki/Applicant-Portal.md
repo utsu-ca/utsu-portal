@@ -110,6 +110,16 @@ same way at startup. Submissions record the version and hash and are rejected if
 - Payments are explicitly unavailable (`503`) without both Stripe settings. This implementation collects card
   payments through hosted Checkout; Connect payouts, refunds, subscriptions and fulfilment are not implemented.
 
+## Paginated API lists
+
+Large collections accept `limit` (default 100, maximum 200) and an opaque `cursor`. The first request omits
+`cursor`; continue with the returned `next_cursor` until it is `null`. Standard responses contain `items` and
+`next_cursor`; discussion board/topic responses retain their existing metadata and add `next_cursor` beside
+`boards` or `topics`. This applies to payment orders, role holders, AGM attendance, club listings and ledgers,
+discussion boards and topics, SAP review lists and reports, Senate result history, and admin form submissions.
+The portal screens fetch successive bounded pages to preserve their existing full-list views. The audit list uses
+`before_seq` as its cursor and bounds filter lengths and page size.
+
 ## Extending
 A module is an object with `name` and `router(ctx)`; pass it via `create_app(extra_modules=(...))`. `ctx` provides
 the store, settings, mailer (`utsu_core.mailer.Mailer`, override `send` for real mail), event bus and auth
@@ -160,9 +170,11 @@ be side-effect free because optimistic retries may call them again. Register eac
 ## AGM: SSO provider, online ID verifier, invitation panel and check-in
 - **SSO provider** (`modules/sso.py`, part of the core): OpenID Connect authorization-code flow with RS256 ID tokens
   (`/sso/.well-known/openid-configuration`, `/sso/jwks`, `/sso/authorize`, `/sso/token`, `/sso/userinfo`), optional PKCE,
-  single-use 60 s codes, exact redirect-URI matching and pairwise subjects. Only name and email are released. Modules
-  register relying parties via `ctx.services["sso"].register_client(...)` with an eligibility callback. Set
-  `PORTAL_SSO_KEY` (PEM) so keys survive restarts, and `PORTAL_BASE_URL` as the issuer.
+  single-use 60 s codes, exact redirect-URI matching and pairwise subjects. The legacy default scope remains
+  `openid profile email`; explicitly requested allowed scopes filter ID-token and UserInfo claims. Modules register
+  relying parties via `ctx.services["sso"].register_client(...)` with an eligibility callback. Set `PORTAL_SSO_KEY`
+  (PEM) so keys survive restarts, and `PORTAL_BASE_URL` as the issuer. Portal API permissions are not exposed to
+  relying parties as OAuth scopes.
 - **Online ID verifier** (`programs/agm/verify.py`, separate from account activation): an `agm_rsvp` registrant who chose
   *Online* submits a fresh live face and student ID photo. An admin or staff member with `agm_id_reviewer` opens
   **Admin mode → AGM → Online ID review queue** and compares the photos. They can approve Zoom sign-in or ask the
@@ -182,7 +194,7 @@ be side-effect free because optimistic retries may call them again. Register eac
 - **Layout.** The main sidebar is fixed to the right (hamburger collapses it to a rail on desktop; on mobile the top-right button opens it full screen). Each program has a **public page** (overview, eligibility, how to apply, key dates; the Senate page also shows published results). Signing in adds buttons on that page and under it in the menu for what the member can do.
 - **Edit public pages.** Portal administrators can open **Admin mode → Administration → Page content**, select Home or an existing program page, edit the title, blurb and sections, then preview and publish. Use one paragraph or list item per line. Program titles and blurbs also update the home cards. Changes are audited and appear when visitors next load the portal; no rebuild is needed after the editor is deployed. If someone publishes first, keep a copy of your draft text and reload before reapplying your edits. Existing copy is the default until edited. This editor changes plain text, not Svelte templates, forms, eligibility rules, or the Git repository's wiki files.
 - **Icons and the section sidecar.** Each main category has an icon (Noto Emoji, monochrome so it takes the menu colour; a 4 KB subset of the font in `web/src/assets`, SIL OFL, built into the static files because the CSP allows only same-origin fonts). When the sidebar is collapsed to a rail only the icons show, the category being read is highlighted, and choosing a group icon opens the menu. On screens at least 80rem wide a second sidecar to the right of the content, "In this section", lists the parts of the current program page and the other pages and actions of its section.
-- **Admin mode.** Staff (anyone with a role) get an "Enter admin mode" button at the bottom of the sidebar. Only in that mode do staff tools appear (SABP review and admin, finance portal, Senate seating, club reviews, form editor, identity checks, roles, roster), and the page switches to the admin colours. It is a client-side convenience: the server still checks the role on every request.
+- **Admin mode.** Staff (anyone with a role) get an "Enter admin mode" button at the bottom of the sidebar. Only in that mode do staff tools appear (SABP review and admin, finance portal, Senate seating, club reviews, form editor, identity checks, roles, roster), and the page switches to the admin colours. It is a client-side convenience: the server enforces each route's permission on every request. Roles grant permissions; the `admin` role remains the explicit superuser grant.
 - **Branding and theme.** `theme.json` and the logos live in `src/utsu_core/branding/` and are served at `/branding`, uncached, so edits show on the next page load without rebuilding. To use your own, point `PORTAL_BRANDING_DIR` at a folder with the same layout. `theme.json` sets `name`, `logo`, `favicon`, `colors.user` (`accent`, `accentHover`, `chrome`, `page`), `colors.admin` (`accent`, `accentHover`, `chrome`) and `copyright` (`holder`, `startYear`). Colours must be hex values and files bare names; anything else is ignored. Every page ends with a copyright line built from it.
 - **Loading.** Every view is a separate lazily loaded chunk with a hashed file name, so a program's code is downloaded when it is first opened and cached independently of the others.
 - **Feature ownership.** Program views, components, state and tests live under `web/src/features/{agm,clubs,sabp,senate}/`.

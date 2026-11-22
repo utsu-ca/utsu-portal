@@ -1,7 +1,7 @@
 <script>
   // One board's topics, newest activity first with pinned topics on top, and the form to start a topic.
   import { onMount } from "svelte";
-  import { api } from "../../../lib/api.js";
+  import { api, apiAllPages } from "../../../lib/api.js";
   import { Action } from "../../../lib/action.svelte.js";
   import { go } from "../../../lib/nav.svelte.js";
   import { session } from "../../../lib/session.svelte.js";
@@ -17,7 +17,9 @@
   let nameChoice = $state("real"), maskAuthors = $state(false);
 
   const when = at => (at ? new Date(at * 1000).toLocaleString() : "");
-  onMount(() => load.run(async () => { data = await api(`/discussion/boards/${encodeURIComponent(id)}/topics`); }));
+  onMount(() => load.run(async () => {
+    data = await apiAllPages(`/discussion/boards/${encodeURIComponent(id)}/topics`, "topics");
+  }));
 
   async function startTopic(event) {
     event.preventDefault();

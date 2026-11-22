@@ -1,8 +1,9 @@
 """Optional HTTP email API: `uvicorn --factory utsu_core.mailsvc:create_mail_app`.
 
 This service records requests and can dispatch high-priority messages once through
-an in-process background task. It has no durable worker, automatic retry, delivery
-guarantee, or rate limiter. Messages left pending require an explicit dispatch.
+an in-process background task. It has no durable worker, delivery guarantee, or
+automatic retry. Queue and retry requests are rate limited per service and recipient.
+Messages left pending require an explicit dispatch.
 The existing DEFERRED state means claimed/in progress, or unresolved if interrupted.
 FAILED may also mean delivery is uncertain; check the provider before creating a
 replacement message. Only an unattempted PENDING request may be dispatched.
@@ -12,11 +13,12 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 from typing import Optional
+import hashlib
 import hmac
 import logging
 
-from fastapi import APIRouter, HTTPException, Header, BackgroundTasks
-from pydantic import BaseModel, EmailStr
+from fastapi import APIRouter, HTTPException, Header, BackgroundTasks, Query
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import Column, String, Integer, DateTime, Enum as SQLEnum, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
@@ -59,11 +61,18 @@ class EmailRecord(Base):
 class EmailRequest(BaseModel):
     """Request to queue an email."""
     to: EmailStr
-    subject: str
-    body: str
-    template_id: Optional[str] = None
-    template_vars: dict = {}
-    priority: int = 0  # Higher = more urgent
+    subject: str = Field(max_length=255)
+    body: str = Field(max_length=8192)
+    template_id: Optional[str] = Field(default=None, max_length=64)
+    template_vars: dict[str, str] = Field(default_factory=dict, max_length=20)
+    priority: int = Field(default=0, ge=0, le=10)
+
+    @field_validator("template_vars")
+    @classmethod
+    def limit_template_vars(cls, values: dict[str, str]) -> dict[str, str]:
+        if any(len(key) > 64 or len(value) > 1024 for key, value in values.items()):
+            raise ValueError("template variable names and values are too long")
+        return values
 
 
 class EmailResponse(BaseModel):
@@ -77,12 +86,9 @@ class EmailStatusResponse(BaseModel):
     """Query email delivery status."""
     email_id: str
     status: EmailStatus
-    recipient: str
-    subject: str
     created_at: datetime
     sent_at: Optional[datetime]
     attempt_count: int
-    last_error: Optional[str]
 
 
 class MailModule:
@@ -99,13 +105,29 @@ class MailModule:
 
     def router(self, ctx: Context) -> APIRouter:
         r = APIRouter(prefix="/mail", tags=["mail"])
-        want = ctx.settings.service_token
+        wants = tuple(t.strip() for t in (ctx.settings.service_token or "").split(",") if t.strip())
+        service_key = hmac.new(ctx.settings.secret.encode(), b"mail-service", hashlib.sha256).hexdigest()
 
         def guard(authorization: str | None) -> None:
             """Verify service token for internal endpoints."""
             got = (authorization or "").removeprefix("Bearer ").strip()
-            if not want or not got or not hmac.compare_digest(got.encode(), want.encode()):
+            accepted = [hmac.compare_digest(got.encode(), want.encode()) for want in wants]
+            if not got or not any(accepted):
                 raise HTTPException(status_code=403, detail="Invalid service token")
+
+        def rate_limit(key: str, limit: int) -> None:
+            if not ctx.limiter.allow(key, limit, ctx.settings.rate_window):
+                raise HTTPException(
+                    status_code=429,
+                    detail="too many requests",
+                    headers={"Retry-After": str(ctx.settings.rate_window)},
+                )
+
+        def recipient_key(address: str) -> str:
+            digest = hmac.new(
+                ctx.settings.secret.encode(), address.casefold().encode(), hashlib.sha256
+            ).hexdigest()
+            return f"mail:{service_key}:recipient:{digest}"
 
         def render_template(template_id: str, variables: dict) -> tuple[str, str]:
             """Render live portal account notifications, separate from historical mail templates."""
@@ -129,14 +151,21 @@ class MailModule:
                 raise HTTPException(status_code=400, detail=f"Unknown template: {template_id}")
             
             tmpl = templates[template_id]
-            subject = tmpl["subject"].format(**variables)
-            body = tmpl["body"].format(**variables)
+            try:
+                subject = tmpl["subject"].format(**variables)
+                body = tmpl["body"].format(**variables)
+            except KeyError as exc:
+                raise HTTPException(status_code=400, detail="Required template variables are missing") from exc
+            if len(subject) > 255 or len(body) > 8192:
+                raise HTTPException(status_code=422, detail="Rendered email exceeds the allowed size")
             return subject, body
 
         @r.post("/queue", response_model=EmailResponse)
         def queue_email(req: EmailRequest, background_tasks: BackgroundTasks, authorization: str | None = Header(None)):
             """Queue an email for sending."""
             guard(authorization)
+            rate_limit(f"mail:{service_key}:writes", ctx.settings.rate_limit_auth)
+            rate_limit(recipient_key(str(req.to)), ctx.settings.mail_recipient_rate_limit)
             
             session = self.Session()
             try:
@@ -163,7 +192,7 @@ class MailModule:
                 if status == EmailStatus.DEFERRED:
                     background_tasks.add_task(self._send_email, email_id)
                 
-                log.info(f"Queued email {email_id} to {req.to}")
+                log.info("Queued email %s", email_id)
                 return EmailResponse(
                     email_id=email_id,
                     status=status,
@@ -186,12 +215,9 @@ class MailModule:
                 return EmailStatusResponse(
                     email_id=record.id,
                     status=record.status,
-                    recipient=record.recipient,
-                    subject=record.subject,
                     created_at=record.created_at,
                     sent_at=record.sent_at,
                     attempt_count=record.attempt_count,
-                    last_error=record.last_error
                 )
             finally:
                 session.close()
@@ -200,6 +226,7 @@ class MailModule:
         def retry_email(email_id: str, background_tasks: BackgroundTasks, authorization: str | None = Header(None)):
             """Dispatch an unattempted pending email; never retry an uncertain delivery."""
             guard(authorization)
+            rate_limit(f"mail:{service_key}:writes", ctx.settings.rate_limit_auth)
             
             session = self.Session()
             try:
@@ -217,6 +244,7 @@ class MailModule:
                                "may be unresolved. Verify the provider outcome before sending a replacement",
                     )
 
+                rate_limit(recipient_key(record.recipient), ctx.settings.mail_recipient_rate_limit)
                 claimed = session.query(EmailRecord).filter_by(
                     id=email_id, status=EmailStatus.PENDING, attempt_count=0
                 ).update({EmailRecord.status: EmailStatus.DEFERRED}, synchronize_session=False)
@@ -230,28 +258,35 @@ class MailModule:
                 session.close()
 
         @r.get("/pending")
-        def get_pending_emails(limit: int = 100, authorization: str | None = Header(None)):
+        def get_pending_emails(
+            limit: int = Query(100, ge=1, le=100),
+            offset: int = Query(0, ge=0, le=1_000_000),
+            authorization: str | None = Header(None),
+        ):
             """List pending emails (for manual processing)."""
             guard(authorization)
             
             session = self.Session()
             try:
-                records = session.query(EmailRecord).filter(
+                query = session.query(EmailRecord).filter(
                     EmailRecord.status == EmailStatus.PENDING
-                ).order_by(EmailRecord.created_at).limit(limit).all()
+                ).order_by(EmailRecord.created_at, EmailRecord.id)
+                records = query.offset(offset).limit(limit + 1).all()
+                has_more = len(records) > limit
+                records = records[:limit]
                 
                 return {
                     "count": len(records),
                     "emails": [
                         {
                             "id": r.id,
-                            "recipient": r.recipient,
-                            "subject": r.subject,
+                            "status": r.status,
                             "attempts": r.attempt_count,
                             "created_at": r.created_at.isoformat()
                         }
                         for r in records
-                    ]
+                    ],
+                    "next_offset": offset + limit if has_more else None,
                 }
             finally:
                 session.close()
@@ -286,11 +321,11 @@ class MailModule:
                 self.mailer.send(record.recipient, record.subject, record.body)
                 record.status = EmailStatus.SENT
                 record.sent_at = datetime.utcnow()
-                log.info(f"Sent email {email_id} to {record.recipient}")
+                log.info("Sent email %s", email_id)
             except Exception as e:
                 record.status = EmailStatus.FAILED
-                record.last_error = f"Delivery outcome is unknown; verify provider before sending a replacement: {e}"[:512]
-                log.warning(f"Email {email_id} delivery outcome is unknown: {e}")
+                record.last_error = "Delivery outcome is unknown; verify provider before sending a replacement"
+                log.warning("Email %s delivery outcome is unknown (%s)", email_id, type(e).__name__)
 
             session.commit()
         finally:

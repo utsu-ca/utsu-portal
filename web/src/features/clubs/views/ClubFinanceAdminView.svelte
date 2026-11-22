@@ -1,6 +1,6 @@
 <script>
   import { onMount } from "svelte";
-  import { api } from "../../../lib/api.js";
+  import { api, apiAllPages } from "../../../lib/api.js";
   import { Action } from "../../../lib/action.svelte.js";
   import { formatCents, parseDollars } from "../lib/money.js";
   import Status from "../../../components/Status.svelte";
@@ -11,8 +11,8 @@
   let grantClub = $state(""), grantAmount = $state(""), grantNote = $state("");
 
   const refresh = async () => {
-    pending = await api("/admin/transactions?status=pending");
-    clubs = (await api("/admin/clubs?status=approved"));
+    pending = await apiAllPages("/admin/transactions?status=pending");
+    clubs = await apiAllPages("/admin/clubs?status=approved");
   };
   onMount(() => load.run(refresh));
   const clubName = id => clubs.find(c => c.id === id)?.name || id;

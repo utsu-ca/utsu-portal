@@ -6,7 +6,7 @@ import hashlib
 
 from fastapi import APIRouter
 
-from ..context import Context, roles_of
+from ..context import Context
 from ..contracts import FileKind
 from ..services.banking import BANKING_ACTIVE, CHEQUE_DATA_URL, banking_router
 
@@ -15,6 +15,10 @@ class ProfileModule:
     name = "profile"
 
     def configure(self, ctx: Context) -> None:
+        finance_permissions = tuple(sorted({
+            scope for role in ("sap_admin", "sap_finance", "profile_finance") if role in ctx.roles
+            for scope in ctx.role_permissions.get(role, ())
+        }))
         for bank in ctx.store.list("sap_banking"):
             uid = bank["uuid"]
             if not ctx.store.create("financial_profiles", uid, bank):
@@ -33,7 +37,7 @@ class ProfileModule:
             account = ctx.identity.account(actor)
             return bool(
                 action == "read" and account and account.get("status") == "verified"
-                and roles_of(account, ctx.roles) & {"sap_admin", "sap_finance", "profile_finance", "admin"}
+                and ctx.has_any_permission(account, *finance_permissions)
             )
 
         def read(_reference: str, uid: str) -> bytes | None:

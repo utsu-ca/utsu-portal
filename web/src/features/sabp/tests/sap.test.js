@@ -2,21 +2,30 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import SapAdminView from "../views/SapAdminView.svelte";
 
-vi.mock("../../../lib/api.js", async importOriginal => ({ ...(await importOriginal()), api: vi.fn(), downloadReport: vi.fn() }));
-import { api } from "../../../lib/api.js";
+vi.mock("../../../lib/api.js", async importOriginal => ({
+  ...(await importOriginal()),
+  api: vi.fn(),
+  apiAllPages: vi.fn(),
+  downloadReport: vi.fn(),
+}));
+import { api, apiAllPages } from "../../../lib/api.js";
 
-afterEach(() => { cleanup(); api.mockReset(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); api.mockReset(); apiAllPages.mockReset(); vi.restoreAllMocks(); });
 
 const post = path => api.mock.calls.find(([p, o]) => p.endsWith(path) && o?.method);
 
 describe("SABP administration", () => {
   it("saves weights, validates the review count, requires a reason to resolve, and imports history", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
+    apiAllPages.mockImplementation(async (path, collection = "items") => (await api(path))[collection]);
     api.mockImplementation(async (path, opts) => {
       if (path.startsWith("/admin/sap/applications?")) return { items: [{
         uuid: "student", name: "Student", eligible: true, roster_reason: "", submission_status: "submitted",
         review_stage: "discuss", revision: 7, data: {}, wfni: {}, review_hardship_prepared: true }], next_cursor: null };
-      if (path === "/admin/sap/review-report") return [{ uuid: "student", review_id: "r1", stage: "discuss", reviews: [], decision: null }];
+      if (path === "/admin/sap/review-report") return {
+        items: [{ uuid: "student", review_id: "r1", stage: "discuss", reviews: [], decision: null }],
+        next_cursor: null,
+      };
       if (path === "/admin/sap/weights") return opts?.method
         ? { hash: "weights-hash" } : { csv: "field,answer,points\nsaved,answer,1" };
       return {};
@@ -69,10 +78,11 @@ describe("SABP administration", () => {
   });
 
   it("shows the bundled weights as an inactive draft when no configuration exists", async () => {
+    apiAllPages.mockImplementation(async (path, collection = "items") => (await api(path))[collection]);
     api.mockImplementation(async path => {
       if (path === "/admin/sap/weights") throw Object.assign(new Error("not configured"), { status: 404 });
       if (path.startsWith("/admin/sap/applications?")) return { items: [], next_cursor: null };
-      return [];
+      return { items: [], next_cursor: null };
     });
     render(SapAdminView);
     expect(await screen.findByText(/draft default weights/)).toBeInTheDocument();
@@ -81,10 +91,11 @@ describe("SABP administration", () => {
   });
 
   it("does not substitute defaults or permit saving when loading weights fails", async () => {
+    apiAllPages.mockImplementation(async (path, collection = "items") => (await api(path))[collection]);
     api.mockImplementation(async path => {
       if (path === "/admin/sap/weights") throw Object.assign(new Error("Service unavailable"), { status: 503 });
       if (path.startsWith("/admin/sap/applications?")) return { items: [], next_cursor: null };
-      return [];
+      return { items: [], next_cursor: null };
     });
     render(SapAdminView);
     expect(await screen.findByText("Service unavailable")).toBeInTheDocument();

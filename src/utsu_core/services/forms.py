@@ -7,6 +7,7 @@ from typing import Any
 
 from ..contracts import FormContribution, SubmissionPolicy
 from ..formdef import parse_yaml
+from ..pagination import PageOrder
 from ..store import Doc, Store
 
 
@@ -94,6 +95,27 @@ class FormsView:
         if "form_id" in filters:
             raise ValueError("submission form_id is controlled by the forms service")
         return self._store.list("submissions", form_id=form_id, **filters)
+
+    def page_submissions(
+        self,
+        form_id: str,
+        *,
+        order_by: tuple[PageOrder, ...],
+        after: tuple[Any, ...] | None,
+        limit: int,
+        filters: Mapping[str, Any] | None = None,
+    ) -> list[Doc]:
+        self._check_form(form_id)
+        filters = dict(filters or {})
+        if "form_id" in filters:
+            raise ValueError("submission form_id is controlled by the forms service")
+        return self._store.page(
+            "submissions",
+            order_by=order_by,
+            after=after,
+            limit=limit,
+            equals={"form_id": form_id, **filters},
+        )
 
     def update_submission(self, form_id: str, uid: str,
                           update: Callable[[Doc | None], Doc | None]) -> Doc | None:

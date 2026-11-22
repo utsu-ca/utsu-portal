@@ -1,6 +1,6 @@
 <script>
   import { onMount } from "svelte";
-  import { api } from "../../../lib/api.js";
+  import { api, apiAllPages } from "../../../lib/api.js";
   import { Action } from "../../../lib/action.svelte.js";
   import Status from "../../../components/Status.svelte";
 
@@ -8,7 +8,7 @@
   const load = new Action(), act = new Action();
   let clubs = $state([]), notes = $state({});
 
-  const refresh = async () => { clubs = await api("/admin/clubs?status=pending"); };
+  const refresh = async () => { clubs = await apiAllPages("/admin/clubs?status=pending"); };
   onMount(() => load.run(refresh));
 
   const decide = (club, approve) => act.run(async () => {

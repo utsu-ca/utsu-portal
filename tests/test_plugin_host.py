@@ -110,6 +110,28 @@ def test_manifest_api_compatibility_and_dependency_cycles_fail_explicitly():
         select_manifests(manifests, "local", ("a", "b"))
 
 
+def test_manifest_permission_grants_use_oauth_scope_tokens_and_declared_roles():
+    raw: dict[str, object] = {
+        "id": "sample",
+        "version": "1.0",
+        "core_api_major": 1,
+        "factory": "sample.plugin:Plugin",
+        "roles": {"editor": "edit sample resources"},
+        "permissions": {"utsu:sample:resource:edit": "Edit sample resources."},
+        "role_permissions": {"editor": ["utsu:sample:resource:edit"]},
+    }
+    manifest = parse_manifest(raw, "test")
+    assert manifest.permissions == (("utsu:sample:resource:edit", "Edit sample resources."),)
+    assert manifest.role_permissions == (("editor", ("utsu:sample:resource:edit",)),)
+
+    with pytest.raises(PluginHostError, match="OAuth scope tokens"):
+        parse_manifest({**raw, "permissions": {'utsu:sample:"resource': "Invalid."}}, "test")
+    with pytest.raises(PluginHostError, match="undeclared role"):
+        parse_manifest({**raw, "role_permissions": {"reviewer": ["utsu:sample:resource:edit"]}}, "test")
+    with pytest.raises(PluginHostError, match="undeclared permissions"):
+        parse_manifest({**raw, "role_permissions": {"editor": ["utsu:sample:resource:delete"]}}, "test")
+
+
 def test_typed_store_requires_declared_exclusive_collections():
     raw: dict[str, object] = {
         "id": "sample",

@@ -3,10 +3,12 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from ...context import Context
+from ...pagination import PageOrder
+from ...permissions import PERM_SAP_APPLICATIONS
 from ...security import clean_text
 from ...services.exports import csv_response
 from .review import application_view
@@ -68,18 +70,21 @@ class StudentAidSubmissionPolicy:
 def applications_router(ctx: Context) -> APIRouter:
     router = APIRouter(prefix="/api")
     forms = ctx.forms.for_owner("sap")
-    admin = ctx.require_role("sap_admin")
+    admin = ctx.require_permission(PERM_SAP_APPLICATIONS)
 
     @router.get("/admin/sap/applications")
-    def applications(cursor: str = "", limit: int = 100, _: dict = admin):
+    def applications(cursor: str = Query("", max_length=2048), limit: int = 100, _: dict = admin):
         if not 1 <= limit <= 200:
             raise HTTPException(422, "limit must be between 1 and 200")
-        submissions = sorted(
-            (s for s in forms.submissions("student_aid_bursary") if s["id"] > cursor),
-            key=lambda s: s["id"],
+        submissions = forms.page_submissions(
+            "student_aid_bursary",
+            order_by=(PageOrder("id", str),),
+            after=(cursor,) if cursor else None,
+            limit=limit + 1,
         )
-        items = [application_view(ctx, s) for s in submissions[:limit]]
-        return {"items": items, "next_cursor": items[-1]["id"] if len(submissions) > limit else None}
+        has_more = len(submissions) > limit
+        items = [application_view(ctx, submission) for submission in submissions[:limit]]
+        return {"items": items, "next_cursor": items[-1]["id"] if has_more else None}
 
     @router.get("/admin/sap/applications.csv")
     def export_applications(actor: dict = admin):

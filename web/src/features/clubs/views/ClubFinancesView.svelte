@@ -1,6 +1,6 @@
 <script>
   import { onMount } from "svelte";
-  import { api } from "../../../lib/api.js";
+  import { api, apiAllPages } from "../../../lib/api.js";
   import { Action } from "../../../lib/action.svelte.js";
   import { formatCents, parseDollars } from "../lib/money.js";
   import { readReceipt } from "../lib/receipt.js";
@@ -15,7 +15,7 @@
   let myRole = $state("");
 
   onMount(() => load.run(async () => {
-    clubs = (await api("/clubs/mine")).filter(c => c.status === "approved");
+    clubs = (await apiAllPages("/clubs/mine")).filter(c => c.status === "approved");
     if (clubs.length) await choose(clubs[0].id);
   }));
 
@@ -23,7 +23,7 @@
     selected = id;
     club = await api(`/clubs/${id}`);
     summary = await api(`/clubs/${id}/summary`);
-    ledger = await api(`/clubs/${id}/transactions`);
+    ledger = await apiAllPages(`/clubs/${id}/transactions`);
     const me = await api("/me");
     myRole = club.members[me.user.uuid] ?? "";
   });

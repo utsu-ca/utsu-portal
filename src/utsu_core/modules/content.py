@@ -33,7 +33,7 @@ class ContentModule:
 
     def router(self, ctx: Context) -> APIRouter:
         r = APIRouter(prefix="/api")
-        admin = ctx.require_role()
+        admin = ctx.require_admin()
 
         @r.get("/content")
         def published():

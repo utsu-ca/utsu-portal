@@ -1,6 +1,6 @@
 <script>
   import { onMount } from "svelte";
-  import { api, downloadReport } from "../../../lib/api.js";
+  import { api, apiAllPages, downloadReport } from "../../../lib/api.js";
   import { Action } from "../../../lib/action.svelte.js";
   import Status from "../../../components/Status.svelte";
   import SapApplicationCard from "../components/SapApplicationCard.svelte";
@@ -12,7 +12,7 @@
 
   const refresh = async () => {
     page = await api("/admin/sap/applications?limit=100&cursor=" + encodeURIComponent(cursor));
-    report = await api("/admin/sap/review-report");
+    report = await apiAllPages("/admin/sap/review-report");
   };
   const reload = () => load.run(refresh);
   const fetchWeights = () => loadWeights.run(async () => {

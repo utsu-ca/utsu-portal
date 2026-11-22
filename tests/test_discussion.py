@@ -13,7 +13,8 @@ from test_voting import _app, _people  # noqa: E402
 from utsu_core.mailer import OutboxMailer
 from utsu_core.contracts import ThreadAccess, ThreadType
 from utsu_core.modules.messaging import thread_events
-from utsu_core.services.messaging import MAX_PAGE, MessagingRuntime, ThreadTypeRegistry
+from utsu_core.programs.discussion.contracts import THREAD_TYPE
+from utsu_core.services.messaging import MAX_PAGE, MessagingRuntime, ThreadTypeRegistry, thread_key
 from utsu_core.store import MemoryStore
 
 THREAD = "/api/threads/discussion-topic"
@@ -47,6 +48,82 @@ def test_boards_follow_audience_and_roster(env):
     assert c.post("/api/discussion/boards", json={"id": "general", "title": "Again"}, headers=h["boss"]).status_code == 409
     assert c.post("/api/discussion/boards", json={"id": "Bad Id", "title": "Bad"}, headers=h["boss"]).status_code == 422
     assert c.post("/api/discussion/boards", json={"id": "mine", "title": "Mine"}, headers=h["ada"]).status_code == 403
+
+
+def test_board_and_topic_lists_paginate_with_envelopes(env, monkeypatch):
+    c, h, ctx = env.c, env.h, env.ctx
+    for board_id, title in (("alpha", "Alpha"), ("zulu", "Zulu")):
+        response = c.post("/api/discussion/boards",
+                          json={"id": board_id, "title": title, "audience": "members"}, headers=h["boss"])
+        assert response.status_code == 200
+    assert c.post("/api/discussion/boards/alpha", json={"archived": True}, headers=h["boss"]).status_code == 200
+
+    def pages(path, collection, headers):
+        cursor = ""
+        rows = []
+        first = None
+        while True:
+            query = "limit=1" + (f"&cursor={cursor}" if cursor else "")
+            response = c.get(f"{path}{'&' if '?' in path else '?'}{query}", headers=headers)
+            assert response.status_code == 200, response.text
+            page = response.json()
+            if first is None:
+                first = page
+            rows.extend(page[collection])
+            if page["next_cursor"] is None:
+                return first, rows
+            cursor = page["next_cursor"]
+
+    boards, board_rows = pages("/api/discussion/boards", "boards", h["ada"])
+    assert [board["id"] for board in board_rows] == ["general", "zulu", "alpha"]
+    assert (boards["moderator"], boards["member"]) == (False, True)
+
+    monkeypatch.setattr(ctx, "now", lambda: 10_000_000_000)
+    created = {}
+    for title in ("Pinned latest", "Unpinned a", "Unpinned b"):
+        response = c.post("/api/discussion/boards/general/topics", json={"title": title, "body": "Opening"},
+                          headers=h["ada"])
+        assert response.status_code == 200
+        created[title] = response.json()["id"]
+    assert c.post(f"/api/discussion/topics/{created['Pinned latest']}/moderate",
+                  json={"pinned": True}, headers=h["boss"]).status_code == 200
+
+    path = "/api/discussion/boards/general/topics"
+    topics, topic_rows = pages(path, "topics", h["ada"])
+    expected = sorted(topic_rows, key=lambda topic: (
+        not bool(topic["pinned"]), -int(topic["last_at"] or 0), str(topic["id"])
+    ))
+    assert [topic["id"] for topic in topic_rows] == [topic["id"] for topic in expected]
+    assert topic_rows[0]["id"] == created["Pinned latest"]
+    assert topics["board"]["id"] == "general"
+    assert topics["moderator"] is False and topics["can_post"] is True
+
+
+def test_topic_page_migrates_thread_metadata_once(env, monkeypatch):
+    key = thread_key(THREAD_TYPE, env.tid)
+    thread = env.store.get("message_threads", key)
+    assert thread is not None
+    thread.pop("metadata")
+    env.store.put("message_threads", key, thread)
+
+    response = env.c.get("/api/discussion/boards/general/topics", headers=env.h["ada"])
+
+    assert response.status_code == 200
+    assert env.store.get("message_threads", key)["metadata"] == {
+        "board": "general",
+        "pinned": False,
+    }
+    assert env.store.get("discussion_pagination_migrations", "thread_page_metadata_v1")
+
+    original_list = env.store.list
+
+    def reject_topic_scan(collection, **equals):
+        assert collection != "discussion_topics"
+        return original_list(collection, **equals)
+
+    monkeypatch.setattr(env.store, "list", reject_topic_scan)
+    response = env.c.get("/api/discussion/boards/general/topics", headers=env.h["ada"])
+    assert response.status_code == 200
 
 
 def test_topic_threads_locking_redaction_and_author_access(env):

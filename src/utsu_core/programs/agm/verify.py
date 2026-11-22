@@ -16,11 +16,10 @@ from pydantic import BaseModel, Field
 
 from ... import security
 from ...context import Context
-from ...context import roles_of
 from ...contracts import FileKind
+from ...permissions import PERM_AGM_ID_REVIEW
 
 name = "agm_verify"
-REVIEWER = "agm_id_reviewer"
 
 
 def rsvp(ctx: Context, uid: str) -> dict | None:
@@ -69,7 +68,7 @@ class AgmVerifyModule:
     def configure(self, ctx: Context) -> None:
         def authorized(action: str, actor: str, _resource: str, reference: str) -> bool:
             account = ctx.identity.account(actor)
-            if not account or account["status"] != "verified" or not roles_of(account, ctx.roles) & {REVIEWER, "admin"}:
+            if not account or not ctx.has_permission(account, PERM_AGM_ID_REVIEW):
                 return False
             check = ctx.store.get("agm_checks", reference)
             return bool(check and check["uuid"] != actor)
@@ -97,7 +96,7 @@ class AgmVerifyModule:
         r = APIRouter(prefix="/api")
         S, cfg = ctx.store, ctx.settings
         grant_ttl = ctx.plugin_setting("agm", "agm_grant_ttl")
-        verified, admin = ctx.require_rostered(), ctx.require_role(REVIEWER)
+        verified, admin = ctx.require_rostered(), ctx.require_permission(PERM_AGM_ID_REVIEW)
 
         def queue() -> list[dict]:
             return sorted(S.list("agm_checks", status="pending"), key=lambda c: (c["submitted_at"], c["id"]))

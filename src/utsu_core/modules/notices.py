@@ -44,7 +44,7 @@ class NoticesModule:
             return message, digest
 
         def add_notice(identifier: str, definition) -> None:
-            authorized = ctx.require_role(definition.role)
+            authorized = ctx.require_permission(*ctx.permissions_for_roles(definition.role))
 
             @router.post(f"/{identifier}/preview", name=f"{identifier}_notice_preview")
             def preview(body: NoticePreview, _: dict = authorized):

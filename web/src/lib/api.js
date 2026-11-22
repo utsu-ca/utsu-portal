@@ -30,6 +30,37 @@ export async function api(path, opts = {}) {
   return body;
 }
 
+export async function apiAllPages(path, collection = "items") {
+  const [pathname, query = ""] = path.split("?", 2);
+  const params = new URLSearchParams(query);
+  const items = [];
+  const seen = new Set();
+  let firstPage = null;
+  let cursor = "";
+
+  while (true) {
+    params.set("limit", "100");
+    if (cursor) params.set("cursor", cursor);
+    else params.delete("cursor");
+    const suffix = params.toString();
+    const page = await api(`${pathname}${suffix ? `?${suffix}` : ""}`);
+    if (!page || typeof page !== "object" || !Array.isArray(page[collection])
+        || !(page.next_cursor === null || typeof page.next_cursor === "string")) {
+      throw new Error("The paginated response is invalid.");
+    }
+    if (firstPage === null) firstPage = page;
+    items.push(...page[collection]);
+    if (page.next_cursor === null) break;
+    if (seen.has(page.next_cursor)) throw new Error("The pagination cursor did not advance.");
+    seen.add(page.next_cursor);
+    cursor = page.next_cursor;
+  }
+
+  return collection === "items"
+    ? items
+    : { ...firstPage, [collection]: items, next_cursor: null };
+}
+
 // Fetches an authenticated file (CSV report, PDF) and hands it to the browser as a download.
 export async function downloadReport(path, filename) {
   const token = getToken();

@@ -26,8 +26,10 @@ class ReceiptIntegrityError(RuntimeError):
 
 
 class ReceiptStorage:
-    def __init__(self, store: Store, settings: Settings, now: Callable[[], int], audit: AuditService):
+    def __init__(self, store: Store, settings: Settings, now: Callable[[], int], audit: AuditService,
+                 *, academic_year: Callable[[int], int]):
         self.store, self.settings, self.now, self.audit = store, settings, now, audit
+        self.academic_year = academic_year
         self.crypter = Crypter(settings.data_key, settings.secret)
         self.root = Path(settings.receipt_storage_path) if settings.receipt_storage_path else None
         if self.root is not None:
@@ -62,8 +64,6 @@ class ReceiptStorage:
             raise
 
     def _externalize(self, receipt: dict) -> dict:
-        from ..programs.clubs.module import academic_year
-
         content = receipt["data_url"]
         raw = base64.b64decode(content.split(",", 1)[1], validate=True)
         if hashlib.sha256(raw).hexdigest() != receipt["sha256"]:
@@ -88,7 +88,7 @@ class ReceiptStorage:
         return {**{k: v for k, v in receipt.items() if k != "data_url"},
                 "size": len(raw),
                 "media_type": content.split(";", 1)[0].removeprefix("data:"),
-                "academic_year": academic_year(receipt["at"]),
+                "academic_year": self.academic_year(receipt["at"]),
                 "last_accessed_at": receipt.get("last_accessed_at", self.now()),
                 "storage": {"key": key, "tier": "hot", "sha256": hashlib.sha256(encrypted).hexdigest()}}
 
@@ -162,8 +162,6 @@ class ReceiptStorage:
         return content.encode("ascii")
 
     def archive(self, *, apply: bool = False) -> list[dict]:
-        from ..programs.clubs.module import academic_year
-
         if apply and (not self.settings.receipt_archive_enabled or not self.settings.receipt_cold_remote):
             raise RuntimeError("archiving requires PORTAL_RECEIPT_ARCHIVE_ENABLED=1 and PORTAL_RECEIPT_COLD_REMOTE")
         now = self.now()
@@ -182,7 +180,7 @@ class ReceiptStorage:
                         log.exception("cold receipt cleanup failed for %s", receipt["id"])
                         results.append({"id": receipt["id"], "club_id": receipt["club_id"], "state": "error"})
                 continue
-            old_year = receipt.get("academic_year", academic_year(receipt["at"])) < academic_year(now)
+            old_year = receipt.get("academic_year", self.academic_year(receipt["at"])) < self.academic_year(now)
             inactive = now - receipt.get("last_accessed_at", receipt["at"]) >= YEAR
             if not old_year and not inactive:
                 continue

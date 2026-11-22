@@ -11,6 +11,8 @@ from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from ..context import Context
+from ..pagination import PageOrder
+from ..permissions import PERM_PROFILE_FINANCE, PERM_SAP_APPLICATIONS, PERM_SAP_FINANCE
 from .email import EmailDeliveryUnknown, EmailNotConfigured
 
 BANKING_FIELDS = ("institution_number", "transit_number", "account_number")
@@ -57,7 +59,7 @@ def parse_void_cheque(ctx: Context, data_url: str) -> dict:
 def banking_router(ctx: Context, *, legacy: bool = False) -> APIRouter:
     router = APIRouter(prefix="/api")
     forms = ctx.forms.for_owner("sap") if legacy else None
-    admin = ctx.require_role("sap_admin" if legacy else "profile_finance")
+    admin = ctx.require_permission(PERM_SAP_APPLICATIONS if legacy else PERM_PROFILE_FINANCE)
     mine = "/sap/banking" if legacy else "/profile/financial"
     staff = "/admin/sap/applications/{uid}/banking" if legacy else "/finance/profiles/{uid}"
     finance_path = "/finance/sap/banking" if legacy else "/finance/profiles"
@@ -213,15 +215,22 @@ def banking_router(ctx: Context, *, legacy: bool = False) -> APIRouter:
         return accept_pending(uid, body, actor)
 
     # ---- finance controller portal: banking only, no applications, hardship statements or reviews ----
-    finance = ctx.require_role("sap_finance" if legacy else "profile_finance")
+    finance = ctx.require_permission(PERM_SAP_FINANCE if legacy else PERM_PROFILE_FINANCE)
 
     @router.get(finance_path)
     def finance_banking_list(cursor: str = "", limit: int = 100, _: dict = finance):
         if not 1 <= limit <= 200:
             raise HTTPException(422, "limit must be between 1 and 200")
-        records = sorted((b for b in ctx.store.list("financial_profiles") if b["uuid"] > cursor), key=lambda b: b["uuid"])
+        records = ctx.store.page(
+            "financial_profiles",
+            order_by=(PageOrder("uuid", str),),
+            after=(cursor,) if cursor else None,
+            limit=limit + 1,
+        )
+        has_more = len(records) > limit
+        records = records[:limit]
         items = []
-        for bank in records[:limit]:
+        for bank in records:
             uid = bank["uuid"]
             user = ctx.identity.user(uid) or {}
             submission = (forms.submission("student_aid_bursary", uid) or {}) if forms is not None else {}
@@ -231,7 +240,7 @@ def banking_router(ctx: Context, *, legacy: bool = False) -> APIRouter:
                           "received_at": bank.get("received_at"),
                           "has_cheque": bool(bank.get("void_cheque") or (bank.get("pending") or {}).get("void_cheque")),
                           "approved": decision.get("approved"), "awarded_amount": decision.get("amount")})
-        return {"items": items, "next_cursor": items[-1]["uuid"] if len(records) > limit else None}
+        return {"items": items, "next_cursor": items[-1]["uuid"] if has_more else None}
 
     if not legacy:
         return router

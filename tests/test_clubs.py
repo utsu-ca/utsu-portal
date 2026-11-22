@@ -60,7 +60,7 @@ def test_registration_needs_one_admin_and_records_approver(env):
     assert len(approvals) == 1 and approvals[0]["by"] == approver and approvals[0]["approve"]
     assert any(event["actor"] == approver and event["action"] == "club.decision" and event["target"] == f"club:{cid}"
                for event in ctx.audit.entries())
-    assert not c.get("/api/admin/clubs?status=pending", headers=h["boss"]).json()
+    assert not c.get("/api/admin/clubs?status=pending", headers=h["boss"]).json()["items"]
     assert c.post(f"/api/admin/clubs/{cid}/decision", json={"approve": True}, headers=h["boss2"]).status_code == 409
     assert c.post("/api/clubs", json={"name": "chess  club!", "description": "dup dup dup dup", "category": "games"}, headers=h["ada"]).status_code == 409
     assert c.get(f"/api/clubs/{cid}", headers=h["boss"]).status_code == 200
@@ -82,14 +82,76 @@ def test_public_directory_only_exposes_current_approved_club_fields(env, monkeyp
 
     response = c.get("/api/clubs/directory")
     assert response.status_code == 200
-    assert response.json() == [{"id": cid, "name": "Chess Club", "category": "games",
-                                "description": "We play chess weekly."}]
+    assert response.json() == {"items": [{"id": cid, "name": "Chess Club", "category": "games",
+                                          "description": "We play chess weekly."}], "next_cursor": None}
     assert c.get(f"/api/clubs/{cid}").status_code == 401
     monkeypatch.setattr(ctx, "now", lambda: after)
-    assert c.get("/api/clubs/directory").json() == []
+    assert c.get("/api/clubs/directory").json()["items"] == []
     assert c.post(f"/api/admin/clubs/{pending}/decision", json={"approve": True}, headers=h["boss"]).status_code == 200
-    assert c.get("/api/clubs/directory").json() == [
+    assert c.get("/api/clubs/directory").json()["items"] == [
         {"id": pending, "name": "Go Club", "category": "games", "description": "We play go weekly."}]
+
+
+def test_club_collections_paginate_and_reject_invalid_statuses(env):
+    c, h = env
+    names = ("Zebra Club", "Alpha Club", "Middle Club")
+    club_ids = {}
+    for name in names:
+        response = c.post("/api/clubs", json={"name": name, "description": f"We enjoy {name}.", "category": "games"},
+                          headers=h["ada"])
+        assert response.status_code == 201
+        cid = response.json()["id"]
+        assert c.post(f"/api/admin/clubs/{cid}/decision", json={"approve": True}, headers=h["boss"]).status_code == 200
+        club_ids[name] = cid
+
+    mail = c.app.state.ctx.mailer
+    register(c, mail, "bob", "bob@x.ca", sn="1234567891")
+    h["bob"] = login(c, mail, "bob")
+    activate(c, h["boss"], h["bob"])
+    for cid in club_ids.values():
+        assert c.post(f"/api/clubs/{cid}/members", json={"username": "bob", "role": "treasurer"},
+                      headers=h["ada"]).status_code == 200
+
+    def pages(path, headers=None, limit=1):
+        cursor = ""
+        items = []
+        while True:
+            query = f"limit={limit}" + (f"&cursor={cursor}" if cursor else "")
+            response = c.get(f"{path}{'&' if '?' in path else '?'}{query}", headers=headers)
+            assert response.status_code == 200, response.text
+            page = response.json()
+            items.extend(page["items"])
+            if page["next_cursor"] is None:
+                return items
+            cursor = page["next_cursor"]
+
+    directory = pages("/api/clubs/directory")
+    assert [club["name"] for club in directory] == ["Alpha Club", "Middle Club", "Zebra Club"]
+    assert [club["id"] for club in pages("/api/clubs/mine", h["ada"], limit=2)] == sorted(club_ids.values())
+    assert [club["id"] for club in pages("/api/admin/clubs?status=approved", h["boss"], limit=2)] == sorted(club_ids.values())
+    invitations = pages("/api/clubs/invitations", h["bob"])
+    assert [invitation["club_id"] for invitation in invitations] == sorted(club_ids.values())
+
+    ctx = c.app.state.ctx
+    for tx_id, date, created_at in (
+        ("club-tx-c", "2026-10-02", 1),
+        ("club-tx-b", "2026-10-01", 2),
+        ("club-tx-a", "2026-10-01", 2),
+    ):
+        ctx.store.put("transactions", tx_id, {
+            "id": tx_id, "club_id": club_ids["Alpha Club"], "date": date, "created_at": created_at,
+            "status": "approved",
+        })
+    path = f"/api/clubs/{club_ids['Alpha Club']}/transactions"
+    assert [transaction["id"] for transaction in pages(path, h["ada"])] == ["club-tx-a", "club-tx-b", "club-tx-c"]
+    assert [transaction["id"] for transaction in pages("/api/admin/transactions?status=approved", h["boss"], limit=2)] == [
+        "club-tx-a", "club-tx-b", "club-tx-c",
+    ]
+
+    assert c.get("/api/admin/clubs?status=unsupported", headers=h["boss"]).status_code == 422
+    assert c.get("/api/admin/transactions?status=unsupported", headers=h["boss"]).status_code == 422
+    assert c.get("/api/admin/clubs?status=expired", headers=h["boss"]).status_code == 200
+    assert c.get("/api/clubs/directory?limit=0").status_code == 422
 
 
 def test_unapproved_club_cannot_transact(env):
@@ -121,6 +183,40 @@ def test_expense_flow_receipts_and_tax(env):
     s = c.get(f"/api/clubs/{cid}/summary", headers=h["ada"]).json()
     assert (s["expense_cents"], s["tax_paid_cents"], s["balance_cents"]) == (11300, 1300, 50000 - 11300)
     assert s["expenses_by_category"] == {"supplies": 11300}
+
+
+def test_summary_aggregates_pending_count_in_the_approved_transaction_scan(env, monkeypatch):
+    c, h = env
+    cid = approved_club(c, h)
+    assert c.post(f"/api/admin/clubs/{cid}/grants", json={"amount_cents": 50000}, headers=h["boss"]).status_code == 201
+    approved = tx(c, h, cid, receipt(c, h, cid, b"%PDF-approved").json()["id"]).json()
+    assert c.post(f"/api/admin/transactions/{approved['id']}/decision", json={"approve": True},
+                  headers=h["boss"]).json()["status"] == "approved"
+    assert tx(c, h, cid, receipt(c, h, cid, b"%PDF-pending").json()["id"], amount=2260).status_code == 201
+
+    ctx = c.app.state.ctx
+    original_list = ctx.store.list
+    transaction_scans = []
+
+    def track_list(collection, **equals):
+        if collection == "transactions" and equals.get("club_id") == cid:
+            transaction_scans.append(equals)
+        return original_list(collection, **equals)
+
+    monkeypatch.setattr(ctx.store, "list", track_list)
+    summary = c.get(f"/api/clubs/{cid}/summary", headers=h["ada"]).json()
+
+    assert summary == {
+        "income_cents": 50000,
+        "expense_cents": 11300,
+        "balance_cents": 38700,
+        "tax_paid_cents": 1300,
+        "tax_collected_cents": 0,
+        "net_tax_position_cents": -1300,
+        "expenses_by_category": {"supplies": 11300},
+        "pending_expenses": 1,
+    }
+    assert len(transaction_scans) == 1
 
 
 def test_external_receipt_route_preserves_permissions_and_enforces_total_allocation(env, tmp_path):
@@ -175,28 +271,28 @@ def test_member_invitation_requires_recipient_acceptance(env):
     assert r.json() == {"status": "pending"}
     assert mail.outbox[-1][0] == "bob@x.ca"
     assert "Chess Club" in mail.outbox[-1][2] and "treasurer" in mail.outbox[-1][2]
-    invitations = c.get("/api/clubs/invitations", headers=h["bob"]).json()
+    invitations = c.get("/api/clubs/invitations", headers=h["bob"]).json()["items"]
     assert len(invitations) == 1 and invitations[0]["club_id"] == cid
     invite_id = invitations[0]["id"]
     assert c.get(f"/api/clubs/{cid}", headers=h["bob"]).status_code == 403
     assert c.post(f"/api/clubs/{cid}/receipts", json={"data_url": PDF(b"pending")}, headers=h["bob"]).status_code == 403
-    assert c.get("/api/clubs/mine", headers=h["bob"]).json() == []
-    assert c.get("/api/clubs/invitations", headers=h["ada"]).json() == []
+    assert c.get("/api/clubs/mine", headers=h["bob"]).json()["items"] == []
+    assert c.get("/api/clubs/invitations", headers=h["ada"]).json()["items"] == []
     assert c.post(f"/api/clubs/{cid}/invitations/{invite_id}/decision", json={"approve": True}, headers=h["boss"]).status_code == 404
     assert c.post(f"/api/clubs/{cid}/members", json={"username": "bob", "role": "executive"}, headers=h["ada"]).status_code == 409
     assert c.post(f"/api/clubs/{cid}/invitations/{invite_id}/decision", json={"approve": True}, headers=h["bob"]).json()["status"] == "accepted"
     assert c.get(f"/api/clubs/{cid}", headers=h["bob"]).status_code == 200
     assert c.post(f"/api/clubs/{cid}/receipts", json={"data_url": PDF(b"accepted")}, headers=h["bob"]).status_code == 201
-    assert c.get("/api/clubs/mine", headers=h["bob"]).json()[0]["members"][c.app.state.ctx.uid("bob")] == "treasurer"
+    assert c.get("/api/clubs/mine", headers=h["bob"]).json()["items"][0]["members"][c.app.state.ctx.uid("bob")] == "treasurer"
     assert c.post(f"/api/clubs/{cid}/invitations/{invite_id}/decision", json={"approve": True}, headers=h["bob"]).status_code == 404
-    assert c.get("/api/clubs/invitations", headers=h["bob"]).json() == []
+    assert c.get("/api/clubs/invitations", headers=h["bob"]).json()["items"] == []
 
     assert c.post(f"/api/clubs/{cid}/members", json={"username": "bob", "role": "executive"}, headers=h["ada"]).status_code == 200
-    next_id = c.get("/api/clubs/invitations", headers=h["bob"]).json()[0]["id"]
+    next_id = c.get("/api/clubs/invitations", headers=h["bob"]).json()["items"][0]["id"]
     assert next_id != invite_id
     assert c.post(f"/api/clubs/{cid}/invitations/{invite_id}/decision", json={"approve": True}, headers=h["bob"]).status_code == 404
     assert c.post(f"/api/clubs/{cid}/invitations/{next_id}/decision", json={"approve": False}, headers=h["bob"]).json()["status"] == "declined"
-    assert c.get("/api/clubs/mine", headers=h["bob"]).json()[0]["members"][c.app.state.ctx.uid("bob")] == "treasurer"
+    assert c.get("/api/clubs/mine", headers=h["bob"]).json()["items"][0]["members"][c.app.state.ctx.uid("bob")] == "treasurer"
     assert c.post(f"/api/clubs/{cid}/members", json={"username": "bob", "role": "executive"}, headers=h["ada"]).status_code == 200
 
 
@@ -214,7 +310,7 @@ def test_invitation_reports_unconfirmed_delivery_and_remains_actionable(env, mon
     monkeypatch.setattr(mail, "send", fail)
     r = c.post(f"/api/clubs/{cid}/members", json={"username": "bob", "role": "executive"}, headers=h["ada"])
     assert r.status_code == 502 and "Invitation saved" in r.json()["detail"]
-    invitation = c.get("/api/clubs/invitations", headers=h["bob"]).json()[0]
+    invitation = c.get("/api/clubs/invitations", headers=h["bob"]).json()["items"][0]
     assert c.post(f"/api/clubs/{cid}/invitations/{invitation['id']}/decision",
                   json={"approve": False}, headers=h["bob"]).json()["status"] == "declined"
 
@@ -229,25 +325,25 @@ def test_approval_expires_at_academic_year_boundary_and_owner_requests_renewal(e
     cid = approved_club(c, h)
     assert c.get(f"/api/clubs/{cid}", headers=h["ada"]).json()["approval_year"] == 2025
     assert c.get(f"/api/clubs/{cid}", headers=h["ada"]).json()["storage_usage"]["limit_bytes"] == 1024 ** 3
-    assert not c.get("/api/admin/clubs?status=pending", headers=h["boss"]).json()
+    assert not c.get("/api/admin/clubs?status=pending", headers=h["boss"]).json()["items"]
     assert c.post(f"/api/clubs/{cid}/renewal", headers=h["ada"]).status_code == 409
 
     monkeypatch.setattr(ctx, "now", lambda: after)
-    assert c.get("/api/clubs/mine", headers=h["ada"]).json()[0]["status"] == "expired"
-    assert c.get("/api/admin/clubs?status=approved", headers=h["boss"]).json() == []
-    assert c.get("/api/admin/clubs?status=pending", headers=h["boss"]).json() == []
+    assert c.get("/api/clubs/mine", headers=h["ada"]).json()["items"][0]["status"] == "expired"
+    assert c.get("/api/admin/clubs?status=approved", headers=h["boss"]).json()["items"] == []
+    assert c.get("/api/admin/clubs?status=pending", headers=h["boss"]).json()["items"] == []
     assert c.post(f"/api/admin/clubs/{cid}/grants", json={"amount_cents": 100}, headers=h["boss"]).status_code == 409
     assert tx(c, h, cid, receipt(c, h, cid).json()["id"]).status_code == 409
     assert c.post(f"/api/clubs/{cid}/renewal", headers=h["boss"]).status_code == 403
     assert c.post(f"/api/clubs/{cid}/renewal", headers=h["ada"]).json()["status"] == "pending"
     assert c.post(f"/api/clubs/{cid}/renewal", headers=h["ada"]).status_code == 409
-    assert len(c.get("/api/admin/clubs?status=pending", headers=h["boss"]).json()) == 1
+    assert len(c.get("/api/admin/clubs?status=pending", headers=h["boss"]).json()["items"]) == 1
     final = c.post(f"/api/admin/clubs/{cid}/decision", json={"approve": True}, headers=h["boss"]).json()
     assert final["status"] == "approved" and final["approval_year"] == 2026
     club = c.get(f"/api/clubs/{cid}", headers=h["ada"]).json()
     assert club["registered_years"] == [2025, 2026]
     assert club["storage_usage"]["limit_bytes"] == 2 * 1024 ** 3
-    assert c.get("/api/admin/clubs?status=pending", headers=h["boss"]).json() == []
+    assert c.get("/api/admin/clubs?status=pending", headers=h["boss"]).json()["items"] == []
 
 
 def test_existing_approved_club_uses_final_vote_date(env, monkeypatch):

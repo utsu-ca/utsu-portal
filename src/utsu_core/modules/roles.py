@@ -9,10 +9,11 @@ import secrets
 import time
 from contextlib import contextmanager
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from ..context import Context, roles_of
+from ..pagination import PageOrder, paginate_store
 from ..security import clean_text
 from ..store import Store
 
@@ -68,17 +69,27 @@ class RolesModule:
             return ctx.roles
 
         @r.get("/holders")
-        def holders(_: dict = admin):
+        def holders(cursor: str = Query("", max_length=2048), limit: int = Query(100, ge=1, le=200),
+                    _: dict = admin):
+            accounts, next_cursor = paginate_store(
+                S,
+                "accounts",
+                cursor,
+                limit,
+                (PageOrder("uuid", str),),
+                predicate=lambda account: bool(
+                    roles_of(account, ctx.roles) or account.get("google_staff_username")
+                ),
+            )
             out = []
-            for a in S.list("accounts"):
+            for a in accounts:
                 rs = roles_of(a, ctx.roles)
-                if rs or a.get("google_staff_username"):
-                    u = S.get("users", a["uuid"]) or {}
-                    holder = {"uuid": a["uuid"], "preferred_name": u.get("preferred_name", ""), "roles": sorted(rs)}
-                    if a.get("google_staff_username"):
-                        holder.update(username=a["google_staff_username"], email=u.get("email", ""))
-                    out.append(holder)
-            return out
+                u = S.get("users", a["uuid"]) or {}
+                holder = {"uuid": a["uuid"], "preferred_name": u.get("preferred_name", ""), "roles": sorted(rs)}
+                if a.get("google_staff_username"):
+                    holder.update(username=a["google_staff_username"], email=u.get("email", ""))
+                out.append(holder)
+            return {"items": out, "next_cursor": next_cursor}
 
         @r.put("")
         def set_roles(b: RoleSet, actor: dict = admin):

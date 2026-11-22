@@ -37,6 +37,23 @@ Installing a package does not enable it. Core must not import disabled program i
 Plug-ins are trusted, reviewed Python code running in the host process, not sandboxed third-party code or separate
 microservices. Scoped contracts prevent accidental coupling; they are not isolation against malicious Python.
 
+## Authorization transition: roles to permissions
+
+Route authorization is moving from named-role checks to named permissions. Users continue to receive the existing
+roles, and role-to-permission grants are declared by the owning core module or plug-in manifest. This preserves the
+stored grants and admin workflow while route handlers migrate to explicit permissions. Permission identifiers are
+namespaced OAuth scope tokens (`utsu:resource:action`); a denied permission check uses the Bearer
+`insufficient_scope` challenge. Permission requirements are all-of, matching OAuth scope semantics.
+The portal's existing session token remains unchanged; permissions are resolved from the active identity's roles and
+are not embedded as token scopes in this increment.
+
+The existing OIDC authorization-code flow retains `openid profile email` as the default for registered clients and
+supports per-client-allowed OIDC scopes with claims filtered to the granted scopes. API permission scopes are not yet
+exposed to those clients. Any future exposure must preserve audience/resource separation; ID tokens remain identity
+assertions, not API authorization tokens. Legacy `require_role` remains as a compatibility adapter while
+third-party plug-ins migrate. The separate `authsvc/rbac.py` implementation is unmounted legacy code and is not an
+authorization source; it must not be re-enabled in parallel with the manifest-backed permission catalogue.
+
 ## 2. Current-source findings
 
 The previous extraction provides useful seams, but these still prevent genuine plug-in independence:

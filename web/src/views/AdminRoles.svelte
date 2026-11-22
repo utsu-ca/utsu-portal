@@ -1,6 +1,6 @@
 <script>
   import { onMount } from "svelte";
-  import { api } from "../lib/api.js";
+  import { api, apiAllPages } from "../lib/api.js";
   import { Action } from "../lib/action.svelte.js";
   import Status from "../components/Status.svelte";
 
@@ -9,7 +9,7 @@
 
   const refresh = async () => {
     catalogue = await api("/admin/roles");
-    holders = await api("/admin/roles/holders");
+    holders = await apiAllPages("/admin/roles/holders");
   };
   onMount(() => load.run(refresh));
 

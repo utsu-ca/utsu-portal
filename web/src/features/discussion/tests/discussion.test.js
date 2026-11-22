@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import ThreadPanel from "../../../components/ThreadPanel.svelte";
 import BoardView from "../views/BoardView.svelte";
@@ -7,9 +7,12 @@ import TopicView from "../views/TopicView.svelte";
 import { nav } from "../../../lib/nav.svelte.js";
 import { session } from "../../../lib/session.svelte.js";
 
-vi.mock("../../../lib/api.js", async importOriginal => ({ ...(await importOriginal()), api: vi.fn() }));
+const { apiMock, apiAllPagesMock } = vi.hoisted(() => ({ apiMock: vi.fn(), apiAllPagesMock: vi.fn() }));
+vi.mock("../../../lib/api.js", async importOriginal => ({
+  ...(await importOriginal()), api: apiMock, apiAllPages: apiAllPagesMock,
+}));
 vi.mock("../../../lib/stream.js", () => ({ openStream: vi.fn() }));
-import { api } from "../../../lib/api.js";
+import { api, apiAllPages } from "../../../lib/api.js";
 import { openStream } from "../../../lib/stream.js";
 
 const row = (seq, extra = {}) => ({ seq, author_name: "Ada", mine: false, internal: false, body: `Post ${seq}`, redacted: false, at: 1700000000, ...extra });
@@ -22,7 +25,14 @@ function stream() {
   return handle;
 }
 
-afterEach(() => { cleanup(); api.mockReset(); openStream.mockReset(); session.adminMode = false; });
+beforeEach(() => {
+  apiAllPages.mockImplementation(async (path, collection = "items") => {
+    const page = await api(path);
+    const items = Array.isArray(page?.[collection]) ? page[collection] : [];
+    return collection === "items" ? items : { ...page, [collection]: items, next_cursor: null };
+  });
+});
+afterEach(() => { cleanup(); api.mockReset(); apiAllPages.mockReset(); openStream.mockReset(); session.adminMode = false; });
 
 describe("live thread", () => {
   const thread = "/threads/discussion-topic/t1";

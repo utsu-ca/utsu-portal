@@ -1,6 +1,6 @@
 <script>
   import { onMount } from "svelte";
-  import { getToken } from "../lib/api.js";
+  import { api, getToken } from "../lib/api.js";
 
   // Hands the signed-in portal session to an SSO client (Zoom): authorise, then follow the redirect.
   let message = $state("Signing you in…");
@@ -15,14 +15,16 @@
     }
     const body = {
       client_id: q.get("client_id") || "", redirect_uri: q.get("redirect_uri") || "", state: q.get("state") || "",
+      response_type: q.get("response_type") || "code", scope: q.get("scope") || undefined,
       nonce: q.get("nonce") || "", code_challenge: q.get("code_challenge") || "",
       code_challenge_method: q.get("code_challenge_method") || "S256"
     };
-    const response = await fetch("/api/sso/authorize", { method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + getToken() }, body: JSON.stringify(body) });
-    const result = await response.json().catch(() => ({}));
-    if (response.ok) location.replace(result.redirect);
-    else message = typeof result.detail === "string" ? result.detail : "Sign-on was refused.";
+    try {
+      const result = await api("/sso/authorize", { method: "POST", body });
+      location.replace(result.redirect);
+    } catch (error) {
+      message = error.message || "Sign-on was refused.";
+    }
   });
 </script>
 

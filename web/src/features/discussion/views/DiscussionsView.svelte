@@ -1,7 +1,7 @@
 <script>
   // The discussion boards this person can see. Moderators (in admin mode) also create and archive boards here.
   import { onMount } from "svelte";
-  import { api } from "../../../lib/api.js";
+  import { api, apiAllPages } from "../../../lib/api.js";
   import { Action } from "../../../lib/action.svelte.js";
   import { go } from "../../../lib/nav.svelte.js";
   import { session } from "../../../lib/session.svelte.js";
@@ -16,7 +16,7 @@
 
   const moderating = $derived(!!data?.moderator && session.adminMode);
   const idOk = $derived(/^[a-z0-9][a-z0-9-]{1,47}$/.test(draft.id));
-  const refresh = () => load.run(async () => { data = await api("/discussion/boards"); });
+  const refresh = () => load.run(async () => { data = await apiAllPages("/discussion/boards", "boards"); });
   onMount(refresh);
 
   async function createBoard(event) {

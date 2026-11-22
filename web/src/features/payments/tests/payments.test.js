@@ -3,23 +3,50 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import OrdersView from "../views/OrdersView.svelte";
 import PaymentOrdersView from "../views/PaymentOrdersView.svelte";
 
-vi.mock("../../../lib/api.js", async importOriginal => ({ ...(await importOriginal()), api: vi.fn() }));
+vi.mock("../../../lib/api.js", async importOriginal => {
+  const api = vi.fn();
+  return {
+    ...(await importOriginal()),
+    api,
+    apiAllPages: async path => {
+      const [pathname, query = ""] = path.split("?", 2);
+      const params = new URLSearchParams(query);
+      params.set("limit", "100");
+      const items = [];
+      let cursor = "";
+      do {
+        if (cursor) params.set("cursor", cursor);
+        const page = await api(`${pathname}?${params}`);
+        items.push(...page.items);
+        cursor = page.next_cursor;
+      } while (cursor);
+      return items;
+    },
+  };
+});
 import { api } from "../../../lib/api.js";
 
 afterEach(() => { cleanup(); api.mockReset(); });
 const order = { id: "order-1", uuid: "student-1", description: "Membership", amount_cents: 1500, currency: "cad", status: "paid" };
 
 it("shows only server-confirmed payment status and refreshes after returning from Stripe", async () => {
-  api.mockResolvedValueOnce([{ ...order, status: "processing" }]).mockResolvedValueOnce([order]);
+  api.mockResolvedValueOnce({ items: [{ ...order, status: "processing" }], next_cursor: "next-page" })
+    .mockResolvedValueOnce({
+      items: [{ ...order, id: "order-2", description: "Donation", status: "processing" }],
+      next_cursor: null,
+    })
+    .mockResolvedValueOnce({ items: [order], next_cursor: null });
   render(OrdersView);
-  expect(await screen.findByText("processing")).toBeInTheDocument();
+  expect(await screen.findByText("Donation")).toBeInTheDocument();
+  expect(screen.getAllByText("processing")).toHaveLength(2);
+  expect(api).toHaveBeenCalledWith("/orders?limit=100&cursor=next-page");
   expect(screen.queryByRole("button", { name: "Pay with Stripe" })).not.toBeInTheDocument();
   await fireEvent.click(screen.getByRole("button", { name: "Refresh orders" }));
   expect(await screen.findByText("paid")).toBeInTheDocument();
 });
 
 it("refuses to navigate to a checkout URL outside Stripe", async () => {
-  api.mockResolvedValueOnce([{ ...order, status: "awaiting_payment" }])
+  api.mockResolvedValueOnce({ items: [{ ...order, status: "awaiting_payment" }], next_cursor: null })
     .mockResolvedValueOnce({ url: "https://attacker.example/pay" });
   render(OrdersView);
   await fireEvent.click(await screen.findByRole("button", { name: "Pay with Stripe" }));
@@ -34,7 +61,7 @@ it("keeps the same request id when order creation has an uncertain outcome", asy
       if (++posts === 1) throw Object.assign(new Error("Provider unavailable"), { status: 502 });
       return order;
     }
-    return [];
+    return { items: [], next_cursor: null };
   });
   render(PaymentOrdersView);
   const profile = screen.getByLabelText("Profile UUID");

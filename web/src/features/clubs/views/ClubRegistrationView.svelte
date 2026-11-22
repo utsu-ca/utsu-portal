@@ -1,6 +1,6 @@
 <script>
   import { onMount } from "svelte";
-  import { api } from "../../../lib/api.js";
+  import { api, apiAllPages } from "../../../lib/api.js";
   import { Action } from "../../../lib/action.svelte.js";
   import { session } from "../../../lib/session.svelte.js";
   import Status from "../../../components/Status.svelte";
@@ -12,7 +12,7 @@
   let memberOf = $state(""), username = $state(""), role = $state("treasurer");
 
   const refresh = async () => {
-    [clubs, invitations] = await Promise.all([api("/clubs/mine"), api("/clubs/invitations")]);
+    [clubs, invitations] = await Promise.all([apiAllPages("/clubs/mine"), apiAllPages("/clubs/invitations")]);
   };
   onMount(() => load.run(refresh));
 

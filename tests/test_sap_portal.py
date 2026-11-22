@@ -70,13 +70,36 @@ def test_living_costs_subsidies_prioritize_emergency_reviews():
         assert c.put(f"/api/admin/sap/applications/{uid}/review-hardship", json=prepared, headers=admin).status_code == 200
         key = f"student_aid_bursary:{uid}"
         c.app.state.ctx.store.update("submissions", key, lambda current: {**current, "updated_at": 100 if username == "ada" else 200})
-    queue = c.get("/api/sap/queue", headers=reviewer).json()
+    first_page = c.get("/api/sap/queue?limit=1", headers=reviewer).json()
+    assert [row["review_id"] for row in first_page["items"]] == [review_ids[1]]
+    assert first_page["next_cursor"]
+    second_page = c.get("/api/sap/queue", params={"limit": 1, "cursor": first_page["next_cursor"]},
+                         headers=reviewer).json()
+    assert [row["review_id"] for row in second_page["items"]] == [review_ids[0]]
+    assert second_page["next_cursor"] is None
+    assert c.get("/api/sap/queue?limit=201", headers=reviewer).status_code == 422
+    assert c.get("/api/sap/queue?cursor=%21", headers=reviewer).status_code == 422
+    queue = first_page["items"] + second_page["items"]
     assert [row["review_id"] for row in queue] == list(reversed(review_ids))
     assert [row["emergency"] for row in queue] == [True, None]
     assert all(row["submitted_hour"] == 0 for row in queue)
     assert "Ada" not in str(queue) and "Grace" not in str(queue) and "student@example.ca" not in str(queue)
     claim = c.post(f"/api/sap/queue/{review_ids[1]}/claim", headers=reviewer).json()
     assert claim["emergency"] is True
+    assert c.post(f"/api/sap/queue/{review_ids[0]}/claim", headers=reviewer).status_code == 200
+    mine_first = c.get("/api/sap/my-reviews?limit=1", headers=reviewer).json()
+    mine_second = c.get("/api/sap/my-reviews", params={"limit": 1, "cursor": mine_first["next_cursor"]},
+                        headers=reviewer).json()
+    assert [row["review_id"] for row in mine_first["items"] + mine_second["items"]] == review_ids
+    assert mine_second["next_cursor"] is None
+    assert c.get("/api/sap/my-reviews?cursor=%21", headers=reviewer).status_code == 422
+    report_first = c.get("/api/admin/sap/review-report?limit=1", headers=admin).json()
+    report_second = c.get("/api/admin/sap/review-report",
+                          params={"limit": 1, "cursor": report_first["next_cursor"]}, headers=admin).json()
+    report = report_first["items"] + report_second["items"]
+    assert [row["uuid"] for row in report] == sorted(row["uuid"] for row in report)
+    assert report_second["next_cursor"] is None
+    assert c.get("/api/admin/sap/review-report?cursor=%21", headers=admin).status_code == 422
 
 
 def test_review_stage_ignores_expired_claims():
@@ -182,12 +205,12 @@ def test_admin_resolves_disagreement_with_revision_and_locks_ratings():
     assert c.post(path, json=body, headers=reviewer).status_code == 403
     assert c.post(path, json={**body, "reason": "   "}, headers=admin).status_code == 422
     assert c.post(path, json={**body, "revision": revision - 1}, headers=admin).status_code == 409
-    assert c.get("/api/admin/sap/review-report", headers=admin).json()[0]["stage"] == "discuss"
+    assert c.get("/api/admin/sap/review-report", headers=admin).json()["items"][0]["stage"] == "discuss"
     resolved = c.post(path, json=body, headers=admin)
     assert resolved.status_code == 200 and resolved.json()["reason"] == body["reason"]
     stored = inner.get("submissions", key)
     assert stored["sap_review"].startswith(PREFIX) and body["reason"] not in str(stored)
-    report = c.get("/api/admin/sap/review-report", headers=admin).json()[0]
+    report = c.get("/api/admin/sap/review-report", headers=admin).json()["items"][0]
     assert report["stage"] == "reconciled" and report["resolution"] == resolved.json()
     assert c.post(path, json=body, headers=admin).status_code == 409
     assert c.put(f"/api/sap/review/{review_id}", json={"level": 3}, headers=reviewer).status_code == 409
@@ -497,7 +520,7 @@ def test_review_queue_claims_decision_and_submission_lock():
     assert application["preferred_name"] == "Countess"
     revision = application["revision"]
     prepared = {"text": "The applicant describes financial hardship.", "confirm_redacted": True, "revision": revision}
-    assert c.get("/api/sap/queue", headers=reviewers[0]).json() == []
+    assert c.get("/api/sap/queue", headers=reviewers[0]).json()["items"] == []
     assert c.post(f"/api/sap/queue/{review_id}/claim", headers=reviewers[0]).status_code == 409
     assert c.put(hardship_path, json=prepared, headers=user).status_code == 403
     assert c.put(hardship_path, json={**prepared, "confirm_redacted": False}, headers=admin).status_code == 422
@@ -511,17 +534,17 @@ def test_review_queue_claims_decision_and_submission_lock():
     assert c.put(hardship_path, json=prepared, headers=admin).status_code == 200
     assert inner.get("submissions", f"student_aid_bursary:{uid}")["sap_review_hardship"].startswith(PREFIX)
     queue = c.get("/api/sap/queue", headers=reviewers[0]).json()
-    assert len(queue) == 1 and queue[0]["review_id"] == review_id
+    assert len(queue["items"]) == 1 and queue["items"][0]["review_id"] == review_id
     assert uid not in str(queue) and "Ada" not in str(queue) and "example.ca" not in str(queue)
-    assert "hardship" not in queue[0]
+    assert "hardship" not in queue["items"][0]
     assert c.get(f"/api/sap/review/{review_id}", headers=reviewers[0]).status_code == 409
     with ThreadPoolExecutor(max_workers=2) as pool:
         responses = list(pool.map(lambda _: c.post(f"/api/sap/queue/{review_id}/claim", headers=reviewers[0]), range(2)))
     assert sorted(response.status_code for response in responses) == [200, 409]
     claimed = next(response for response in responses if response.status_code == 200)
     assert claimed.status_code == 200 and claimed.json()["hardship"] == prepared["text"]
-    assert c.get("/api/sap/queue", headers=reviewers[0]).json() == []
-    assert len(c.get("/api/sap/queue", headers=reviewers[1]).json()) == 1
+    assert c.get("/api/sap/queue", headers=reviewers[0]).json()["items"] == []
+    assert len(c.get("/api/sap/queue", headers=reviewers[1]).json()["items"]) == 1
     assert c.get(f"/api/sap/review/{review_id}", headers=reviewers[0]).json()["hardship"] == prepared["text"]
     revision = c.get("/api/admin/sap/applications", headers=admin).json()["items"][0]["revision"]
     assert c.put(hardship_path, json={**prepared, "revision": revision}, headers=admin).status_code == 409
@@ -531,13 +554,13 @@ def test_review_queue_claims_decision_and_submission_lock():
         assert c.post(f"/api/sap/queue/{review_id}/claim", headers=auth).status_code == 200
         assert c.post(f"/api/sap/queue/{review_id}/claim", headers=auth).status_code == 409
         assert c.put(f"/api/sap/review/{review_id}", json={"level": score}, headers=auth).status_code == 200
-    assert c.get("/api/sap/queue", headers=reviewers[0]).json() == []
+    assert c.get("/api/sap/queue", headers=reviewers[0]).json()["items"] == []
     assert c.get("/api/admin/sap/review-report", headers=user).status_code == 403
-    assert c.get("/api/admin/sap/review-report", headers=admin).json()[0]["stage"] == "discuss"
+    assert c.get("/api/admin/sap/review-report", headers=admin).json()["items"][0]["stage"] == "discuss"
     assert c.post(f"/api/admin/sap/applications/{uid}/decision",
                   json={"approved": True, "amount": 900}, headers=admin).status_code == 409
     assert c.put(f"/api/sap/review/{review_id}", json={"level": 3}, headers=reviewers[0]).status_code == 200
-    assert c.get("/api/admin/sap/review-report", headers=admin).json()[0]["stage"] == "reconciled"
+    assert c.get("/api/admin/sap/review-report", headers=admin).json()["items"][0]["stage"] == "reconciled"
     assert c.put(f"/api/admin/sap/applications/{uid}/review-count",
                  json={"required_reviews": 2}, headers=admin).status_code == 422
     assert c.put(f"/api/admin/sap/applications/{uid}/review-count",
@@ -553,7 +576,7 @@ def test_review_queue_claims_decision_and_submission_lock():
     assert c.post(assign_path, json={"reviewer": uid}, headers=admin).status_code == 422
     assert c.post(assign_path, json={"reviewer": third_uid}, headers=third).status_code == 403
     assert c.post(assign_path, json={"reviewer": third_uid}, headers=admin).status_code == 200
-    assert [r["review_id"] for r in c.get("/api/sap/my-reviews", headers=third).json()] == [review_id]
+    assert [r["review_id"] for r in c.get("/api/sap/my-reviews", headers=third).json()["items"]] == [review_id]
     assert c.get(f"/api/sap/review/{review_id}", headers=third).json()["hardship"] == prepared["text"]
     assert c.post(f"/api/sap/queue/{review_id}/claim", headers=third).status_code == 409
     assert c.put(f"/api/sap/review/{review_id}", json={"level": 3.5}, headers=third).status_code == 200
@@ -622,7 +645,7 @@ def test_review_queue_claims_decision_and_submission_lock():
     assert c.put("/api/admin/roles", json={"username": "reviewthree", "roles": ["forms_editor"]},
                  headers=admin).status_code == 200
     assert c.get(path, headers=third).status_code == 403
-    general = c.get("/api/admin/forms/student_aid_bursary/submissions", headers=third).json()
+    general = c.get("/api/admin/forms/student_aid_bursary/submissions", headers=third).json()["items"]
     assert len(general) == 1 and not ({"sap_previous", "sap_review", "sap_review_hardship"} & general[0].keys())
     assert review_id not in str(general) and second_id not in str(general)
 
@@ -655,9 +678,9 @@ def test_reviewer_can_flag_conflict_and_release_claim():
                  json={"text": "Redacted statement", "confirm_redacted": True, "revision": revision}, headers=admin).status_code == 200
     assert c.post(f"/api/sap/queue/{rid}/claim", headers=reviewer).status_code == 200
     assert c.post(f"/api/sap/review/{rid}/conflict", headers=reviewer).status_code == 200
-    assert c.get("/api/sap/my-reviews", headers=reviewer).json() == []
+    assert c.get("/api/sap/my-reviews", headers=reviewer).json()["items"] == []
     assert c.get(f"/api/sap/review/{rid}", headers=reviewer).status_code == 403
-    assert c.get("/api/sap/queue", headers=reviewer).json() == []
+    assert c.get("/api/sap/queue", headers=reviewer).json()["items"] == []
     assert c.post(f"/api/sap/queue/{rid}/claim", headers=reviewer).status_code == 403
     reviewer_uid = c.get("/api/me", headers=reviewer).json()["user"]["uuid"]
     assert c.post(f"/api/admin/sap/review/{rid}/assign", json={"reviewer": reviewer_uid}, headers=admin).status_code == 403
@@ -689,5 +712,5 @@ def test_reviewers_with_same_roster_record_cannot_claim():
     assert c.put("/api/forms/student_aid_bursary/submission",
                  json={"version": form["version"], "hash": form["hash"], "data": data}, headers=user).status_code == 200
     review_id = c.post(f"/api/admin/sap/applications/{uid}/enqueue", headers=admin).json()["review_id"]
-    assert c.get("/api/sap/queue", headers=reviewer).json() == []
+    assert c.get("/api/sap/queue", headers=reviewer).json()["items"] == []
     assert c.post(f"/api/sap/queue/{review_id}/claim", headers=reviewer).status_code == 403

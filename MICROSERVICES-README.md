@@ -28,9 +28,9 @@ This implementation extends the UTSU Portal with:
 Standalone email service with:
 - Email queueing API
 - Template rendering
-- Delivery tracking
-- Retry logic (3 attempts with exponential backoff)
-- Status API
+- Minimized delivery-status and paginated pending APIs
+- One-shot manual dispatch; uncertain failures are not automatically retried
+- Per-service and per-recipient queue/retry rate limits (`PORTAL_MAIL_RECIPIENT_RATE_LIMIT`, default 5 per minute)
 - SQLAlchemy ORM for database persistence
 
 **Start Command:**
@@ -38,29 +38,19 @@ Standalone email service with:
 uvicorn utsu_core.mailsvc:create_mail_app --host 0.0.0.0 --port 8080
 ```
 
-#### 2. RBAC Module
-**File:** `src/utsu_core/authsvc/rbac.py` (8.4 KB)
+#### 2. Permission-backed RBAC
+The active authorization model is composed from `src/utsu_core/permissions.py` and the selected plug-in manifests.
+Handlers use `Context.require_permission(...)`; existing account roles continue to grant those permissions, and the
+auth service remains the role issuer. Permission identifiers follow OAuth scope-token syntax, but portal API
+permissions are not issued to OIDC clients as access-token scopes.
 
-Role-Based Access Control with:
-- 4 predefined roles (student, admin, moderator, staff)
-- 25+ permissions (auth, admin, forms, AGM, clubs)
-- Role assignment/revocation
-- Permission checking
-- Audit logging
+`src/utsu_core/authsvc/rbac.py` is unmounted legacy code and is not part of the authorization model. Do not import or
+mount its router alongside the manifest-backed permission catalogue.
 
-**Integration:**
-```python
-from utsu_core.authsvc.rbac import Permission, require_permission
-
-@app.get("/api/admin/audit")
-def view_audit(uid: str = Depends(require_permission(Permission.ADMIN_VIEW_AUDIT))):
-    return audit_logs()
-```
-
-#### 3. Updated AuthSvc
-**File:** `src/utsu_core/authsvc/__init__.py` (modified)
-
-Now includes RBAC module in the application.
+#### 3. AuthSvc
+`create_auth_app` assembles the auth, admin, audit, role-administration and internal-service modules. It supplies the
+active role and permission catalogues from the selected manifests; it does not mount the legacy `authsvc/rbac.py`
+router.
 
 ---
 

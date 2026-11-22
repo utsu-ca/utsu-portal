@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, os.path.dirname(__file__))
 from utsu_core import create_app  # noqa: E402
 from utsu_core.mailer import OutboxMailer, SMTPMailer  # noqa: E402
+from utsu_core.pagination import PageOrder, paginate_store
 from utsu_core.settings import Settings  # noqa: E402
 from utsu_core.store import ChunkingStore, MemoryStore, SQLiteStore, SQLStore, open_store  # noqa: E402
 
@@ -43,6 +44,53 @@ def test_store_contract(kind, tmp_path):
     s.delete("c", "a")
     s.delete("c", "a")
     assert s.get("c", "a") is None and s.get("d", "a")["n"] == 9
+
+
+@pytest.mark.parametrize("kind", ["memory", "sqlite", "sql", "chunk"])
+def test_store_keyset_pages_preserve_order_filters_and_writes(kind, tmp_path):
+    store = make(kind, tmp_path)
+    store.put("orders", "old", {"id": "old", "uuid": "u1", "created_at": 10})
+    store.put("orders", "new", {"id": "new", "uuid": "u1", "created_at": 20})
+    store.put("orders", "other", {"id": "other", "uuid": "u2", "created_at": 30})
+    ordering = (PageOrder("created_at", float, descending=True), PageOrder("id", str))
+
+    first, cursor = paginate_store(
+        store, "orders", "", 1, ordering, equals={"uuid": "u1"}
+    )
+    assert [row["id"] for row in first] == ["new"] and cursor
+
+    store.put("orders", "middle", {"id": "middle", "uuid": "u1", "created_at": 15})
+    second, next_cursor = paginate_store(
+        store, "orders", cursor, 1, ordering, equals={"uuid": "u1"}
+    )
+    assert [row["id"] for row in second] == ["middle"] and next_cursor
+
+    final, next_cursor = paginate_store(
+        store, "orders", next_cursor, 1, ordering, equals={"uuid": "u1"}
+    )
+    assert [row["id"] for row in final] == ["old"] and next_cursor is None
+
+    store.delete("orders", "middle")
+    remaining = store.page("orders", order_by=ordering, after=None, limit=10, equals={"uuid": "u1"})
+    assert [row["id"] for row in remaining] == ["new", "old"]
+
+
+@pytest.mark.parametrize("kind", ["memory", "sqlite", "sql", "chunk"])
+def test_store_keyset_pages_filter_nested_fields(kind, tmp_path):
+    store = make(kind, tmp_path)
+    store.put("threads", "a", {"id": "a", "metadata": {"board": "general"}, "last_at": 2})
+    store.put("threads", "b", {"id": "b", "metadata": {"board": "council"}, "last_at": 3})
+    ordering = (PageOrder("last_at", int, descending=True), PageOrder("id", str))
+
+    page = store.page(
+        "threads",
+        order_by=ordering,
+        after=None,
+        limit=10,
+        equals={"metadata.board": "general"},
+    )
+
+    assert [row["id"] for row in page] == ["a"]
 
 
 def test_chunking_large_values_roundtrip():

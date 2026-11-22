@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import re
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from ...context import Context
 from ...contracts import NotificationType, SubmissionPolicy
+from ...pagination import PageOrder, paginate_store
+from ...permissions import PERM_AGM_CHECKIN, PERM_AGM_REGISTRATIONS
 from ...services.exports import csv_response
 from ...services.forms import register_form_resource
 from ...services.submissions import register_submission_policy
@@ -57,8 +59,8 @@ class AgmModule:
         zoom_redirect_uris = ctx.plugin_setting("agm", "zoom_redirect_uris")
         zoom_url = ctx.plugin_setting("agm", "zoom_url")
         zoom_sso_url = ctx.plugin_setting("agm", "zoom_sso_url")
-        verified, admin = ctx.require_rostered(), ctx.require_role("checkin")
-        agm_admin = ctx.require_role("agm_admin")
+        verified, admin = ctx.require_rostered(), ctx.require_permission(PERM_AGM_CHECKIN)
+        agm_admin = ctx.require_permission(PERM_AGM_REGISTRATIONS)
 
         sso = ctx.services.get("sso")
         if sso and zoom_client_secret:  # Zoom may only sign on registrants who passed the separate online ID check
@@ -132,19 +134,27 @@ class AgmModule:
                                 else f"Already checked in: {u['preferred_name']} {u['last_name']}")}
 
         @r.get("/admin/agm/attendance")
-        def attendance(_: dict = admin):
-            return S.list("agm_attendance")
+        def attendance(cursor: str = Query("", max_length=2048), limit: int = Query(100, ge=1, le=200),
+                       _: dict = admin):
+            page, next_cursor = paginate_store(
+                S, "agm_attendance", cursor, limit, (PageOrder("uuid", str),)
+            )
+            return {"items": page, "next_cursor": next_cursor}
 
         @r.get("/admin/agm/rsvps")
-        def registrations(cursor: str = "", limit: int = 100, _: dict = agm_admin):
+        def registrations(cursor: str = Query("", max_length=2048), limit: int = 100, _: dict = agm_admin):
             if not 1 <= limit <= 200:
                 raise HTTPException(422, "limit must be between 1 and 200")
-            submissions = sorted(
-                (s for s in submissions_service.submissions("agm_rsvp") if s["id"] > cursor),
-                key=lambda s: s["id"],
+            submissions = submissions_service.page_submissions(
+                "agm_rsvp",
+                order_by=(PageOrder("id", str),),
+                after=(cursor,) if cursor else None,
+                limit=limit + 1,
             )
+            has_more = len(submissions) > limit
+            submissions = submissions[:limit]
             result = []
-            for s in submissions[:limit]:
+            for s in submissions:
                 uid = s["uuid"]
                 user, account = ctx.identity.user(uid), ctx.identity.account(uid)
                 if user is None or account is None:
@@ -163,7 +173,7 @@ class AgmModule:
                     "roster_reason": (check or {}).get("reason", "roster check unavailable"),
                     "checked_in": S.get("agm_attendance", uid) is not None,
                 })
-            return {"items": result, "next_cursor": result[-1]["id"] if len(submissions) > limit else None}
+            return {"items": result, "next_cursor": result[-1]["id"] if has_more else None}
 
         @r.get("/admin/agm/rsvps.csv")
         def export_registrations(actor: dict = agm_admin):

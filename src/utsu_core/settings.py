@@ -72,8 +72,9 @@ class Settings:
     sap_review_enabled: bool = False  # experimental review; not a substitute for the committee process
     redis_url: str | None = None  # shared realtime bus + rate limits across replicas; in-process when unset
     data_key: str | None = None  # Fernet key(s), comma separated, for encrypting scans/receipts/audit; derived from secret if unset
-    rate_limit_auth: int = 30  # requests per window per client IP on auth/recovery/token endpoints (0 disables)
+    rate_limit_auth: int = 30  # requests per window per client IP on auth/recovery/token/mail endpoints (0 disables)
     rate_window: int = 60
+    mail_recipient_rate_limit: int = 5  # queue/retry requests per recipient per rate window (0 disables)
     max_body_bytes: int = 8_000_000
     hsts: bool = True
     anchor: str = "none"  # none | local | ots | http | evm | pkg.module:factory (see anchor.py)
@@ -132,7 +133,9 @@ class Settings:
                    receipt_cold_remote=env("PORTAL_RECEIPT_COLD_REMOTE"),
                    receipt_archive_enabled=env("PORTAL_RECEIPT_ARCHIVE_ENABLED", "0") == "1",
                    redis_url=env("PORTAL_REDIS_URL"), data_key=env("PORTAL_DATA_KEY"),
-                   rate_limit_auth=int(env("PORTAL_RATE_LIMIT_AUTH", "30")), hsts=env("PORTAL_HSTS", "1") != "0",
+                   rate_limit_auth=int(env("PORTAL_RATE_LIMIT_AUTH", "30")),
+                   mail_recipient_rate_limit=int(env("PORTAL_MAIL_RECIPIENT_RATE_LIMIT", "5")),
+                   hsts=env("PORTAL_HSTS", "1") != "0",
                    anchor=env("PORTAL_ANCHOR", "none"), anchor_url=env("PORTAL_ANCHOR_URL"), anchor_token=env("PORTAL_ANCHOR_TOKEN"),
                    anchor_evm_key=env("PORTAL_ANCHOR_EVM_KEY"),
                    anchor_chain_id=int(env("PORTAL_ANCHOR_CHAIN_ID") or 0) or None,

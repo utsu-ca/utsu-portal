@@ -78,7 +78,8 @@ the trailing slash. `PORTAL_BASE_URL` must be the public portal origin, even whe
 Set the Google credentials, domain list and initial email on the auth issuer only (the auth Deployment in split
 mode); mount the client secret from that platform's secret store. The browser returns to the portal and completes
 sign-in through the existing `/api/auth` ingress. Both applicant email codes and outgoing AGM Zoom SSO remain
-independent.
+independent. Google sign-in start and completion are additionally limited to at most 20 POSTs per client IP and
+rate window; the shared `PORTAL_RATE_LIMIT_AUTH` limit still applies, and setting it to `0` disables both limits.
 
 The initial address must be in an allowed domain, must sign in with Google, and must not already belong to a
 portal account. Once used, the grant is recorded in the auth datastore; changing the configured address cannot
@@ -305,6 +306,7 @@ The identity service (`utsu_core.authsvc`) records everything in a tamper-eviden
 - **Weekly verify** walks the hot chain, checkpoint chain/roots, and archive checksums; results go to `audit_checks` and the log.
 - **Scheduling**: `python -m utsu_core.authsvc maintain [--force]` (k8s `deploy/k8s/maintenance-cronjob.yaml`, Cloud Scheduler, or `POST /api/admin/audit/maintenance/run`). Jobs claim themselves with optimistic locking, so duplicates are safe.
 - Admin API: `/api/admin/audit/{verify,checkpoints,checks,tables,archive/{month},maintenance/run}`.
+  Maintenance is intentionally admin-only because it archives and drops retained log data; auditor access is read-only.
 
 Limits: the HMAC chain cannot stop an attacker holding both the DB and `PORTAL_SECRET`; the external anchor is what covers that. The OTS/HTTP providers, the CronJob and non-SQLite stores are untested against real services.
 
@@ -325,7 +327,7 @@ The auth service is the only issuer of roles (`modules/roles.py`). They are stor
 | `discussion_moderator` | discussion boards and moderation (only when the `discussion` plug-in is enabled) |
 | `elections_admin` | ballots, voter rolls and breaking the seal (only when the `voting` plug-in is enabled) |
 
-Manage with `GET /api/admin/roles`, `GET /api/admin/roles/holders`, `PUT /api/admin/roles {username, roles}` (or the "Admin: roles" screen). Rules: admin only; no self-changes; the target must be a verified account; the last admin cannot be removed; each change is audited with before/after. `PORTAL_ADMIN_EMAILS` only bootstraps the first admin. Two admins demoting each other at the same instant could still leave none; recover by editing the account record directly. Legacy `role: admin` accounts keep working.
+Manage with `GET /api/admin/roles`, `GET /api/admin/roles/holders`, `PUT /api/admin/roles {username, roles}` (or the "Admin: roles" screen). The holders list uses `limit` and `cursor` and returns `items`/`next_cursor`. Rules: admin only; no self-changes; the target must be a verified account; the last admin cannot be removed; each change is audited with before/after. `PORTAL_ADMIN_EMAILS` only bootstraps the first admin. Two admins demoting each other at the same instant could still leave none; recover by editing the account record directly. Legacy `role: admin` accounts keep working.
 
 ### Enforcing roles in the database too
 

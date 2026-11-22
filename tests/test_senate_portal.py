@@ -39,6 +39,7 @@ def test_senate_application_views_recheck_roster_and_enforce_roles():
     page = c.get("/api/admin/senate/applications?limit=1", headers=admin).json()
     assert len(page["items"]) == 1 and page["items"][0]["eligible"] and page["next_cursor"] is None
     assert c.get("/api/admin/senate/applications?limit=201", headers=admin).status_code == 422
+    assert c.get("/api/admin/senate/applications?cursor=%21", headers=admin).status_code == 422
 
 
 def test_seating_requires_preferences_and_publishes_only_consented_names():
@@ -96,6 +97,15 @@ def test_seating_requires_preferences_and_publishes_only_consented_names():
     assert c.post("/api/admin/senate/seating/publish",
                   json={"seed": 42, "inputs_hash": newer["inputs_hash"]}, headers=admin).json()["version"] == 2
     assert c.get("/api/senate/current").json()["seated"][0]["name"] == "Ada Lovelace"
+    first_page = c.get("/api/admin/senate/results?limit=1", headers=admin).json()
+    assert [version["version"] for version in first_page["items"]] == [1]
+    assert first_page["next_cursor"]
+    second_page = c.get("/api/admin/senate/results",
+                        params={"limit": 1, "cursor": first_page["next_cursor"]}, headers=admin).json()
+    assert [version["version"] for version in second_page["items"]] == [2]
+    assert second_page["next_cursor"] is None
+    assert c.get("/api/admin/senate/results?limit=201", headers=admin).status_code == 422
+    assert c.get("/api/admin/senate/results?cursor=%21", headers=admin).status_code == 422
 
 
 def test_faculty_seating_uses_roster_division_not_form_input():

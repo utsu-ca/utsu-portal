@@ -4,10 +4,12 @@ from __future__ import annotations
 import secrets
 import unicodedata
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from ...context import Context, roles_of
+from ...context import Context
+from ...pagination import PageOrder, paginate_page
+from ...permissions import PERM_SAP_APPLICATIONS, PERM_SAP_REVIEW
 from ...security import clean_text
 from .redaction import redact
 from .wfni import QUESTIONS, WeightsError, compute_wfni, parse_weights
@@ -55,10 +57,17 @@ def review_stage(review: dict, now: int) -> str:
     return "in_review" if any("level" in entry or entry["lease_until"] > now for entry in review["reviews"]) else "ready"
 
 
+def emergency_priority(data: dict) -> int:
+    if data.get("bursary_type") != "Living-costs Bursary":
+        return 0
+    return int(EMERGENCY_SUBSIDY in data.get("lc_subsidies", []))
+
+
 def reviewer_view(submission: dict, now: int, *, include_hardship: bool = False) -> dict:
     data, review = submission["data"], submission["sap_review"]
-    emergency = (EMERGENCY_SUBSIDY in data["lc_subsidies"] if "lc_subsidies" in data
-                 else None) if data.get("bursary_type") == "Living-costs Bursary" else False
+    emergency = (
+        EMERGENCY_SUBSIDY in data["lc_subsidies"] if "lc_subsidies" in data else None
+    ) if data.get("bursary_type") == "Living-costs Bursary" else False
     result = {"review_id": review["id"], "stage": review_stage(review, now),
             "amount_requested": data["amount_requested"], "enrolment": data["enrolment"],
             "monthly_income": data["monthly_income"], "monthly_expenses": data["monthly_expenses"],
@@ -117,8 +126,8 @@ class ReviewModule:
     def router(self, ctx: Context) -> APIRouter:
         router = APIRouter(prefix="/api")
         forms = ctx.forms.for_owner("sap")
-        admin = ctx.require_role("sap_admin")
-        reviewer = ctx.require_role("sap_reviewer")
+        admin = ctx.require_permission(PERM_SAP_APPLICATIONS)
+        reviewer = ctx.require_permission(PERM_SAP_REVIEW)
 
         def find_review(review_id: str) -> dict:
             matches = [s for s in forms.submissions("student_aid_bursary")
@@ -144,6 +153,39 @@ class ReviewModule:
         def require_review_enabled() -> None:
             if not ctx.plugin_setting("sap", "sap_review_enabled"):
                 raise HTTPException(503, "experimental student aid review workflow is disabled")
+
+        def ensure_emergency_priority() -> None:
+            migration_id = "sap_review_emergency_priority_v1"
+            if ctx.store.get("schema_migrations", migration_id):
+                return
+            changed = 0
+            for submission in forms.submissions("student_aid_bursary"):
+                review = submission.get("sap_review")
+                if not review or "emergency_priority" in review:
+                    continue
+
+                def add_priority(current: dict | None) -> dict | None:
+                    if not current:
+                        return None
+                    current_review = current.get("sap_review")
+                    if not current_review or "emergency_priority" in current_review:
+                        return None
+                    return {
+                        **current,
+                        "sap_review": {
+                            **current_review,
+                            "emergency_priority": emergency_priority(current["data"]),
+                        },
+                    }
+
+                forms.update_submission("student_aid_bursary", submission["uuid"], add_priority)
+                changed += 1
+            ctx.store.create("schema_migrations", migration_id, {"id": migration_id})
+            if changed:
+                ctx.audit.record(
+                    "system", "sap.review.pagination_migrated", f"forms/student_aid_bursary",
+                    None, {"reviews_updated": changed},
+                )
 
         def reserve(review_id: str, reviewer_id: str, assigned_by: str | None = None) -> dict:
             submission = find_review(review_id)
@@ -189,45 +231,90 @@ class ReviewModule:
                     raise HTTPException(409, "application changed; review it again")
                 if current.get("sap_review"):
                     raise HTTPException(409, "application already in review")
-                return {**current, "sap_review": {"id": review_id, "reviews": [], "wfni": view["wfni"]}}
+                return {
+                    **current,
+                    "sap_review": {
+                        "id": review_id,
+                        "reviews": [],
+                        "wfni": view["wfni"],
+                        "emergency_priority": emergency_priority(current["data"]),
+                    },
+                }
             forms.update_submission("student_aid_bursary", uid, start)
             ctx.audit.record(actor["uuid"], "sap.enqueued", f"user:{uid}", None, {"review_id": review_id})
             return {"review_id": review_id}
 
         @router.get("/sap/queue")
-        def queue(actor: dict = reviewer):
+        def queue(
+            cursor: str = Query("", max_length=2048),
+            limit: int = Query(100, ge=1, le=200),
+            actor: dict = reviewer,
+        ):
             require_review_enabled()
-            rows = []
+            ensure_emergency_priority()
             now = ctx.now()
-            for submission in forms.submissions("student_aid_bursary"):
+
+            def available(submission: dict) -> bool:
                 review = submission.get("sap_review")
                 if not review or not submission.get("sap_review_hardship") or review.get("decision") or has_conflict(submission, actor["uuid"]):
-                    continue
+                    return False
                 if not application_view(ctx, submission)["eligible"]:
-                    continue
+                    return False
                 active = [entry for entry in review["reviews"] if "level" in entry or entry["lease_until"] > now]
                 if (len(active) >= review.get("required_reviews", 2)
                         or any(entry["reviewer"] == actor["uuid"] for entry in active)):
-                    continue
-                rows.append((submission["updated_at"], reviewer_view(submission, now)))
-            rows.sort(key=lambda item: (not item[1]["emergency"], item[0], item[1]["review_id"]))
-            return [row for _, row in rows]
+                    return False
+                return True
+
+            order_by = (
+                PageOrder("sap_review.emergency_priority", int, descending=True),
+                PageOrder("updated_at", float),
+                PageOrder("sap_review.id", str),
+            )
+            submissions, next_cursor = paginate_page(
+                lambda after, page_limit: forms.page_submissions(
+                    "student_aid_bursary", order_by=order_by, after=after, limit=page_limit
+                ),
+                cursor,
+                limit,
+                order_by,
+                predicate=available,
+            )
+            return {"items": [reviewer_view(submission, now) for submission in submissions],
+                    "next_cursor": next_cursor}
 
         @router.get("/sap/my-reviews")
-        def my_reviews(actor: dict = reviewer):
+        def my_reviews(
+            cursor: str = Query("", max_length=2048),
+            limit: int = Query(100, ge=1, le=200),
+            actor: dict = reviewer,
+        ):
             require_review_enabled()
             now = ctx.now()
-            rows = []
-            for submission in forms.submissions("student_aid_bursary"):
+
+            def available(submission: dict) -> bool:
                 review = submission.get("sap_review")
                 if not review or review.get("decision") or not submission.get("sap_review_hardship"):
-                    continue
+                    return False
                 if has_conflict(submission, actor["uuid"]) or not application_view(ctx, submission)["eligible"]:
-                    continue
+                    return False
                 entry = next((e for e in review["reviews"] if e["reviewer"] == actor["uuid"]), None)
                 if entry and ("level" in entry or entry["lease_until"] > now):
-                    rows.append(reviewer_view(submission, now))
-            return sorted(rows, key=lambda row: (row["submitted_hour"], row["review_id"]))
+                    return True
+                return False
+
+            order_by = (PageOrder("updated_at", float), PageOrder("sap_review.id", str))
+            submissions, next_cursor = paginate_page(
+                lambda after, page_limit: forms.page_submissions(
+                    "student_aid_bursary", order_by=order_by, after=after, limit=page_limit
+                ),
+                cursor,
+                limit,
+                order_by,
+                predicate=available,
+            )
+            return {"items": [reviewer_view(submission, now) for submission in submissions],
+                    "next_cursor": next_cursor}
 
         @router.put("/admin/sap/applications/{uid}/review-hardship")
         def prepare_hardship(uid: str, body: ReviewHardshipIn, actor: dict = admin):
@@ -269,7 +356,7 @@ class ReviewModule:
             require_review_enabled()
             account = ctx.identity.account(body.reviewer)
             if not account or account.get("status") != "verified" or not account.get("email_verified") or not (
-                    roles_of(account, ctx.roles) & {"sap_reviewer", "admin"}):
+                    ctx.has_permission(account, PERM_SAP_REVIEW)):
                 raise HTTPException(422, "reviewer must be a verified account with the reviewer role")
             reserve(review_id, body.reviewer, actor["uuid"])
             ctx.audit.record(actor["uuid"], "sap.assigned", f"review:{review_id}", None,
@@ -358,11 +445,33 @@ class ReviewModule:
             return reviewer_view(result, ctx.now())
 
         @router.get("/admin/sap/review-report")
-        def review_report(_: dict = admin):
-            return [{"uuid": s["uuid"], "review_id": s["sap_review"]["id"],
-                     "stage": review_stage(s["sap_review"], ctx.now()), "reviews": s["sap_review"]["reviews"],
-                     "resolution": s["sap_review"].get("resolution"), "decision": s["sap_review"].get("decision")}
-                    for s in forms.submissions("student_aid_bursary") if s.get("sap_review")]
+        def review_report(
+            cursor: str = Query("", max_length=2048),
+            limit: int = Query(100, ge=1, le=200),
+            _: dict = admin,
+        ):
+            now = ctx.now()
+            order_by = (PageOrder("uuid", str), PageOrder("sap_review.id", str))
+            submissions, next_cursor = paginate_page(
+                lambda after, page_limit: forms.page_submissions(
+                    "student_aid_bursary", order_by=order_by, after=after, limit=page_limit
+                ),
+                cursor,
+                limit,
+                order_by,
+                predicate=lambda submission: bool(submission.get("sap_review")),
+            )
+            return {
+                "items": [
+                    {"uuid": submission["uuid"], "review_id": submission["sap_review"]["id"],
+                     "stage": review_stage(submission["sap_review"], now),
+                     "reviews": submission["sap_review"]["reviews"],
+                     "resolution": submission["sap_review"].get("resolution"),
+                     "decision": submission["sap_review"].get("decision")}
+                    for submission in submissions
+                ],
+                "next_cursor": next_cursor,
+            }
 
         @router.put("/admin/sap/applications/{uid}/review-count")
         def set_review_count(uid: str, body: ReviewCountIn, actor: dict = admin):

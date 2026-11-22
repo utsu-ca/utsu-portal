@@ -1,6 +1,6 @@
 <script>
   import { onMount } from "svelte";
-  import { api } from "../../../lib/api.js";
+  import { apiAllPages } from "../../../lib/api.js";
   import { Action } from "../../../lib/action.svelte.js";
   import Status from "../../../components/Status.svelte";
 
@@ -10,7 +10,7 @@
     [club.name, club.category, club.description].some(value => value.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))));
 
   const refresh = () => load.run(async () => {
-    clubs = await api("/clubs/directory");
+    clubs = await apiAllPages("/clubs/directory");
     loaded = true;
   });
   onMount(refresh);

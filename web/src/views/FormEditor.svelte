@@ -1,6 +1,6 @@
 <script>
   import { onDestroy, onMount } from "svelte";
-  import { api } from "../lib/api.js";
+  import { api, apiAllPages } from "../lib/api.js";
   import { Action } from "../lib/action.svelte.js";
   import { openStream } from "../lib/stream.js";
   import Status from "../components/Status.svelte";
@@ -34,7 +34,8 @@
       const form = await api("/admin/forms/" + id);
       rev = form.rev;
       yaml = form.draft_yaml;
-      submissions = (await api(`/admin/forms/${id}/submissions`)).map(s => ({ ...s, newStatus: s.status, note: "" }));
+      submissions = (await apiAllPages(`/admin/forms/${id}/submissions`))
+        .map(s => ({ ...s, newStatus: s.status, note: "" }));
       // realtime sync of edits made by other admins
       events = openStream(`/admin/forms/${id}/events`, {
         onEvent: (type, data) => {

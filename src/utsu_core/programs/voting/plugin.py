@@ -13,13 +13,13 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from utsu_core.contracts import MessageRateLimited, PluginManifest, PluginServices, RegistrationContext
+from utsu_core.permissions import PERM_ELECTIONS_ADMIN
 from utsu_core.programs.discussion.contracts import DiscussionService, TopicKind
 
 from .contracts import MEMBERS, METHODS, THRESHOLDS, VISIBILITIES, BallotSpec, Electorate
 from .record import RECORD_TAG, leaf_hash, merkle_root, record_digest
 from .tally import tally
 
-ADMIN = "elections_admin"
 BALLOT_KIND = "voting-ballot"
 GRACE = 10  # seconds after closing before counting, so votes admitted just before the close are written
 MAX_OPTIONS = 50
@@ -284,7 +284,11 @@ class VotingRuntime:
         return self._ensure_record(ballot, now)
 
     def _ensure_record(self, ballot: dict[str, Any], now: int) -> dict[str, Any]:
-        if ballot["status"] != "closed" or ballot.get("record") or now < int(ballot["closed_at"]) + GRACE:
+        if ballot["status"] != "closed":
+            return ballot
+        if ballot.get("record"):
+            return self._anchor_record(ballot) if not ballot["record"].get("anchor") else ballot
+        if now < int(ballot["closed_at"]) + GRACE:
             return ballot
         ballot_id = ballot["id"]
         votes = self._s.store.list("ballot_votes", ballot=ballot_id)
@@ -317,15 +321,19 @@ class VotingRuntime:
             return stored
         self._s.audit.record("system", "ballot.tallied", f"ballots/{ballot_id}", None,
                              {"digest": digest, "count": len(leaves)}, {"receipts": receipts})
+        return self._anchor_record(stored)
+
+    def _anchor_record(self, ballot: dict[str, Any]) -> dict[str, Any]:
+        record = ballot["record"]
         try:
-            anchor_id = self._s.anchor.submit("ballot-result", digest, {"ballot": ballot_id})
+            anchor_id = self._s.anchor.submit("ballot-result", record["digest"], {"ballot": ballot["id"]})
         except Exception:
-            return stored  # the record stands; anchoring is retried on the next read
+            return ballot
         anchored = self._s.store.update(
-            "ballots", ballot_id,
+            "ballots", ballot["id"],
             lambda current: None if current is None or current["record"].get("anchor") else
             {**current, "record": {**current["record"], "anchor": anchor_id}})
-        return anchored or stored
+        return anchored or ballot
 
     # Reading
 
@@ -334,12 +342,7 @@ class VotingRuntime:
         if not record:
             return None
         anchor_id = record.get("anchor")
-        if anchor_id is None:
-            try:
-                anchor_id = self._s.anchor.submit("ballot-result", record["digest"], {"ballot": ballot["id"]})
-            except Exception:
-                return None
-        return self._s.anchor.status(anchor_id)
+        return self._s.anchor.status(anchor_id) if anchor_id else None
 
     def public(self, ballot: dict[str, Any]) -> dict[str, Any]:
         record = ballot.get("record")
@@ -366,7 +369,7 @@ class VotingRuntime:
 
     def _readable(self, ballot: dict[str, Any], account: Mapping[str, Any]) -> tuple[bool, bool]:
         """(official, eligible); raises LookupError when the account may not see the ballot at all."""
-        official = self._s.auth.has_role(account, ADMIN)
+        official = self._s.auth.has_permission(account, PERM_ELECTIONS_ADMIN)
         eligible = self.eligible(ballot, account)
         topic = ballot.get("topic")
         if not (official or eligible or (topic and self._discussion.can_read(topic, account))):
@@ -579,7 +582,7 @@ class VotingPlugin:
             raise RuntimeError("voting services were not built")
         r = APIRouter(prefix="/api/voting")
         verified = services.auth.require_verified()
-        official = services.auth.require_role(ADMIN)
+        official = services.auth.require_permission(PERM_ELECTIONS_ADMIN)
 
         @r.get("/setup")
         def setup(_a: dict = official):
@@ -590,7 +593,7 @@ class VotingPlugin:
 
         @r.get("/ballots")
         def ballots(_a: dict = official):
-            rows = [runtime.public(runtime.advance(row["id"])) for row in services.store.list("ballots")]
+            rows = [runtime.public(row) for row in services.store.list("ballots")]
             rows.sort(key=lambda row: int(row["created_at"] or 0), reverse=True)
             return {"ballots": rows}
 

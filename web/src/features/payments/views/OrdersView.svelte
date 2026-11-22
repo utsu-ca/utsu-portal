@@ -2,11 +2,11 @@
   import { onMount } from "svelte";
   import Status from "../../../components/Status.svelte";
   import { Action } from "../../../lib/action.svelte.js";
-  import { api } from "../../../lib/api.js";
+  import { api, apiAllPages } from "../../../lib/api.js";
 
   const load = new Action(), pay = new Action();
   let orders = $state([]);
-  const refresh = () => load.run(async () => { orders = await api("/orders"); });
+  const refresh = () => load.run(async () => { orders = await apiAllPages("/orders"); });
   onMount(refresh);
   const checkout = order => pay.run(async () => {
     const { url } = await api(`/orders/${order.id}/checkout`, { method: "POST" });
