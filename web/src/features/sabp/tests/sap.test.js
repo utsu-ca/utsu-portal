@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import SapAdminView from "../views/SapAdminView.svelte";
+import SapAdminView from "../../../../../src/sabp/frontend/views/SapAdminView.svelte";
 
-vi.mock("../../../lib/api.js", async importOriginal => ({
+vi.mock("@utsu/portal", async importOriginal => ({
   ...(await importOriginal()),
   api: vi.fn(),
   apiAllPages: vi.fn(),
   downloadReport: vi.fn(),
 }));
-import { api, apiAllPages } from "../../../lib/api.js";
+import { api, apiAllPages } from "@utsu/portal";
 
 afterEach(() => { cleanup(); api.mockReset(); apiAllPages.mockReset(); vi.restoreAllMocks(); });
 

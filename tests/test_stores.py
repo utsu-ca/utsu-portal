@@ -93,6 +93,19 @@ def test_store_keyset_pages_filter_nested_fields(kind, tmp_path):
     assert [row["id"] for row in page] == ["a"]
 
 
+def test_relational_page_index_rejects_oversized_keys(tmp_path):
+    store = SQLStore(f"sqlite:///{tmp_path}/large-page-key.db")
+    store.put("records", "one", {"id": "one", "value": "x" * 700})
+
+    with pytest.raises(ValueError, match="relational index size limit"):
+        store.page(
+            "records",
+            order_by=(PageOrder("value", str),),
+            after=None,
+            limit=10,
+        )
+
+
 def test_chunking_large_values_roundtrip():
     s = ChunkingStore(Capped(), 300)
     big = "é" * 2000

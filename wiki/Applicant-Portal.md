@@ -48,7 +48,7 @@ hashes, so it must stay stable.
   roster CSVs do not contain email addresses.
 
 ## Forms
-YAML definitions (see `src/utsu_core/forms/` for the Senate, SABP and AGM examples) are validated strictly (unknown
+YAML definitions (see `src/{senate,sabp,agm}/forms/` for the bundled examples) are validated strictly (unknown
 keys rejected, `show_if` conditionals, types `text textarea email number date select radio multiselect checkbox info`).
 Each definition has an integer `version` and a content hash. Published versions are immutable: saving or publishing a
 changed definition under an already-published version is a `409` ("bump the version"). Bundled forms are checked the
@@ -116,9 +116,15 @@ Large collections accept `limit` (default 100, maximum 200) and an opaque `curso
 `cursor`; continue with the returned `next_cursor` until it is `null`. Standard responses contain `items` and
 `next_cursor`; discussion board/topic responses retain their existing metadata and add `next_cursor` beside
 `boards` or `topics`. This applies to payment orders, role holders, AGM attendance, club listings and ledgers,
-discussion boards and topics, SAP review lists and reports, Senate result history, and admin form submissions.
+AGM registrations, finance banking, discussion boards and topics, SAP applications/review lists/reports, Senate
+result history, and admin form submissions.
 The portal screens fetch successive bounded pages to preserve their existing full-list views. The audit list uses
 `before_seq` as its cursor and bounds filter lengths and page size.
+
+Relational stores build a sort projection on first use for each collection/order/filter shape, then maintain it as
+documents change; the initial request performs a one-time backfill. Discussion topics also receive a one-time
+thread-metadata backfill for board and pin ordering. Firestore uses native ordered queries and backfills casefold
+sort fields once when needed.
 
 ## Extending
 A module is an object with `name` and `router(ctx)`; pass it via `create_app(extra_modules=(...))`. `ctx` provides
@@ -195,11 +201,15 @@ be side-effect free because optimistic retries may call them again. Register eac
 - **Edit public pages.** Portal administrators can open **Admin mode → Administration → Page content**, select Home or an existing program page, edit the title, blurb and sections, then preview and publish. Use one paragraph or list item per line. Program titles and blurbs also update the home cards. Changes are audited and appear when visitors next load the portal; no rebuild is needed after the editor is deployed. If someone publishes first, keep a copy of your draft text and reload before reapplying your edits. Existing copy is the default until edited. This editor changes plain text, not Svelte templates, forms, eligibility rules, or the Git repository's wiki files.
 - **Icons and the section sidecar.** Each main category has an icon (Noto Emoji, monochrome so it takes the menu colour; a 4 KB subset of the font in `web/src/assets`, SIL OFL, built into the static files because the CSP allows only same-origin fonts). When the sidebar is collapsed to a rail only the icons show, the category being read is highlighted, and choosing a group icon opens the menu. On screens at least 80rem wide a second sidecar to the right of the content, "In this section", lists the parts of the current program page and the other pages and actions of its section.
 - **Admin mode.** Staff (anyone with a role) get an "Enter admin mode" button at the bottom of the sidebar. Only in that mode do staff tools appear (SABP review and admin, finance portal, Senate seating, club reviews, form editor, identity checks, roles, roster), and the page switches to the admin colours. It is a client-side convenience: the server enforces each route's permission on every request. Roles grant permissions; the `admin` role remains the explicit superuser grant.
-- **Branding and theme.** `theme.json` and the logos live in `src/utsu_core/branding/` and are served at `/branding`, uncached, so edits show on the next page load without rebuilding. To use your own, point `PORTAL_BRANDING_DIR` at a folder with the same layout. `theme.json` sets `name`, `logo`, `favicon`, `colors.user` (`accent`, `accentHover`, `chrome`, `page`), `colors.admin` (`accent`, `accentHover`, `chrome`) and `copyright` (`holder`, `startYear`). Colours must be hex values and files bare names; anything else is ignored. Every page ends with a copyright line built from it.
+- **Branding and theme.** `theme.json` and the logos live in `src/branding/` and are served at `/branding`, uncached, so edits show on the next page load without rebuilding. To use your own, point `PORTAL_BRANDING_DIR` at a folder with the same layout. `theme.json` sets `name`, `logo`, `favicon`, `colors.user` (`accent`, `accentHover`, `chrome`, `page`), `colors.admin` (`accent`, `accentHover`, `chrome`) and `copyright` (`holder`, `startYear`). Colours must be hex values and files bare names; anything else is ignored. Every page ends with a copyright line built from it.
 - **Loading.** Every view is a separate lazily loaded chunk with a hashed file name, so a program's code is downloaded when it is first opened and cached independently of the others.
 - **Feature ownership.** Program views, components, state and tests live under `web/src/features/{agm,clubs,sabp,senate}/`.
-  Authentication/session, navigation, layout, branding and generic form rendering remain shared. The banking UI
-  retains its SABP compatibility location but reads shared profile status independently of session startup; emailed re-verification links and the
-  action-needed prompt retain their existing workflow.
-- The front end is a Svelte 5 app in `web/` (Vite, Tailwind CSS v4, Vitest). It is built into `src/utsu_core/static` and the build is **committed**, so `pip install` and the Docker image need no Node. Pages: `index.html` (the portal), `checkin.html`, `finance.html` (the financial controller's banking portal) and `sso.html`. After changing anything under `web/`, run `npm install` once, then `npm test` and `npm run build` in `web/`, and commit the result. The CSP forbids CDNs, inline scripts and inline styles; the build emits only same-origin module scripts and a stylesheet. Components: `.card`, `button.primary|secondary|danger`, `.err`, `.ok`, `.badge`, `.row`, `.banner-ok|warn` (check-in result), `.banner-action` (action needed), `.banner-admin`.
+  Their menu actions and view loaders live with each feature; the shared navigation shows actions only when the program is enabled.
+  Public information pages remain available when a program is disabled, but Senate results are loaded only when Senate is enabled.
+  Authentication/session, navigation, layout, branding and generic form rendering remain shared. The shared banking UI
+  is under `web/src/features/profile/`, with a SABP-owned adapter for its legacy endpoint. It reads profile status independently
+  of session startup; emailed re-verification links and the action-needed prompt retain their existing workflow.
+- The front end is a Svelte 5 app in `web/` (Vite, Tailwind CSS v4, Vitest). It is built into `src/core/utsu_core/static` and the build is **committed**, so `pip install` and the Docker image need no Node. Pages: `index.html` (the portal), `checkin.html`, `finance.html` (the financial controller's banking portal) and `sso.html`. After changing anything under `web/`, run `npm install` once, then `npm test` and `npm run build` in `web/`, and commit the result. The CSP forbids CDNs, inline scripts and inline styles; the build emits only same-origin module scripts and a stylesheet. Components: `.card`, `button.primary|secondary|danger`, `.err`, `.ok`, `.badge`, `.row`, `.banner-ok|warn` (check-in result), `.banner-action` (action needed), `.banner-admin`.
+- `npm run build:core` creates a separate `web/.core-dist/` without program contributions or the AGM and SABP
+  standalone pages. It does not replace the committed full-portal build or change what the backend serves.
 - The front end stays same-origin with the API, which keeps the token/CSP/SSO model simple.

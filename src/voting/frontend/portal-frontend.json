@@ -1,0 +1,9 @@
+{
+  "programs": [{
+    "id": "voting",
+    "directory": ".",
+    "dependencies": ["discussion"],
+    "views": true,
+    "panels": true
+  }]
+}

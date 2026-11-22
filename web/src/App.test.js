@@ -4,8 +4,9 @@ import App from "./App.svelte";
 import { go, nav } from "./lib/nav.svelte.js";
 import { session, setAdminMode } from "./lib/session.svelte.js";
 import { layout } from "./lib/layout.svelte.js";
+import { plugins } from "./lib/plugins.svelte.js";
 import { applyTheme, theme } from "./lib/theme.svelte.js";
-import { bankingStatus, clearBankingStatus } from "./features/sabp/state/banking.svelte.js";
+import { bankingStatus, clearBankingStatus } from "./features/profile/state/banking.svelte.js";
 
 vi.mock("./lib/api.js", async importOriginal => ({ ...(await importOriginal()), api: vi.fn() }));
 import { api } from "./lib/api.js";
@@ -16,7 +17,7 @@ const staff = { ...member, roles: ["sap_admin", "senate_admin"] };
 function serve(me) {
   api.mockImplementation(async path => {
     if (path === "/content") return { pages: {} };
-    if (path === "/plugins") return { enabled: [] };
+    if (path === "/plugins") return { enabled: ["sap", "clubs", "agm", "senate"] };
     if (path === "/me") return me;
     if (path === "/profile/financial") return { status: "on_file" };
     if (path === "/senate/current") return null;
@@ -34,6 +35,8 @@ beforeEach(() => {
   layout.folded = {};
   session.token = null;
   session.me = null;
+  plugins.enabled = [];
+  plugins.frontend = null;
   clearBankingStatus();
   setAdminMode(false);
   go("home");
@@ -42,6 +45,24 @@ beforeEach(() => {
 afterEach(() => { cleanup(); api.mockReset(); });
 
 describe("signed out", () => {
+  it("does not load Senate results when that program is disabled", async () => {
+    render(App);
+    await screen.findByText(/Learn more about the/);
+    await fireEvent.click(within(menu()).getByRole("button", { name: "Senate" }));
+    await screen.findByRole("heading", { name: "Your actions" });
+    expect(screen.queryByRole("heading", { name: "Published Senate results" })).not.toBeInTheDocument();
+    expect(api.mock.calls.some(([path]) => path === "/senate/current")).toBe(false);
+  });
+
+  it("loads the Senate public contribution when the program is enabled", async () => {
+    serve(member);
+    render(App);
+    await waitFor(() => expect(plugins.enabled).toContain("senate"));
+    await fireEvent.click(within(menu()).getByRole("button", { name: "Senate" }));
+    expect(await screen.findByRole("heading", { name: "Published Senate results" })).toBeInTheDocument();
+    expect(await screen.findByText("No results have been published.")).toBeInTheDocument();
+  });
+
   it("offers staff Google sign-in after the email-code and recovery options", async () => {
     api.mockImplementation(async path => {
       if (path === "/auth/google") return { enabled: true };
@@ -403,6 +424,23 @@ describe("signed in", () => {
     expect(await screen.findByText(/Re-enter your details below and upload/)).toBeInTheDocument();
   });
 
+  it("hides the banking action banner while the SABP banking view is open", async () => {
+    sessionStorage.setItem("token", "t");
+    session.token = "t";
+    serve(member);
+    const normalResponse = api.getMockImplementation();
+    api.mockImplementation((path, opts) => path === "/profile/financial"
+      ? Promise.resolve({ status: "reverify_requested" })
+      : normalResponse(path, opts));
+    render(App);
+    expect(await screen.findByText("Action needed: we could not verify your banking information.")).toBeInTheDocument();
+    await fireEvent.click(within(menu()).getByRole("button", { name: "Bursaries" }));
+    const actions = (await screen.findByRole("heading", { name: "Your actions" })).closest(".card");
+    await fireEvent.click(within(actions).getByRole("button", { name: "Banking information" }));
+    expect(await screen.findByText(/Open the link in the email we sent you/)).toBeInTheDocument();
+    expect(screen.queryByText("Action needed: we could not verify your banking information.")).not.toBeInTheDocument();
+  });
+
   it("adds the member's buttons under each program, and signs out from the profile group", async () => {
     sessionStorage.setItem("token", "t");
     session.token = "t";
@@ -414,6 +452,8 @@ describe("signed in", () => {
     expect(within(actions).getByRole("button", { name: "Apply for a bursary" })).toBeInTheDocument();
     expect(within(actions).getByRole("button", { name: "Banking information" })).toBeInTheDocument();
     expect(within(actions).queryByRole("button", { name: "Administer applications" })).not.toBeInTheDocument();
+    await fireEvent.click(within(actions).getByRole("button", { name: "Banking information" }));
+    expect(await screen.findByRole("heading", { name: "SABP banking" })).toBeInTheDocument();
     await fireEvent.click(within(menu()).getByRole("button", { name: "Sign out" }));
     await waitFor(() => expect(session.token).toBeNull());
     await waitFor(() => expect(bankingStatus.status).toBeNull());
@@ -427,7 +467,7 @@ describe("signed in", () => {
     render(App);
     await within(menu()).findByRole("button", { name: "Account" });
     await fireEvent.click(within(menu()).getByRole("button", { name: "Account" }));
-    expect(await screen.findByText("Account ID: u1")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Account ID")).toHaveValue("u1");
     await fireEvent.input(screen.getByLabelText("Public username (optional)"), { target: { value: "alias" } });
     await fireEvent.click(screen.getByRole("button", { name: "Save username" }));
     expect(api).toHaveBeenCalledWith("/me/username", { method: "PATCH", body: { username: "alias" } });

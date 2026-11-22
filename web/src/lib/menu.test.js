@@ -3,6 +3,7 @@ import { buildMenu, containsCurrent, findNode, isCurrent, sectionFor } from "./m
 
 const labels = nodes => nodes.map(n => n.label);
 const actions = (menu, id) => labels(findNode(menu, n => n.id === id).items);
+const full = id => ["sap", "clubs", "agm", "senate"].includes(id);
 
 describe("menu structure", () => {
   it("lists the public programs in the requested order, for everyone", () => {
@@ -27,7 +28,7 @@ describe("menu structure", () => {
 });
 
 describe("signing in exposes program functions", () => {
-  const member = buildMenu({ signedIn: true, verified: true });
+  const member = buildMenu({ signedIn: true, verified: true, enabled: full });
 
   it("adds the member's own actions", () => {
     expect(actions(member, "bursaries")).toEqual(["Apply for a bursary", "Banking information"]);
@@ -49,10 +50,10 @@ describe("signing in exposes program functions", () => {
 
   it("shows each staff tool only for its role", () => {
     const has = granted => role => granted.includes(role);
-    const finance = buildMenu({ signedIn: true, verified: true, has: has(["sap_finance"]) });
+    const finance = buildMenu({ signedIn: true, verified: true, has: has(["sap_finance"]), enabled: full });
     expect(actions(finance, "bursaries")).toContain("Finance portal (banking)");
     expect(actions(finance, "bursaries")).not.toContain("Administer applications");
-    const admin = buildMenu({ signedIn: true, verified: true, has: () => true });
+    const admin = buildMenu({ signedIn: true, verified: true, has: () => true, enabled: full });
     expect(actions(admin, "bursaries")).toEqual(expect.arrayContaining(["Review applications", "Administer applications", "Finance portal (banking)"]));
     expect(actions(admin, "senate")).toContain("Administer seating");
     expect(actions(admin, "club-registration")).toContain("Review registrations");
@@ -70,6 +71,12 @@ describe("opt-in plug-ins", () => {
     const menu = buildMenu({ signedIn: true, verified: true, enabled: on(["discussion"]) });
     expect(labels(menu)).toEqual(["Home", "Student Aid", "Clubs", "AGM", "Senate", "Discussions", "Profile"]);
     expect(findNode(menu, n => n.id === "discussions").icon).toBeTruthy();
+  });
+
+  it("hides disabled program actions even for members and staff", () => {
+    const menu = buildMenu({ signedIn: true, verified: true, has: () => true, enabled: id => id === "senate" });
+    for (const id of ["bursaries", "club-finances", "club-registration", "agm"]) expect(actions(menu, id)).toEqual([]);
+    expect(actions(menu, "senate")).toContain("My application");
   });
 
   it("adds the ballots tool for elections officials only when voting runs", () => {
@@ -100,13 +107,13 @@ it("recognises the current view, including its props", () => {
 
 describe("icons", () => {
   it("gives every main category an icon", () => {
-    const menu = buildMenu({ signedIn: true, verified: true });
+    const menu = buildMenu({ signedIn: true, verified: true, enabled: full });
     expect(menu.map(n => [n.label, Boolean(n.icon)])).toEqual([
       ["Home", true], ["Student Aid", true], ["Clubs", true], ["AGM", true], ["Senate", true], ["Profile", true]]);
   });
 
   it("finds the main category that holds the current view, however deep", () => {
-    const menu = buildMenu({ signedIn: true, verified: true });
+    const menu = buildMenu({ signedIn: true, verified: true, enabled: full });
     const clubs = findNode(menu, n => n.id === "clubs");
     expect(containsCurrent(clubs, { name: "program", props: { program: "club-finances" } })).toBe(true);
     expect(containsCurrent(clubs, { name: "program", props: { program: "agm" } })).toBe(false);
@@ -119,7 +126,7 @@ describe("section links", () => {
   const current = (name, props = {}) => ({ name, props });
 
   it("lists the sibling pages of a group, with the current page's actions beneath it", () => {
-    const menu = buildMenu({ signedIn: true, verified: true });
+    const menu = buildMenu({ signedIn: true, verified: true, enabled: full });
     const section = sectionFor(menu, current("program", { program: "bursaries" }));
     expect(section.title).toBe("Student Aid");
     expect(section.sections.map(s => [s.node.label, s.current, s.children.map(c => c.label)])).toEqual([
@@ -129,7 +136,7 @@ describe("section links", () => {
   });
 
   it("lists a single-page program's actions", () => {
-    const menu = buildMenu({ signedIn: true, verified: true });
+    const menu = buildMenu({ signedIn: true, verified: true, enabled: full });
     const section = sectionFor(menu, current("program", { program: "agm" }));
     expect(section.title).toBe("AGM");
     expect(section.sections[0].children.map(c => c.label)).toEqual(["RSVP for the AGM", "My invitation"]);

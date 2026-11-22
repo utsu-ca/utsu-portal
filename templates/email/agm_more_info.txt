@@ -1,1 +1,1 @@
-../../src/utsu_core/mail/templates/historical/agm_more_info.txt
+../../src/core/utsu_core/mail/templates/historical/agm_more_info.txt

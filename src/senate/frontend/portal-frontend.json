@@ -1,0 +1,11 @@
+{
+  "programs": [
+    {
+      "id": "senate",
+      "directory": ".",
+      "navigation": true,
+      "views": true,
+      "publicViews": true
+    }
+  ]
+}

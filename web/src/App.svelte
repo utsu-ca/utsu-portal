@@ -4,19 +4,20 @@
   import RelatedPanel from "./components/RelatedPanel.svelte";
   import Sidebar from "./components/Sidebar.svelte";
   import Status from "./components/Status.svelte";
-  import BankingStatus from "./features/sabp/components/BankingStatus.svelte";
+  import BankingStatus from "./features/profile/components/BankingStatus.svelte";
   import { currentMenu } from "./lib/appmenu.svelte.js";
   import { start } from "./lib/boot.js";
   import { layout } from "./lib/layout.svelte.js";
   import { go, nav } from "./lib/nav.svelte.js";
   import { contentLoad, loadContent } from "./lib/content.svelte.js";
-  import { loadPlugins, pluginLoad } from "./lib/plugins.svelte.js";
+  import { loadPlugins, missingFrontendPrograms, pluginLoad, plugins } from "./lib/plugins.svelte.js";
   import { applyMode, session, setAdminMode, signOut } from "./lib/session.svelte.js";
   import { theme } from "./lib/theme.svelte.js";
   import { views } from "./lib/views.js";
 
   const menu = $derived(currentMenu());
   const loader = $derived(views[nav.name]);
+  const missingPrograms = $derived(missingFrontendPrograms(plugins.enabled, undefined, plugins.frontend));
 
   onMount(() => {
     applyMode();
@@ -46,6 +47,12 @@
       <div class="banner-admin" role="status">Admin mode: staff tools are shown. Actions here affect real records.</div>
     {/if}
     <BankingStatus />
+    {#if missingPrograms.length}
+      <div class="card" role="alert">
+        Some enabled programs are missing from this portal build: {missingPrograms.join(", ")}.
+        Contact the portal administrator.
+      </div>
+    {/if}
     {#if contentLoad.error && ["home", "program"].includes(nav.name)}
       <div class="card">
         <p>The latest page copy could not be loaded.</p>

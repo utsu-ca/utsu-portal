@@ -3,8 +3,8 @@
 > Historical batch reference only; the commands below have been removed. The portal review workflow is experimental;
 > see [README](../README.md) for current capabilities and limitations.
 
-`src/utsu_core/programs/sap/program.py` processes the SABP form export (Stages 1-3 of SAS-002). The financial-need scoring is in
-`src/utsu_core/programs/sap/wfni.py`. The program verifies applicants, scores them, cuts anonymized review batches for the
+`src/sabp/program.py` processes the SABP form export (Stages 1-3 of SAS-002). The financial-need scoring is in
+`src/sabp/wfni.py`. The program verifies applicants, scores them, cuts anonymized review batches for the
 committee, merges reviewer ratings, and records final decisions. **Disbursement is not tracked.**
 
 ```powershell
@@ -65,6 +65,9 @@ capped **circumstances** bonus (multi-select, "n/a" / "none" excluded).
 
 - Weights are in `data/wfni_weights.csv` (`field,answer,points`). **Edit and re-run; no code change.** The file is
   re-read when it changes and its SHA-256 is saved in `sap_run.json` (`wfni_weights_sha256`).
+  For historical batch processing outside a checkout, set `SABP_WFNI_WEIGHTS_FILE` to the absolute path of the
+  approved CSV. A missing, empty or invalid file fails rather than falling back to another policy. The live review
+  workflow uses its separately saved weights.
 - Answers are matched to the form's option text **exactly**, ignoring case, spacing and "to" vs "-". Only an answer
   written with a trailing `*` in the weights file matches by its start (the long option is `A negative amount*`). Any
   other answer is unknown and flags `wfni_incomplete`. `circumstances` has two rows: `per_answer` and `cap`.

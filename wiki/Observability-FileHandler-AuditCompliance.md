@@ -804,8 +804,8 @@ Why separate tables for audit, access control, and lineage?
 
 | File | Purpose |
 |------|---------|
-| `src/utsu_core/observability/__init__.py` | Unified observability stack (Jaeger, Prometheus, JSON logging) |
-| `src/utsu_core/filesvc/__init__.py` | Cloud-agnostic file handler (S3, GCS, Azure, FTP, local) |
-| `src/utsu_core/authsvc/service_auth.py` | Service-to-service authentication (JWT tokens, rate limiting) |
-| `src/utsu_core/authsvc/audit_compliance.py` | Audit logging schema and compliance query builders |
+| `src/core/utsu_core/observability/__init__.py` | Unified observability stack (Jaeger, Prometheus, JSON logging) |
+| `src/core/utsu_core/filesvc/__init__.py` | Cloud-agnostic file handler (S3, GCS, Azure, FTP, local) |
+| `src/core/utsu_core/authsvc/service_auth.py` | Service-to-service authentication (JWT tokens, rate limiting) |
+| `src/core/utsu_core/authsvc/audit_compliance.py` | Audit logging schema and compliance query builders |
 

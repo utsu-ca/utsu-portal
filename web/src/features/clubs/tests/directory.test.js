@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import ClubDirectoryView from "../views/ClubDirectoryView.svelte";
+import ClubDirectoryView from "../../../../../src/clubs/frontend/views/ClubDirectoryView.svelte";
 
 const { apiMock, apiAllPagesMock } = vi.hoisted(() => ({ apiMock: vi.fn(), apiAllPagesMock: vi.fn() }));
-vi.mock("../../../lib/api.js", async importOriginal => ({
+vi.mock("@utsu/portal", async importOriginal => ({
   ...(await importOriginal()), api: apiMock, apiAllPages: apiAllPagesMock,
 }));
-import { api, apiAllPages } from "../../../lib/api.js";
+import { api, apiAllPages } from "@utsu/portal";
 
 beforeEach(() => {
   apiAllPages.mockImplementation(async (path, collection = "items") => {

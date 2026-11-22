@@ -26,7 +26,9 @@ def test_a_spec_describes_its_table(spec: ProgramSpec):
 
 def imported_packages(package: str, recursive: bool = True) -> set[str]:
     found = set()
-    paths = (SRC / package).rglob("*.py") if recursive else (SRC / package).glob("*.py")
+    root = SRC / package
+    assert root.is_dir(), root
+    paths = root.rglob("*.py") if recursive else root.glob("*.py")
     for path in paths:
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if isinstance(node, ast.ImportFrom) and node.module:
@@ -36,14 +38,15 @@ def imported_packages(package: str, recursive: bool = True) -> set[str]:
     return found
 
 
-@pytest.mark.parametrize("program", ["senate", "sap", "agm"])
+@pytest.mark.parametrize("program", ["senate", "sabp", "agm"])
 def test_a_program_depends_on_the_core_and_not_on_the_other_programs(program):
-    others = {"senate", "sap", "agm"} - {program}
-    for module in imported_packages(f"utsu_core/programs/{program}"):
-        assert not any(module.startswith(f"utsu_core.programs.{other}") for other in others), module
+    others = {"senate", "sabp", "agm"} - {program}
+    for module in imported_packages(program):
+        assert not any(module == other or module.startswith(f"{other}.") for other in others), module
+        assert not any(module.startswith(f"utsu_core.programs.{other}") for other in {"senate", "sap", "agm"}), module
         assert not module.startswith("utsu_core.mail"), module
 
 
 def test_shared_processing_engine_does_not_import_programs():
-    for module in imported_packages("utsu_core", recursive=False):
+    for module in imported_packages("core/utsu_core", recursive=False):
         assert not module.startswith(("utsu_core.programs", "utsu_core.mail")), module

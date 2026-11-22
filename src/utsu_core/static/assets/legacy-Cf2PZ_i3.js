@@ -1,1 +1,0 @@
-import{ot as e}from"./api-BWt81897.js";e();

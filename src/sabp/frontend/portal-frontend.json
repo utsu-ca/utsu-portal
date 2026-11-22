@@ -1,0 +1,9 @@
+{
+  "programs": [{
+    "id": "sap",
+    "directory": ".",
+    "menu": ["bursaryActions"],
+    "views": true,
+    "standalone": ["finance"]
+  }]
+}

@@ -21,16 +21,36 @@ REDIR = "https://zoom.example/sso/cb"
 
 def test_agm_client_registration_does_not_depend_on_router_order():
     from utsu_core.bootstrap import build_app
-    from utsu_core.modules.sso import SSOModule
-    from utsu_core.programs.agm.module import AgmModule
+    from utsu_core.permissions import permission_catalogue_for, role_permissions_for
+    from utsu_core.plugin_host import load_modules
+    from utsu_core.role_catalogue import role_catalogue_for
+    from utsu_core.settings import plugin_settings_for
 
+    settings = Settings(
+        secret="s" * 32,
+        enabled_plugins=("agm",),
+        zoom_client_secret="zsecret",
+        zoom_redirect_uris=(REDIR,),
+    )
+    manifests, modules = load_modules("local", settings.enabled_plugins)
+    selected_modules = tuple(module for module in modules if module.name in {"agm", "sso"})
     app = build_app(
-        Settings(secret="s" * 32, zoom_client_secret="zsecret", zoom_redirect_uris=(REDIR,)),
-        None, OutboxMailer(), (AgmModule(), SSOModule()), seed=False, ui=False,
+        settings,
+        None,
+        OutboxMailer(),
+        tuple(reversed(selected_modules)),
+        seed=False,
+        ui=False,
+        form_owners={form_id: manifest.id for manifest in manifests for form_id in manifest.form_ids},
+        role_catalogue=role_catalogue_for(manifests),
+        permission_catalogue=permission_catalogue_for(manifests),
+        role_permissions=role_permissions_for(manifests),
+        plugin_settings=plugin_settings_for(manifests, settings),
     )
     client = app.state.ctx.services["sso"].clients["zoom"]
     assert client.redirect_uris == (REDIR,)
     assert client.eligibility({"uuid": "not-rostered"}, {}) == "not on the student roster"
+    assert "zoom_client_secret" not in app.state.ctx.plugin_settings["agm"]
 
 
 @pytest.fixture
@@ -98,6 +118,8 @@ def test_admin_registration_report_and_standalone_verification(env):
                    headers=h["boss"]).json()
     assert len(second["items"]) == 1 and second["next_cursor"] is None
     assert first["items"][0]["uuid"] != second["items"][0]["uuid"]
+    assert c.get("/api/admin/agm/rsvps?limit=201", headers=h["boss"]).status_code == 422
+    assert c.get("/api/admin/agm/rsvps?cursor=%21", headers=h["boss"]).status_code == 422
     ada_entry = next(item for item in first["items"] + second["items"] if item["name"] == "Ada Test")
     assert ada_entry["accessibility"] == "=Needs a quiet space" and ada_entry["proxy_name"] == "Proxy Person"
     assert c.get("/api/admin/agm/rsvps?limit=0", headers=h["boss"]).status_code == 422

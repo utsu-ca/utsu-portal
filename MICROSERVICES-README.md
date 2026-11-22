@@ -23,7 +23,7 @@ This implementation extends the UTSU Portal with:
 ### Source Code (3 files)
 
 #### 1. Email Microservice
-**File:** `src/utsu_core/mailsvc/__init__.py` (11.5 KB)
+**File:** `src/core/utsu_core/mailsvc/__init__.py` (11.5 KB)
 
 Standalone email service with:
 - Email queueing API
@@ -39,12 +39,12 @@ uvicorn utsu_core.mailsvc:create_mail_app --host 0.0.0.0 --port 8080
 ```
 
 #### 2. Permission-backed RBAC
-The active authorization model is composed from `src/utsu_core/permissions.py` and the selected plug-in manifests.
+The active authorization model is composed from `src/core/utsu_core/permissions.py` and the selected plug-in manifests.
 Handlers use `Context.require_permission(...)`; existing account roles continue to grant those permissions, and the
 auth service remains the role issuer. Permission identifiers follow OAuth scope-token syntax, but portal API
 permissions are not issued to OIDC clients as access-token scopes.
 
-`src/utsu_core/authsvc/rbac.py` is unmounted legacy code and is not part of the authorization model. Do not import or
+`src/core/utsu_core/authsvc/rbac.py` is unmounted legacy code and is not part of the authorization model. Do not import or
 mount its router alongside the manifest-backed permission catalogue.
 
 #### 3. AuthSvc

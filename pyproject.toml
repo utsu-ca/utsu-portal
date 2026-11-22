@@ -12,7 +12,7 @@ requires-python = ">=3.12"
 dependencies = ["fastapi>=0.110", "pydantic>=2", "uvicorn", "pyyaml", "cryptography>=50", "segno>=1.6.6", "redis>=5", "google-re2>=1.1", "pyjwt>=2.10.1", "tzdata"]
 
 [project.optional-dependencies]
-dev = ["pytest", "httpx", "fakeredis", "sqlalchemy>=2", "email-validator>=2", "eth-account>=0.13"]
+dev = ["pytest", "httpx", "fakeredis", "sqlalchemy>=2", "email-validator>=2", "eth-account>=0.13", "setuptools>=68", "wheel", "packaging"]
 portal = []  # retained for existing deployment configurations
 container-dev = [
     "httpx",
@@ -47,16 +47,22 @@ authsvc = [
 ]
 payments = ["stripe>=17"]
 
+[tool.setuptools]
+package-dir = {"" = "src", "utsu_core" = "src/core/utsu_core"}
+
+# The standard wheel is core-only. Program packages (agm, sabp, clubs, senate,
+# chat, voting, branding) ship as separate distributions built by
+# tools/build_split_distributions.py; the utsu-portal aggregate installs them.
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["src/core"]
 include = ["utsu_core", "utsu_core.*"]
 
 [tool.setuptools.package-data]
-utsu_core = ["schema/*.sql", "static/*", "static/assets/*", "branding/*", "plugin_manifests/*.json", "mail/templates/historical/*.txt", "mail/templates/historical/*.html", "mail/templates/live/*.txt"]
-"utsu_core.programs.senate" = ["*.sql", "forms/*.yaml"]
-"utsu_core.programs.sap" = ["*.sql", "forms/*.yaml"]
-"utsu_core.programs.agm" = ["*.sql", "forms/*.yaml"]
+utsu_core = ["schema/*.sql", "static/*", "static/assets/*", "plugin_manifests/*.json", "mail/templates/historical/*.txt", "mail/templates/historical/*.html", "mail/templates/live/*.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "src/core"]
+
+[tool.pyright]
+extraPaths = ["src", "src/core"]

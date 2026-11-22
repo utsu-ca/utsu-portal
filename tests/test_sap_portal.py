@@ -249,6 +249,8 @@ def test_sap_application_access_and_encryption():
     assert c.post("/api/admin/roster", json={"csv": roster}, headers=admin).status_code == 200
     assert c.get("/api/me/sap", headers=user).json()["eligible"]
     assert c.get("/api/admin/sap/applications?limit=0", headers=admin).status_code == 422
+    assert c.get("/api/admin/sap/applications?limit=201", headers=admin).status_code == 422
+    assert c.get("/api/admin/sap/applications?cursor=%21", headers=admin).status_code == 422
 
 
 def test_sap_scoring_requires_weights_and_complete_questionnaire():
@@ -446,6 +448,8 @@ def test_finance_controller_flags_failed_validation_and_reviews_the_void_cheque(
     assert c.get("/api/finance/sap/banking", headers=user).status_code == 403  # applicants and other roles are refused
     listing = c.get("/api/finance/sap/banking", headers=finance).json()
     assert [(i["name"], i["status"]) for i in listing["items"]] == [("Ada Lovelace", "on_file")]
+    assert c.get("/api/finance/sap/banking?limit=0", headers=finance).status_code == 422
+    assert c.get("/api/finance/sap/banking?cursor=%21", headers=finance).status_code == 422
     assert c.get("/api/admin/sap/applications", headers=finance).status_code == 403  # banking only
 
     flagged = c.post(path + "/validation-failed", headers=finance)  # the one click

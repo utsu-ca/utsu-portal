@@ -5,7 +5,8 @@
   import { findNode } from "../lib/menu.js";
   import { currentMenu } from "../lib/appmenu.svelte.js";
   import { session } from "../lib/session.svelte.js";
-  import SenatePublicView from "../features/senate/views/SenatePublicView.svelte";
+  import { pluginEnabled } from "../lib/plugins.svelte.js";
+  import { publicViews } from "../lib/public-views.js";
 
   // A program's public page. Signing in adds buttons for what the program lets you do; staff tools appear in admin mode.
   let { program } = $props();
@@ -13,6 +14,7 @@
   const actions = $derived(findNode(currentMenu(), n => n.program === program)?.items || []);
   const signedIn = $derived(!!session.token && !!session.me);
   const verified = $derived(session.me?.status === "verified");
+  const publicView = $derived(pluginEnabled(program) ? publicViews[program] : undefined);
 
   const open = action => (action.href ? (location.href = action.href) : go(action.view, action.props || {}));
 </script>
@@ -37,4 +39,11 @@
   </div>
 {/if}
 
-{#if program === "senate"}<SenatePublicView />{/if}
+{#if publicView}
+  {#await publicView() then module}
+    {@const View = module.default}
+    <View />
+  {:catch}
+    <p class="err" role="alert">This program's public information could not be loaded. Check your connection and try again.</p>
+  {/await}
+{/if}

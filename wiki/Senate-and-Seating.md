@@ -3,7 +3,7 @@
 > Historical batch reference only; the commands below have been removed. See [README](../README.md) for the
 > implemented web workflow.
 
-`src/utsu_core/programs/senate/program.py` verifies Senate applications; `src/utsu_core/programs/senate/seating.py` assigns seats
+`src/senate/program.py` verifies Senate applications; `src/senate/seating.py` assigns seats
 to the verified applicants. Both run with `utsu-senate` (or `utsu-all`).
 
 ```powershell

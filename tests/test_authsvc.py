@@ -108,6 +108,48 @@ def test_split_identity_resolves_changed_username_and_primary_email():
     assert identity.resolve("ada") is None
 
 
+def test_contact_projection_matches_local_and_split_identity():
+    from utsu_core.contracts import ContactSummary
+    from utsu_core.plugin_runtime import _IdentityAdapter
+
+    ac, pc, mail, *_ = make()
+    register(ac, mail, "ada", "ada@x.ca")
+    uid = ac.app.state.ctx.uid("ada")
+    local = _IdentityAdapter(ac.app.state.ctx)
+    remote = _IdentityAdapter(pc.app.state.ctx)
+    expected = ContactSummary(uid, "pending_review", True, "ada@x.ca")
+    assert local.resolve_contact("ada") == expected
+    assert remote.resolve_contact("ada@x.ca") == expected
+    local_account = local.account(uid)
+    assert local_account == remote.account(uid)
+    assert local_account is not None
+    assert local_account["uuid"] == uid
+    assert set(local_account) <= {"uuid", "status", "role", "roles", "email_verified", "backup_session"}
+    assert local.resolve_contact("missing") is None
+    assert remote.resolve_contact("missing") is None
+
+
+def test_club_invitation_resolves_contact_through_split_auth():
+    ac, pc, mail, *_ = make()
+    register(ac, mail, "boss", "boss@x.ca", sn="9999999999", first="Bo", last="Ss")
+    admin = login(ac, mail, "boss")
+    register(ac, mail, "ada", "ada@x.ca")
+    owner = login(ac, mail, "ada")
+    activate(ac, admin, owner)
+    register(ac, mail, "bob", "bob@x.ca", sn="1234567891")
+    member = login(ac, mail, "bob")
+    activate(ac, admin, member)
+    pc.app.state.ctx.identity._cache.clear()
+    created = pc.post("/api/clubs", headers=owner,
+                      json={"name": "Chess Club", "description": "We play chess weekly.", "category": "games"})
+    assert created.status_code == 201
+    invitation = pc.post(f"/api/clubs/{created.json()['id']}/members", headers=owner,
+                         json={"username": "bob@x.ca", "role": "treasurer"})
+    assert invitation.json() == {"status": "pending"}
+    assert mail.outbox[-1][0] == "bob@x.ca"
+    assert len(pc.get("/api/clubs/invitations", headers=member).json()["items"]) == 1
+
+
 def test_portal_cannot_mint_or_replay_tokens():
     ac, pc, mail, *_ = make()
     register(ac, mail, "ada", "ada@x.ca")

@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
-import Finance from "../views/Finance.svelte";
+import Finance from "../../../../../src/sabp/frontend/views/Finance.svelte";
 
-vi.mock("../../../lib/api.js", async importOriginal => ({ ...(await importOriginal()), api: vi.fn(), downloadReport: vi.fn() }));
-import { api, downloadReport } from "../../../lib/api.js";
+vi.mock("@utsu/portal", async importOriginal => ({ ...(await importOriginal()), api: vi.fn(), downloadReport: vi.fn() }));
+import { api, downloadReport } from "@utsu/portal";
 
 const ada = { uuid: "u-ada", name: "Ada Lovelace", status: "on_file", approved: true, awarded_amount: 750, request_expires: null, has_cheque: false };
 const bob = { uuid: "u-bob", name: "Bob Test", status: "reverify_received", approved: true, awarded_amount: 500, request_expires: null, has_cheque: true };

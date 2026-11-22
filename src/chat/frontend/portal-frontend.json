@@ -1,0 +1,7 @@
+{
+  "programs": [{
+    "id": "discussion",
+    "directory": ".",
+    "views": true
+  }]
+}

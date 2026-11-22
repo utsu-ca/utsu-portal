@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readVoidCheque } from "../lib/cheque.js";
+import { readVoidCheque } from "../../profile/lib/cheque.js";
 
 const pdf = (bytes, name = "cheque.pdf") => new File([bytes], name, { type: "application/pdf" });
 

@@ -3,7 +3,7 @@
 > Historical batch reference only; the commands below have been removed. See [README](../README.md) for the
 > implemented web workflow.
 
-`src/utsu_core/programs/agm/program.py` processes the AGM voter RSVP export and does its verification.
+`src/agm/program.py` processes the AGM voter RSVP export and does its verification.
 
 ```powershell
 utsu-agm --agm_file "secrets/RSVP.csv"

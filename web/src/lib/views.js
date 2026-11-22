@@ -1,40 +1,38 @@
-// Every view is its own lazily loaded chunk, so opening one program downloads only that program's code and an
-// update to one program does not invalidate the cached code of the others.
-export const views = {
+import { viewContributions } from "virtual:portal-programs";
+
+const coreViews = {
   account: () => import("../views/AccountView.svelte"),
   adminForms: () => import("../views/AdminForms.svelte"),
   adminRoles: () => import("../views/AdminRoles.svelte"),
   adminContent: () => import("../views/AdminContent.svelte"),
   adminRoster: () => import("../views/AdminRoster.svelte"),
   adminVerifications: () => import("../views/AdminVerifications.svelte"),
-  agm: () => import("../features/agm/views/AgmView.svelte"),
-  agmAdmin: () => import("../features/agm/views/AgmAdminView.svelte"),
-  agmIdQueue: () => import("../features/agm/views/AgmIdQueue.svelte"),
   auth: () => import("../views/AuthView.svelte"),
-  ballot: () => import("../features/voting/views/BallotView.svelte"),
-  banking: () => import("../features/sabp/views/BankingView.svelte"),
-  clubAdmin: () => import("../features/clubs/views/ClubAdminView.svelte"),
-  clubDirectory: () => import("../features/clubs/views/ClubDirectoryView.svelte"),
-  clubFinanceAdmin: () => import("../features/clubs/views/ClubFinanceAdminView.svelte"),
-  clubFinances: () => import("../features/clubs/views/ClubFinancesView.svelte"),
-  clubRegistration: () => import("../features/clubs/views/ClubRegistrationView.svelte"),
-  discussionBoard: () => import("../features/discussion/views/BoardView.svelte"),
-  discussionTopic: () => import("../features/discussion/views/TopicView.svelte"),
-  discussions: () => import("../features/discussion/views/DiscussionsView.svelte"),
-  electionsAdmin: () => import("../features/voting/views/ElectionsAdmin.svelte"),
+  banking: () => import("../features/profile/views/BankingView.svelte"),
   form: () => import("../views/FormView.svelte"),
   formEditor: () => import("../views/FormEditor.svelte"),
   home: () => import("../views/HomeView.svelte"),
-  mySenate: () => import("../features/senate/views/MySenateView.svelte"),
   orders: () => import("../features/payments/views/OrdersView.svelte"),
   paymentOrders: () => import("../features/payments/views/PaymentOrdersView.svelte"),
   profile: () => import("../views/ProfileView.svelte"),
   program: () => import("../views/ProgramPage.svelte"),
   recovery: () => import("../views/RecoveryView.svelte"),
   register: () => import("../views/RegisterView.svelte"),
-  sapAdmin: () => import("../features/sabp/views/SapAdminView.svelte"),
-  sapReview: () => import("../features/sabp/views/SapReviewView.svelte"),
-  sapReviewDetail: () => import("../features/sabp/views/SapReviewDetail.svelte"),
-  senateAdmin: () => import("../features/senate/views/SenateAdminView.svelte"),
   status: () => import("../views/StatusView.svelte"),
 };
+
+export function combineContributions(kind, ...contributions) {
+  const result = Object.create(null);
+  for (const contribution of contributions) {
+    for (const [name, loader] of Object.entries(contribution)) {
+      if (Object.hasOwn(result, name)) throw new Error(`Duplicate ${kind}: ${name}`);
+      result[name] = loader;
+    }
+  }
+  return result;
+}
+
+export const combineViews = (...contributions) => combineContributions("view", ...contributions);
+
+// Each view is a lazily loaded chunk.
+export const views = combineViews(coreViews, ...viewContributions);

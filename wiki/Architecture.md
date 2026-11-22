@@ -90,9 +90,8 @@ export:
 
 ## Extending
 
-- **A new form/program**: add `data/conversion_table_<x>.csv`, a package `src/utsu_core/programs/<x>/` with a `schema.sql`, a
-  `program.py` that defines its `ProgramSpec` and uses `Run` (see `agm/program.py`, the shortest), and a `cli.py` with a
-  `ProgramCli` and `main()`; add a console script in `pyproject.toml` and the program to `utsu_core/programs/runner.py`.
+- **A historical form processor**: add a conversion table and a program package with a `schema.sql` and a
+  `ProgramSpec` that uses `Run` (see `src/agm/program.py`). The former program CLI and runner entry points are retired.
 - **A new email**: drop `templates/email/<name>.txt`; check columns with `python -m utsu_core.mail --list_fields <name>`.
 - **A new SABP question**: add the form heading to `conversion_table_sap.csv`, add the question to `QUESTIONS` in
-  `utsu_core/programs/sap/wfni.py` and rows to `wfni_weights.csv`.
+  `src/sabp/wfni.py` and rows to `wfni_weights.csv`.

@@ -1,19 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import ThreadPanel from "../../../components/ThreadPanel.svelte";
-import BoardView from "../views/BoardView.svelte";
-import DiscussionsView from "../views/DiscussionsView.svelte";
-import TopicView from "../views/TopicView.svelte";
-import { nav } from "../../../lib/nav.svelte.js";
-import { session } from "../../../lib/session.svelte.js";
+import BoardView from "../../../../../src/chat/frontend/views/BoardView.svelte";
+import DiscussionsView from "../../../../../src/chat/frontend/views/DiscussionsView.svelte";
+import TopicView from "../../../../../src/chat/frontend/views/TopicView.svelte";
 
-const { apiMock, apiAllPagesMock } = vi.hoisted(() => ({ apiMock: vi.fn(), apiAllPagesMock: vi.fn() }));
+const { apiMock, apiAllPagesMock, openStreamMock } = vi.hoisted(() => ({
+  apiMock: vi.fn(), apiAllPagesMock: vi.fn(), openStreamMock: vi.fn(),
+}));
+vi.mock("@utsu/portal", async importOriginal => ({
+  ...(await importOriginal()),
+  api: apiMock,
+  apiAllPages: apiAllPagesMock,
+  openStream: openStreamMock,
+}));
 vi.mock("../../../lib/api.js", async importOriginal => ({
   ...(await importOriginal()), api: apiMock, apiAllPages: apiAllPagesMock,
 }));
-vi.mock("../../../lib/stream.js", () => ({ openStream: vi.fn() }));
-import { api, apiAllPages } from "../../../lib/api.js";
-import { openStream } from "../../../lib/stream.js";
+vi.mock("../../../lib/stream.js", () => ({ openStream: openStreamMock }));
+import { api, apiAllPages, nav, openStream, session, ThreadPanel } from "@utsu/portal";
 
 const row = (seq, extra = {}) => ({ seq, author_name: "Ada", mine: false, internal: false, body: `Post ${seq}`, redacted: false, at: 1700000000, ...extra });
 const posts = path => api.mock.calls.filter(([p, opts]) => p === path && opts?.method === "POST");

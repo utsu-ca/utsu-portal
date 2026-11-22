@@ -86,19 +86,21 @@ notice. SMTP must be configured. This is individual messaging, not the historica
 
 ## Code and development
 
-- `src/utsu_core/app.py` assembles the portal; `bootstrap.py` constructs shared application infrastructure without
+- `src/core/utsu_core/app.py` assembles the portal; `bootstrap.py` constructs shared application infrastructure without
   importing program routers. A module's optional `configure(ctx)` runs before any module's routers are assembled.
-- `src/utsu_core/programs/` contains the AGM, Senate, SABP and clubs modules, plus the opt-in `discussion` and
-  `voting` typed plug-ins. Historical CSV/SQLite processors remain
-  available for compatibility but are not loaded by live application assembly.
-- `src/utsu_core/modules/` and `src/utsu_core/services/` contain shared web modules and services.
-- `src/utsu_core/programs/{agm,senate,sap}/forms/` contains owner-contributed form definitions;
-  `src/utsu_core/static/` contains the built web client.
-- `src/utsu_core/mail/transport.py` owns SMTP delivery for both historical tooling and the live `Mailer` interface.
-  Bundled reply-based correspondence lives in `src/utsu_core/mail/templates/historical/` and loads from installed
+- `src/{agm,senate,sabp,clubs,chat,voting}/` contains the program implementations. The former
+  `utsu_core.programs` imports remain compatibility aliases. Historical CSV/SQLite processors remain available
+  for compatibility but are not loaded by live application assembly.
+- `src/core/utsu_core/modules/` and `src/core/utsu_core/services/` contain shared web modules and services.
+- `src/{agm,senate,sabp}/forms/` contains owner-contributed form definitions;
+  `src/core/utsu_core/static/` contains the built web client.
+- Set `PORTAL_STATIC_DIR` to serve a separately built frontend bundle instead of the committed full-portal client.
+  The directory must contain `index.html`; select a bundle matching the enabled backend programs.
+- `src/core/utsu_core/mail/transport.py` owns SMTP delivery for both historical tooling and the live `Mailer` interface.
+  Bundled reply-based correspondence lives in `src/core/utsu_core/mail/templates/historical/` and loads from installed
   package resources, not the working directory. Live generic notices keep their separate content and confirmation flow.
 - `web/src/features/` groups AGM, clubs, discussion, SABP, Senate and voting code and tests. Session, layout,
-  navigation, generic forms and the live thread panel remain shared; banking status belongs to SABP and does not block
+  navigation, generic forms, banking status and the live thread panel remain shared; banking status does not block
   general session startup.
 - `testing/generate_fake_*.py` generates synthetic historical-form and roster data for testing. Run
   `python testing/generate_fake_data.py` or use `--help` for generator options. Generated exports are not direct

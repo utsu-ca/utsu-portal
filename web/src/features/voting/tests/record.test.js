@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { merkleRoot, recordDigest, verifyRecord } from "../lib/record.js";
+import { merkleRoot, recordDigest, verifyRecord } from "../../../../../src/voting/frontend/lib/record.js";
 
-// Reference values computed by src/utsu_core/programs/voting/record.py.
+// Reference values computed by src/voting/record.py.
 const leaves = [
   "f8c90bd1c19992ec3bcc8ab892f54df949e013bfda0b9ce91aea2e20046b3f90",
   "c6478d3e8b1e7bc86c5cc881527bf1ce07d5320b82b02253c92f29bb6d78627f",

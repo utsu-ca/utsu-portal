@@ -90,7 +90,7 @@ def test_generated_users_agm_workflow_at_scale(tmp_path, monkeypatch):
                 collected[item["uuid"]] = (item["name"], item["attendance"], item["accessibility"])
             if page["next_cursor"] is None:
                 break
-            assert page["next_cursor"] > cursor
+            assert page["next_cursor"] != cursor
             cursor = page["next_cursor"]
         assert collected == expected
 

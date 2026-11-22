@@ -1,3 +1,5 @@
+import { compiledPrograms, menuContributions } from "virtual:portal-programs";
+
 // The portal's navigation, built from who is signed in. Everything public is always listed; signing in (and, for
 // staff, holding a role) adds the buttons that expose a program's extra functions beneath it.
 //
@@ -7,36 +9,9 @@
 
 export function buildMenu({ signedIn = false, verified = false, has = () => false, enabled = () => false } = {}) {
   const user = (cond, node) => (cond ? [node] : []);
-  const apply = (id, label, form) => ({ id, label, view: "form", props: { id: form } });
-
-  const bursaryActions = [
-    ...user(verified, apply("bursary-apply", "Apply for a bursary", "student_aid_bursary")),
-    ...user(verified, { id: "bursary-banking", label: "Banking information", view: "banking" }),
-    ...user(has("sap_reviewer"), { id: "bursary-review", label: "Review applications", view: "sapReview" }),
-    ...user(has("sap_admin"), { id: "bursary-admin", label: "Administer applications", view: "sapAdmin" }),
-    ...user(has("sap_finance"), { id: "bursary-finance", label: "Finance portal (banking)", href: "/static/finance.html" }),
-  ];
-  const financeActions = [
-    ...user(verified, { id: "club-finances-mine", label: "My club's finances", view: "clubFinances" }),
-    ...user(has("finance"), { id: "club-finances-admin", label: "Approve expenses and grants", view: "clubFinanceAdmin" }),
-  ];
-  const registrationActions = [
-    ...user(verified, { id: "club-register", label: "Register or manage a club", view: "clubRegistration" }),
-    ...user(has("clubs"), { id: "club-review", label: "Review registrations", view: "clubAdmin" }),
-  ];
-  const agmActions = [
-    ...user(verified, apply("agm-rsvp", "RSVP for the AGM", "agm_rsvp")),
-    ...user(verified, { id: "agm-invitation", label: "My invitation", view: "agm" }),
-    ...user(has("agm_admin"), { id: "agm-admin", label: "Registrations and roster", view: "agmAdmin" }),
-    ...user(enabled("agm_verify") && has("agm_id_reviewer"),
-      { id: "agm-verifications", label: "Online ID review queue", view: "agmIdQueue" }),
-    ...user(has("checkin"), { id: "agm-checkin", label: "Check-in desk", href: "/static/checkin.html" }),
-  ];
-  const senateActions = [
-    ...user(verified, apply("senate-apply", "Apply for a seat", "senate_application")),
-    ...user(verified, { id: "senate-mine", label: "My application", view: "mySenate" }),
-    ...user(has("senate_admin"), { id: "senate-admin", label: "Administer seating", view: "senateAdmin" }),
-  ];
+  const context = { signedIn, verified, has, enabled };
+  const compiled = new Set(compiledPrograms);
+  const programEnabled = id => compiled.has(id) && enabled(id);
   const administration = [
     ...user(has("payments_finance"), { id: "admin-orders", label: "Payment orders", view: "paymentOrders" }),
     ...user(has("forms_editor"), { id: "admin-forms", label: "Forms", view: "adminForms" }),
@@ -47,29 +22,44 @@ export function buildMenu({ signedIn = false, verified = false, has = () => fals
   ];
   // Discussion and voting are opt-in plug-ins; they are listed only where the deployment runs them.
   const discussionActions = [
-    ...user(enabled("voting") && has("elections_admin"), { id: "elections-admin", label: "Ballots and polls", view: "electionsAdmin" }),
+    ...user(programEnabled("voting") && has("elections_admin"), { id: "elections-admin", label: "Ballots and polls", view: "electionsAdmin" }),
   ];
-  const discussions = enabled("discussion") && verified
+  const discussions = programEnabled("discussion") && verified
     ? [{ id: "discussions", label: "Discussions", icon: "\u{1F4AC}", view: "discussions",
       relatedViews: ["discussionBoard", "discussionTopic", "ballot"], items: discussionActions }]
     : [];
 
   const page = (id, label, program, items = [], icon) => ({ id, label, icon, view: "program", props: { program }, program, items });
+  const bursaryActions = menuContributions.sap?.bursaryActions;
+  const financeActions = menuContributions.clubs?.financeActions;
+  const registrationActions = menuContributions.clubs?.registrationActions;
+  const agmActions = menuContributions.agm?.agmActions;
+  const senateNavigation = menuContributions.senate?.navigation;
+  const externalActions = Object.entries(menuContributions).flatMap(([id, contribution]) => {
+    if (id === "senate" || !programEnabled(id) || !contribution.navigation) return [];
+    const nodes = contribution.navigation(context);
+    if (!Array.isArray(nodes)) throw new Error(`Frontend contribution "${id}" navigation must return an array.`);
+    return nodes;
+  });
 
   return [
     { id: "home", label: "Home", icon: "\u{1F3E0}", view: "home" },
     { id: "aid", label: "Student Aid", icon: "\u{1F393}", items: [
-      page("bursaries", "Bursaries", "bursaries", bursaryActions),
+      page("bursaries", "Bursaries", "bursaries", programEnabled("sap") && bursaryActions ? bursaryActions(context) : []),
       page("scholarships", "Scholarships", "scholarships"),
     ] },
     { id: "clubs", label: "Clubs", icon: "\u{1F465}", items: [
-      ...user(enabled("clubs"), { id: "club-directory", label: "Directory", view: "clubDirectory" }),
-      page("club-finances", "Finances", "club-finances", financeActions),
-      page("club-registration", "Registration", "club-registration", registrationActions),
+      ...user(programEnabled("clubs"), { id: "club-directory", label: "Directory", view: "clubDirectory" }),
+      page("club-finances", "Finances", "club-finances",
+        programEnabled("clubs") && financeActions ? financeActions(context) : []),
+      page("club-registration", "Registration", "club-registration",
+        programEnabled("clubs") && registrationActions ? registrationActions(context) : []),
     ] },
-    page("agm", "AGM", "agm", agmActions, "\u{1F5F3}"),
-    page("senate", "Senate", "senate", senateActions, "\u{1F3DB}"),
+    page("agm", "AGM", "agm", programEnabled("agm") && agmActions ? agmActions(context) : [], "\u{1F5F3}"),
+    page("senate", "Senate", "senate",
+      programEnabled("senate") && senateNavigation ? senateNavigation(context) : [], "\u{1F3DB}"),
     ...discussions,
+    ...externalActions,
     ...(administration.length ? [{ id: "administration", label: "Administration", items: administration }] : []),
     { id: "profile", label: "Profile", icon: "\u{1F464}", view: "profile", items: signedIn ? [
       { id: "profile-account", label: "Account", view: "account" },

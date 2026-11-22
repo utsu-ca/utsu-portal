@@ -1,6 +1,7 @@
 import base64
 import hashlib
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,11 +11,20 @@ import pytest
 from fastapi import HTTPException
 
 from utsu_core.contracts import FileKind
+from utsu_core.crypto import Crypter, EncryptingStore, PREFIX
+from utsu_core.pagination import PageOrder
+from utsu_core.services import upload_quota
 from utsu_core.services.files import DocumentService
+from utsu_core.services.financial_access import FinancialAccessStore
 from utsu_core.services.receipt_storage import ReceiptStorage, YEAR
-from utsu_core.services.upload_quota import GIB, QuotaStore
+from utsu_core.services.upload_quota import (
+    GIB,
+    QUOTA_POLICY_ENTRY_POINT_GROUP,
+    QuotaStore,
+    UploadQuotaPolicy,
+)
 from utsu_core.settings import Settings
-from utsu_core.store import MemoryStore
+from utsu_core.store import MemoryStore, SQLiteStore
 
 
 class RecordingAudit:
@@ -23,6 +33,87 @@ class RecordingAudit:
 
     def record(self, actor, action, target, before=None, after=None, extra=None) -> None:
         self.records.append((actor, action, target, extra))
+
+
+def test_core_store_wrappers_preserve_indexed_pages_and_financial_audits(monkeypatch):
+    inner = SQLiteStore()
+    encrypted = EncryptingStore(inner, Crypter(None, "s" * 32))
+    audit = RecordingAudit()
+    financial = FinancialAccessStore(encrypted, SimpleNamespace(audit=audit))
+    store = QuotaStore(financial, inner, Settings(secret="s" * 32))
+    for uid in ("a", "b"):
+        encrypted.put("financial_profiles", uid, {"uuid": uid, "account_number": uid})
+    assert inner.get("financial_profiles", "a")["account_number"].startswith(PREFIX)
+
+    def no_scan(*_args, **_kwargs):
+        pytest.fail("page unexpectedly scanned the collection")
+
+    monkeypatch.setattr(inner, "list", no_scan)
+    page = store.page("financial_profiles", order_by=(PageOrder("uuid", str),), after=None, limit=1)
+    assert [(item["uuid"], item["account_number"]) for item in page] == [("a", "a")]
+    assert ("system:financial", "financial.access", "financial_profiles:*", {"operation": "list"}) in audit.records
+
+    def unavailable(*_args, **_kwargs):
+        raise RuntimeError("audit unavailable")
+
+    monkeypatch.setattr(audit, "record", unavailable)
+    with pytest.raises(RuntimeError, match="audit unavailable"):
+        store.page("financial_profiles", order_by=(PageOrder("uuid", str),), after=None, limit=1)
+
+
+def test_financial_access_policy_audits_only_matching_submissions():
+    audit = RecordingAudit()
+    store = FinancialAccessStore(MemoryStore(), SimpleNamespace(audit=audit))
+    order = (PageOrder("id", str),)
+    store.get("submissions", "senate_application:user")
+    store.list("submissions", form_id="senate_application")
+    store.page("submissions", order_by=order, after=None, limit=1, equals={"form_id": "senate_application"})
+    assert audit.records == []
+
+    store.get("submissions", "student_aid_bursary:user")
+    store.list("submissions", form_id="student_aid_bursary")
+    store.page("submissions", order_by=order, after=None, limit=1, equals={"form_id": "student_aid_bursary"})
+    store.list("submissions")
+    assert [record[3]["operation"] for record in audit.records] == ["get", "list", "list", "list"]
+
+
+def test_encrypted_sort_fields_are_not_persisted_in_page_indexes():
+    inner = SQLiteStore()
+    store = EncryptingStore(inner, Crypter(None, "s" * 32))
+    for uid, number in (("a", "9876"), ("b", "1234")):
+        store.put("financial_profiles", uid, {"uuid": uid, "account_number": number})
+
+    page = store.page("financial_profiles", order_by=(PageOrder("account_number", str),), after=None, limit=2)
+    assert [item["uuid"] for item in page] == ["b", "a"]
+    assert inner._c.execute("SELECT COUNT(*) FROM portal_page_specs").fetchone()[0] == 0
+
+
+def test_encrypted_nested_filters_are_not_persisted_in_page_indexes():
+    inner = SQLiteStore()
+    store = EncryptingStore(inner, Crypter(None, "s" * 32))
+    for uid, term in (("a", "fall"), ("b", "winter")):
+        store.put("submissions", uid, {"id": uid, "data": {"term": term}})
+
+    page = store.page("submissions", order_by=(PageOrder("id", str),), after=None, limit=2,
+                      equals={"data.term": "winter"})
+    assert [item["id"] for item in page] == ["b"]
+    assert inner._c.execute("SELECT COUNT(*) FROM portal_page_specs").fetchone()[0] == 0
+
+
+def test_encrypted_top_level_filters_are_compared_after_decryption():
+    inner = SQLiteStore()
+    store = EncryptingStore(inner, Crypter(None, "s" * 32))
+    for uid, number in (("a", "1234"), ("b", "9876"), ("c", "1234")):
+        store.put("financial_profiles", uid, {"uuid": uid, "account_number": number})
+
+    order = (PageOrder("uuid", str),)
+    first = store.page("financial_profiles", order_by=order, after=None, limit=1,
+                       equals={"account_number": "1234"})
+    second = store.page("financial_profiles", order_by=order, after=("a",), limit=1,
+                        equals={"account_number": "1234"})
+    assert [first[0]["uuid"], second[0]["uuid"]] == ["a", "c"]
+    assert [item["uuid"] for item in store.list("financial_profiles", uuid="c", account_number="1234")] == ["c"]
+    assert inner._c.execute("SELECT COUNT(*) FROM portal_page_specs").fetchone()[0] == 0
 
 
 def test_file_service_scopes_owners_and_audits_successful_reads_and_deletes():
@@ -68,6 +159,44 @@ def data_url(raw=b"%PDF-1", mime="application/pdf"):
 def quota(settings=None, inner=None, usage=None):
     inner = inner or MemoryStore()
     return QuotaStore(inner, usage or inner, settings or Settings(secret="s" * 32))
+
+
+def program_upload_policy() -> UploadQuotaPolicy:
+    def discover_items(store, owner):
+        uid = owner.removeprefix("user:")
+        return {
+            f"program:{doc['id']}"
+            for doc in store.list("program_uploads", uuid=uid)
+            if doc.get("id")
+        }
+
+    def list_owners(store):
+        return {
+            f"user:{doc['uuid']}" for doc in store.list("program_uploads") if doc.get("uuid")
+        }
+
+    def item_size(store, item):
+        doc = store.get("program_uploads", item.removeprefix("program:"))
+        return doc["size"] if doc else 0
+
+    return UploadQuotaPolicy(
+        name="program-uploads",
+        collections=frozenset({"program_uploads"}),
+        item_prefixes=("program:",),
+        owner_for=lambda _store, _collection, _key, doc: f"user:{doc['uuid']}",
+        item_for=lambda _collection, key: f"program:{key}",
+        size_for=lambda _collection, doc: doc["size"],
+        discover_items=discover_items,
+        list_owners=list_owners,
+        item_size=item_size,
+        write_size=lambda _store, _collection, _key, doc, _item: doc["size"] if doc else 0,
+        limit_for=lambda _store, config, owner: (
+            config.user_storage_bytes if owner.startswith("user:") else None
+        ),
+        reconcile_prefixes=lambda scope: {
+            "auth": (), "portal": ("program:",), "all": ("program:",)
+        }[scope],
+    )
 
 
 def test_personal_quota_exact_boundary_aggregates_types_and_releases_on_delete():
@@ -116,6 +245,135 @@ def test_legacy_usage_failed_write_and_explicit_reservation_recovery():
     assert store.usage("user:user")["reserved_files"] == 1
     repaired = store.reconcile("user:user", "portal")
     assert repaired["used_bytes"] == 3 and repaired["reserved_files"] == 0
+
+
+def test_legacy_quota_policies_account_for_retained_data_without_program_policies():
+    inner, usage = MemoryStore(), MemoryStore()
+    settings = Settings(secret="s" * 32, user_storage_bytes=9, club_storage_year_bytes=6)
+    inner.put("clubs", "club", {"id": "club", "registered_years": [2025]})
+    inner.put("agm_checks", "scan", {"id": "scan", "uuid": "user"})
+    inner.put("agm_media", "scan", {"id": "scan", "face": data_url(b"agm")})
+    inner.put("financial_profiles", "user", {
+        "uuid": "user", "void_cheque": {"data_url": data_url(b"cheque")}
+    })
+    inner.put("receipts", "receipt", {
+        "id": "receipt", "club_id": "club", "data_url": data_url(b"r")
+    })
+
+    store = QuotaStore(inner, usage, settings, policies=())
+    store.backfill()
+
+    assert store.usage("user:user")["used_bytes"] == 9
+    assert store.usage("club:club")["used_bytes"] == 1
+    assert usage.get("upload_quotas", "user:user")["items"] == {
+        "agm_media:scan": {"size": 3},
+        "banking:user": {"size": 6},
+    }
+
+
+def test_package_quota_policy_shares_reservations_with_always_on_policies():
+    inner, usage = MemoryStore(), MemoryStore()
+    settings = Settings(secret="s" * 32, user_storage_bytes=5)
+    inner.put("agm_media", "legacy", {
+        "id": "legacy", "uuid": "user", "face": data_url(b"old")
+    })
+    store = QuotaStore(inner, usage, settings, policies=(program_upload_policy(),))
+
+    store.put("program_uploads", "new", {"id": "new", "uuid": "user", "size": 2})
+    with pytest.raises(HTTPException) as exc:
+        store.put("program_uploads", "too-large", {"id": "too-large", "uuid": "user", "size": 1})
+
+    assert exc.value.status_code == 413
+    assert store.usage("user:user")["used_bytes"] == 5
+
+
+def test_external_quota_provider_is_loaded_and_catalogued(monkeypatch: pytest.MonkeyPatch):
+    policy = program_upload_policy()
+    provider = SimpleNamespace(name="sample", load=lambda: policy)
+    monkeypatch.setattr(
+        upload_quota.metadata,
+        "entry_points",
+        lambda *, group: (provider,) if group == QUOTA_POLICY_ENTRY_POINT_GROUP else (),
+    )
+
+    usage = MemoryStore()
+    store = QuotaStore(MemoryStore(), usage, Settings(secret="s" * 32))
+    assert any(item.name == "program-uploads" for item in store.policies)
+    catalogue = usage.get("quota_policy_catalogue", "current")
+    assert catalogue is not None
+    assert any(entry["name"] == "program-uploads" for entry in catalogue["policies"])
+
+
+def test_external_quota_provider_failure_fails_closed(monkeypatch: pytest.MonkeyPatch):
+    provider = SimpleNamespace(name="broken", load=lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(
+        upload_quota.metadata,
+        "entry_points",
+        lambda *, group: (provider,) if group == QUOTA_POLICY_ENTRY_POINT_GROUP else (),
+    )
+
+    with pytest.raises(RuntimeError, match="failed to load"):
+        QuotaStore(MemoryStore(), MemoryStore(), Settings(secret="s" * 32))
+
+
+def test_retained_policy_missing_provider_fails_closed():
+    inner, usage = MemoryStore(), MemoryStore()
+    settings = Settings(secret="s" * 32)
+    QuotaStore(inner, usage, settings, policies=(program_upload_policy(),))
+    # Provider uninstalled: a new process without it must fail closed.
+    with pytest.raises(RuntimeError, match="retained upload quota policies are required"):
+        QuotaStore(inner, usage, settings)
+
+
+def test_stale_process_is_fenced_after_catalogue_change():
+    inner, usage = MemoryStore(), MemoryStore()
+    settings = Settings(secret="s" * 32)
+    stale = QuotaStore(inner, usage, settings)
+    QuotaStore(inner, usage, settings, policies=(program_upload_policy(),))
+    with pytest.raises(RuntimeError, match="stale and must restart"):
+        stale.put("media", "scan", {"id": "scan", "uuid": "user", "face": data_url(b"x")})
+
+
+def test_policy_shape_change_without_migration_fails_closed():
+    inner, usage = MemoryStore(), MemoryStore()
+    settings = Settings(secret="s" * 32)
+    QuotaStore(inner, usage, settings, policies=(program_upload_policy(),))
+    changed = replace(program_upload_policy(), item_prefixes=("other:",))
+    with pytest.raises(RuntimeError, match="changed shape without a catalogue migration"):
+        QuotaStore(inner, usage, settings, policies=(changed,))
+
+
+def test_replacing_a_legacy_quota_policy_must_keep_its_collection_group_and_item_keys():
+    inner, usage = MemoryStore(), MemoryStore()
+    settings = Settings(secret="s" * 32)
+    base = QuotaStore(inner, usage, settings)
+    banking = next(policy for policy in base.policies if policy.name == "legacy-banking")
+    partial = replace(banking, name="sap-banking-only", collections=frozenset({"sap_banking"}))
+
+    with pytest.raises(ValueError, match="must cover its collections"):
+        QuotaStore(inner, usage, settings, policies=(partial,))
+
+
+def test_program_policy_handoff_preserves_legacy_quota_items_and_reconciliation():
+    inner, usage = MemoryStore(), MemoryStore()
+    settings = Settings(secret="s" * 32, club_storage_year_bytes=10)
+    inner.put("clubs", "club", {"id": "club", "registered_years": [2025]})
+    inner.put("receipts", "receipt", {
+        "id": "receipt", "club_id": "club", "data_url": data_url(b"legacy")
+    })
+    compatibility = QuotaStore(inner, usage, settings)
+    assert compatibility.usage("club:club")["used_bytes"] == 6
+    legacy_receipts = next(
+        policy for policy in compatibility.policies if policy.name == "legacy-club-receipts"
+    )
+    clubs_policy = replace(legacy_receipts, name="clubs-receipts")
+    migrated = QuotaStore(inner, usage, settings, policies=(clubs_policy,))
+
+    assert migrated.usage("club:club")["used_bytes"] == 6
+    assert migrated.reconcile("club:club", "portal")["used_bytes"] == 6
+    assert usage.get("upload_quotas", "club:club")["items"] == {
+        "receipts:receipt": {"size": 6}
+    }
 
 
 def test_club_quota_counts_distinct_registered_years_not_elapsed_time_and_caps():

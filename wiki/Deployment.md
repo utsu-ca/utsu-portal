@@ -91,17 +91,21 @@ separately provisioned Workspace account. Removing a domain blocks new sign-ins;
 revoke privileged portal roles as well, since existing sessions otherwise remain valid until expiry.
 
 ## Database portability
-Everything goes through the six-method `Store` interface (`get/put/delete/list/create/replace`; `create` and `replace` must be atomic). Built in:
+Everything goes through the `Store` interface (`get/put/delete/list/create/replace/page`; `create` and `replace` must be atomic). Built in:
 - **Firestore** (wrapped in `ChunkingStore`, which shards values over Firestore's 1 MiB document limit, e.g. receipts and scans).
-- **SQL** via SQLAlchemy: a single `portal_docs(col, id, body)` table created automatically, so there are no migrations.
+- **SQL** via SQLAlchemy: the `portal_docs(col, id, body)` table and auxiliary page-index tables are created automatically, so there are no schema migrations.
   - Supabase / any PostgreSQL: `PORTAL_STORE=sql:postgresql+psycopg://USER:PASS@HOST:5432/DB` (psycopg is in the image).
   - Azure SQL / SQL Server: `sql:mssql+pyodbc://...?driver=ODBC+Driver+18+for+SQL+Server` (install `pyodbc` and the ODBC driver in a derived image).
   - MySQL: `sql:mysql+pymysql://...`.
 - **Custom**: implement `Store` and point `PORTAL_STORE` at `my_pkg.module:factory`.
 
-`list()` filters by top-level equality; the SQL backend filters in Python, which is fine for AGM/club scale but add an
-indexed column if a collection grows to many hundreds of thousands of rows. The suite runs the same contract tests on every
-backend (`tests/test_stores.py`).
+`list()` filters by top-level equality. Collection-backed API lists use indexed keyset pages: SQL stores backfill one
+sort projection per collection/order/filter shape on first use and keep it synchronized with writes; Firestore uses
+native ordered queries and backfills casefold fields once when needed. Subsequent pages seek from the cursor rather
+than loading and sorting the collection again. The suite runs the same store contract tests on every backend
+(`tests/test_stores.py`).
+Firestore may require composite indexes for some equality-filter/order combinations; provision the indexes indicated
+by Firestore before enabling those list endpoints in production.
 
 ## Upload quotas and cold receipt storage
 
@@ -231,15 +235,42 @@ The portal's built-in program plug-ins are enabled by default, except the opt-in
 plug-ins ([Discussions and Voting](Discussions-and-Voting.md)). Set `PORTAL_ENABLED_PLUGINS` to a comma-separated
 allowlist of program plug-ins to control backend modules (for example, `clubs` or `agm,senate,sap,clubs`; add
 `discussion,voting` to the full list to run them). Core modules are always on and must not be listed. Core authentication,
-forms, and audit modules are not optional. `notices` currently requires `agm`, `senate`, and `sap`; AGM verification
-requires `agm`. Dependencies omitted from the allowlist cause startup to fail. Plug-in discovery reads installed
+forms, and audit modules are not optional. AGM verification requires `agm`, and voting requires `discussion`.
+Dependencies omitted from the allowlist cause startup to fail. Plug-in discovery reads installed
 metadata before importing implementations, so disabled program modules are not loaded. Disabled program roles are
 removed from the grantable/effective role catalogue, but existing stored grants are retained; retained-data
-encryption policies also remain active independently of the allowlist. This interim backend allowlist does not yet
-filter the bundled full-portal frontend, except that the menu hides Discussions and the ballots tool when those
-plug-ins are off (it reads `GET /api/plugins`). Until the frontend manifest stage is complete, use
-`PORTAL_API_ONLY=1` for a core-only profile and do not use partial allowlists for browser deployments. Changing the
-allowlist requires an application restart.
+encryption policies also remain active independently of the allowlist. The default bundled frontend contains all
+program code, while its navigation uses `GET /api/plugins` to hide disabled actions. For a smaller browser build,
+use `npm run build:core` or `PORTAL_FRONTEND_PROGRAMS=clubs npm run build:subset` in `web/`, then point
+`PORTAL_STATIC_DIR` at the resulting directory. Select frontend contributions that match the backend allowlist;
+an empty `PORTAL_ENABLED_PLUGINS` selects no programs, and AGM verification shares the AGM contribution.
+The portal warns if an enabled program declaring `"frontend": true` is missing from its frontend build. List external
+frontend packages in `PORTAL_FRONTEND_MANIFEST` at build time to include them in the composition.
+Core-only UI deployments without the default branding package also
+need `PORTAL_BRANDING_DIR`. See [frontend builds](../web/README.md) for available IDs and dependency requirements.
+Changing the allowlist or static directory requires an application restart.
+
+Typed program packages may declare their own configuration keys in their manifest. Supply values as a JSON
+object keyed by program ID in `PORTAL_PLUGIN_CONFIG`, or mount that JSON in a file and set
+`PORTAL_PLUGIN_CONFIG_FILE`. For example, `{"example":{"limit":5}}` supplies `limit` only to `example`.
+The package validates its values and defaults; undeclared keys for enabled programs fail startup. Configuration
+for disabled programs is retained but not passed to other programs. Existing `PORTAL_*` settings remain valid.
+
+External upload-quota providers are supported through the durable retained-policy catalogue in the quota
+store. Core declares each policy (name, collections, item prefixes, version, fingerprint) with a monotonic
+fencing epoch. Removing or disabling a provider fails startup closed while its retained records still need
+it; a policy that changes shape without a catalogue migration also fails closed. Every writer checks the
+epoch before reserving quota, so a stale process refuses writes after a catalogue change and must restart.
+The quota store must be a persistent, shared, atomic backend (SQLite, SQL, Firestore, or a custom `Store`
+overriding `create`/`replace`); in-memory or non-atomic backends fail closed. Rollout order: declare the new
+policy, drain and restart all writers, then activate. Rollback targets must read the catalogue — an older
+binary that ignores it cannot be fenced, so drain before rolling back.
+
+The split-wheel builder is experimental and must not be used for a production cutover. In particular, do not
+install split program wheels into an environment containing the older bundled `utsu-core`; see the
+[migration plan](../docs/design/09-program-package-migration.md) for the fresh-environment and rollback
+requirements. The experimental core wheel contains a core-only frontend; the separate `utsu-portal-frontend`
+wheel supplies the full UI when installed. `PORTAL_STATIC_DIR` overrides either.
 
 ## Kubernetes
 `kubectl apply -k deploy/k8s` (after creating the secrets from `secret.example.yaml`). Includes: restricted namespace,

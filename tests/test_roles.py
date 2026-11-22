@@ -126,7 +126,9 @@ def test_concurrent_admin_demotions_cannot_remove_the_last_admin():
         ]
         statuses = sorted(result.result().status_code for result in results)
 
-    assert statuses == [200, 409]
+    # The second request may be denied at authentication after its actor is demoted,
+    # or reach the last-admin check while both requests still have admin credentials.
+    assert statuses in ([200, 403], [200, 409])
     admins = [a for a in astore.list("accounts") if "admin" in roles_of(a)]
     assert len(admins) == 1
 

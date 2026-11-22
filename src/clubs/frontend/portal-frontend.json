@@ -1,0 +1,8 @@
+{
+  "programs": [{
+    "id": "clubs",
+    "directory": ".",
+    "menu": ["financeActions", "registrationActions"],
+    "views": true
+  }]
+}

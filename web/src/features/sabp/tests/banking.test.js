@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import BankingView from "../views/BankingView.svelte";
+import { BankingView } from "@utsu/portal";
+import SapBankingView from "../../../../../src/sabp/frontend/views/SapBankingView.svelte";
 import { session } from "../../../lib/session.svelte.js";
-import { bankingStatus, clearBankingStatus, loadBankingStatus } from "../state/banking.svelte.js";
+import { bankingStatus, clearBankingStatus, loadBankingStatus } from "../../profile/state/banking.svelte.js";
 
 vi.mock("../../../lib/api.js", async importOriginal => ({ ...(await importOriginal()), api: vi.fn() }));
-import { api } from "../../../lib/api.js";
+import { api } from "@utsu/portal";
 
 const member = { status: "verified", roles: [], user: { uuid: "u1" } };
 const pdf = (content = "%PDF-1.4\n%%EOF") => new File([content], "cheque.pdf", { type: "application/pdf" });
@@ -32,7 +33,7 @@ describe("banking information verification page", () => {
     api.mockImplementation(async path => path === "/profile/financial"
       ? { status: "reverify_requested", expires_at: 2e9 }
       : { status: "reverify_received" });
-    render(BankingView);
+    render(SapBankingView);
     expect(await screen.findByText("We could not verify the banking information you gave us.")).toBeInTheDocument();
     await fill();
 
@@ -58,7 +59,7 @@ describe("banking information verification page", () => {
     session.token = "t";
     session.me = member;
     api.mockResolvedValue({ status: "reverify_requested", expires_at: 2e9 });
-    render(BankingView);
+    render(SapBankingView);
     expect(await screen.findByText(/Open the link in the email we sent you/)).toBeInTheDocument();
     expect(screen.queryByLabelText("Void cheque (PDF)")).not.toBeInTheDocument();
   });
@@ -67,7 +68,7 @@ describe("banking information verification page", () => {
     session.token = "t";
     session.me = member;
     api.mockImplementation(async (path, opts) => opts?.method === "PUT" ? { status: "on_file" } : { status: "not_submitted" });
-    render(BankingView);
+    render(SapBankingView);
     await screen.findByText(/An active SABP application is required/);
     expect(screen.queryByLabelText("Void cheque (PDF)")).not.toBeInTheDocument();
     await fill();
@@ -79,7 +80,7 @@ describe("banking information verification page", () => {
     session.token = "t";
     session.me = member;
     api.mockImplementation(async (path, opts) => opts?.method === "PUT" ? { status: "on_file" } : { status: "not_submitted" });
-    render(BankingView, { shared: true });
+    render(BankingView);
     await screen.findByText(/Banking details are stored separately from your profile/);
     await fill();
     await fireEvent.click(screen.getByRole("button", { name: "Submit banking details" }));

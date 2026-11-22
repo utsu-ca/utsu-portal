@@ -60,18 +60,18 @@ The previous extraction provides useful seams, but these still prevent genuine p
 
 | Current location | Coupling to remove |
 |---|---|
-| [app.py](../../src/utsu_core/app.py) | Imports every program and constructs fixed local/remote module tuples. |
-| [bootstrap.py](../../src/utsu_core/bootstrap.py) | Seeds all bundled forms before module configuration; serves the combined program asset bundle from core. |
-| [context.py](../../src/utsu_core/context.py) | Hard-coded program role catalogue; unrestricted settings/store/service dictionary handed to modules. |
-| [roles.py](../../src/utsu_core/modules/roles.py) | Request limits, validation and effective role handling depend on that global catalogue. |
-| [crypto.py](../../src/utsu_core/crypto.py) | Encryption metadata explicitly names AGM media, club receipts and SABP submission/banking fields. |
-| [settings.py](../../src/utsu_core/settings.py) | Contains AGM/Zoom, clubs and SABP configuration. |
-| [forms.py](../../src/utsu_core/modules/forms.py), [formdef.py](../../src/utsu_core/formdef.py), [submission policies](../../src/utsu_core/services/submissions.py) | Generic forms already live in core, but all bundled program form resources are seeded globally and programs read/write the shared submissions collection directly. |
-| [notices.py](../../src/utsu_core/modules/notices.py) | Fixed AGM/Senate/SABP form/role table. Its generic preview-hash/confirm/uncertain-delivery ledger is the starting point for core notifications. |
-| [mailer.py](../../src/utsu_core/mailer.py), [mail/](../../src/utsu_core/mail/), [mailsvc](../../src/utsu_core/mailsvc/__init__.py) | One SMTP transport, but no single core email contract: live mailers, the optional HTTP mail API and historical CSV/SQLite campaign/recipient tooling sit side by side, and live message text is inline in feature code. |
-| [events.py](../../src/utsu_core/events.py), [forms editor stream](../../src/utsu_core/modules/forms.py) | In-process or Redis event bus with best-effort publish. The forms editor SSE stream authenticates with the session token in the query string (`allow_query_token`), which must not be copied to applicant-facing streams. |
+| [app.py](../../src/core/utsu_core/app.py) | Imports every program and constructs fixed local/remote module tuples. |
+| [bootstrap.py](../../src/core/utsu_core/bootstrap.py) | Seeds all bundled forms before module configuration; serves the combined program asset bundle from core. |
+| [context.py](../../src/core/utsu_core/context.py) | Hard-coded program role catalogue; unrestricted settings/store/service dictionary handed to modules. |
+| [roles.py](../../src/core/utsu_core/modules/roles.py) | Request limits, validation and effective role handling depend on that global catalogue. |
+| [crypto.py](../../src/core/utsu_core/crypto.py) | Encryption metadata explicitly names AGM media, club receipts and SABP submission/banking fields. |
+| [settings.py](../../src/core/utsu_core/settings.py) | Contains AGM/Zoom, clubs and SABP configuration. |
+| [forms.py](../../src/core/utsu_core/modules/forms.py), [formdef.py](../../src/core/utsu_core/formdef.py), [submission policies](../../src/core/utsu_core/services/submissions.py) | Generic forms already live in core, but all bundled program form resources are seeded globally and programs read/write the shared submissions collection directly. |
+| [notices.py](../../src/core/utsu_core/modules/notices.py) | Fixed AGM/Senate/SABP form/role table. Its generic preview-hash/confirm/uncertain-delivery ledger is the starting point for core notifications. |
+| [mailer.py](../../src/core/utsu_core/mailer.py), [mail/](../../src/core/utsu_core/mail/), [mailsvc](../../src/core/utsu_core/mailsvc/__init__.py) | One SMTP transport, but no single core email contract: live mailers, the optional HTTP mail API and historical CSV/SQLite campaign/recipient tooling sit side by side, and live message text is inline in feature code. |
+| [events.py](../../src/core/utsu_core/events.py), [forms editor stream](../../src/core/utsu_core/modules/forms.py) | In-process or Redis event bus with best-effort publish. The forms editor SSE stream authenticates with the session token in the query string (`allow_query_token`), which must not be copied to applicant-facing streams. |
 | Backend and frontend source | No chat, message-thread or in-app notification feature exists yet. |
-| [filesvc](../../src/utsu_core/filesvc/__init__.py) | Separate storage abstraction, not the service currently used by live program uploads. Pylance references found only its own implementation/example usage. |
+| [filesvc](../../src/core/utsu_core/filesvc/__init__.py) | Separate storage abstraction, not the service currently used by live program uploads. Pylance references found only its own implementation/example usage. |
 | [App.svelte](../../web/src/App.svelte), [boot.js](../../web/src/lib/boot.js) | Shell mounts SABP banking status and interprets the SABP emailed-link hash. |
 | [menu.js](../../web/src/lib/menu.js), [views.js](../../web/src/lib/views.js), [content.js](../../web/src/lib/content.js) | Shared code names every program, action, view and public page. |
 | [ProgramPage.svelte](../../web/src/views/ProgramPage.svelte), [StatusView.svelte](../../web/src/views/StatusView.svelte), [AdminVerifications.svelte](../../web/src/views/AdminVerifications.svelte) | Generic-looking views contain Senate, SABP-history and AGM-specific branches. |
@@ -111,7 +111,7 @@ Proposed layout; package names below are distribution names, with underscore equ
 
 ```text
 packages/
-  core/                         # utsu-core; src/utsu_core/ — auth, identity, audit, files, forms,
+  core/                         # utsu-core; src/core/utsu_core/ — auth, identity, audit, files, forms,
                                 #   notifications, messaging, email
   plugins/
     agm/                        # utsu-plugin-agm

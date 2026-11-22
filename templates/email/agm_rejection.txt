@@ -1,1 +1,1 @@
-../../src/utsu_core/mail/templates/historical/agm_rejection.txt
+../../src/core/utsu_core/mail/templates/historical/agm_rejection.txt

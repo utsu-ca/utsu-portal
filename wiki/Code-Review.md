@@ -109,6 +109,6 @@ Decisions that came with it:
 ## Test gaps
 
 - The argparse wiring of the commands (`utsu_core.cli`; the pieces are tested, the wiring is not).
-- `utsu_core/programs/senate/seating.py`: add property tests (each applicant at most once, no constituency over capacity, nobody seated where
+- `src/senate/seating.py`: add property tests (each applicant at most once, no constituency over capacity, nobody seated where
   they marked none, same seed gives the same result, delegates take division seats).
 - The real `SmtpSender` connect and login rules, perhaps with a fake `smtplib`.

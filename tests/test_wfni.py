@@ -16,6 +16,27 @@ def test_default_weights_match_the_policy_scale():
     assert (w.max_score, w.high_threshold) == (33, 17)  # the values that used to be hard-coded
 
 
+def test_configured_weights_path_is_used_and_missing_configuration_fails(tmp_path, monkeypatch):
+    path = tmp_path / "weights.csv"
+    path.write_text(
+        DEFAULT.read_text(encoding="utf-8").replace("living_situation,Unsheltered,6", "living_situation,Unsheltered,16"),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SABP_WFNI_WEIGHTS_FILE", str(path))
+    assert wfni.current_weights().max_score == 43
+    assert wfni.current_weights(DEFAULT).max_score == 33
+    monkeypatch.setenv("SABP_WFNI_WEIGHTS_FILE", str(tmp_path / "missing.csv"))
+    with pytest.raises(FileNotFoundError, match="WFNI weights file not found"):
+        wfni.current_weights()
+    path.write_text("invalid", encoding="utf-8")
+    monkeypatch.setenv("SABP_WFNI_WEIGHTS_FILE", str(path))
+    with pytest.raises(wfni.WeightsError, match="header"):
+        wfni.current_weights()
+    monkeypatch.setenv("SABP_WFNI_WEIGHTS_FILE", "")
+    with pytest.raises(wfni.WeightsError, match="path must not be empty"):
+        wfni.current_weights()
+
+
 # Every option as the form words it, with the points the policy table gives it.
 FORM_OPTIONS = [
     ("disability_mobility", "Yes", 2), ("disability_mobility", "No", 0),

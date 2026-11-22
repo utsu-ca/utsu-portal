@@ -7,7 +7,7 @@
 
 ### 1. Email Microservice (`mailsvc`)
 
-**Location:** `/src/utsu_core/mailsvc/__init__.py`
+**Location:** `/src/core/utsu_core/mailsvc/__init__.py`
 
 **Features:**
 - ✅ Queue emails asynchronously
@@ -44,7 +44,7 @@ response = httpx.post(
 
 ### 2. RBAC Module for AuthSvc
 
-**Location:** `/src/utsu_core/authsvc/rbac.py`
+**Location:** `/src/core/utsu_core/authsvc/rbac.py`
 
 **Features:**
 - ✅ Predefined roles (student, admin, moderator, staff)
@@ -315,9 +315,9 @@ kubectl apply -f deploy/k8s/
 
 | File | Purpose |
 |------|---------|
-| `src/utsu_core/mailsvc/__init__.py` | Email microservice implementation |
-| `src/utsu_core/authsvc/rbac.py` | RBAC module for auth service |
-| `src/utsu_core/authsvc/__init__.py` | (Updated to include RBAC) |
+| `src/core/utsu_core/mailsvc/__init__.py` | Email microservice implementation |
+| `src/core/utsu_core/authsvc/rbac.py` | RBAC module for auth service |
+| `src/core/utsu_core/authsvc/__init__.py` | (Updated to include RBAC) |
 
 ### Configuration & Deployment
 

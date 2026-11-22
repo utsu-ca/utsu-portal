@@ -5,6 +5,7 @@ from utsu_core import create_app
 from utsu_core.crypto import Crypter, EncryptingStore, PREFIX
 from utsu_core.identity import RemoteIdentity
 from utsu_core.mailer import OutboxMailer
+from utsu_core.services.banking import BankingRoutePolicy, banking_router
 from utsu_core.settings import Settings
 from utsu_core.store import MemoryStore
 
@@ -80,3 +81,57 @@ def test_financial_profiles_use_remote_authentication_and_live_account_status():
     acct["status"] = "suspended"
     remote._cache.clear()
     assert c.get("/api/profile/financial", headers=headers).status_code == 403
+
+
+def test_program_banking_policy_controls_routes_validation_and_listing():
+    from fastapi import HTTPException
+
+    app = create_app(Settings(secret="s" * 32, enabled_plugins=()), mailer=OutboxMailer())
+    ctx = app.state.ctx
+
+    def validate(uid):
+        if uid == "blocked":
+            raise HTTPException(409, "not eligible")
+
+    app.include_router(banking_router(ctx, policy=BankingRoutePolicy(
+        mine="/custom/banking", staff="/custom/admin/{uid}", finance_path="/custom/finance",
+        finance_detail_routes=True, validate_submission=validate,
+        listing_fields=lambda uid: {"approved": uid == "student", "awarded_amount": 42},
+    )))
+    client = TestClient(app)
+    blocked = account(ctx, "blocked")
+    student = account(ctx, "student")
+    finance = account(ctx, "finance", roles=("profile_finance",))
+    assert client.put("/api/custom/banking", json=BANK, headers=blocked).status_code == 409
+    assert client.put("/api/custom/banking", json=BANK, headers=student).status_code == 200
+    item = client.get("/api/custom/finance", headers=finance).json()["items"][0]
+    assert (item["approved"], item["awarded_amount"]) == (True, 42)
+    assert client.get("/api/custom/finance/student", headers=finance).json() == BANK
+    assert client.get("/api/finance/sap/banking", headers=finance).status_code == 404
+
+
+def test_legacy_shared_banking_router_remains_compatible():
+    from utsu_core.programs.sap.banking import banking_router as sap_banking_router
+
+    app = create_app(Settings(secret="s" * 32), mailer=OutboxMailer())
+    ctx = app.state.ctx
+    old = {(route.path, tuple(sorted(route.methods))) for route in banking_router(ctx, legacy=True).routes}
+    new = {(route.path, tuple(sorted(route.methods))) for route in sap_banking_router(ctx, legacy=True).routes}
+    assert old == new
+
+
+def test_sap_cheque_authorizer_is_absent_when_program_is_disabled():
+    inner = MemoryStore()
+    disabled = create_app(Settings(secret="s" * 32, enabled_plugins=()), store=inner, mailer=OutboxMailer())
+    ctx = disabled.state.ctx
+    account(ctx, "finance", roles=("sap_finance",))
+    ctx.store.put("financial_profiles", "student", {
+        "uuid": "student", "status": "on_file",
+        "void_cheque": {"data_url": "data:application/pdf;base64,JVBERi0="},
+    })
+    with pytest.raises(PermissionError):
+        ctx.files.read("sap_void_cheque", "student", "finance", "student")
+
+    enabled = create_app(Settings(secret="s" * 32, enabled_plugins=("sap",)), store=inner, mailer=OutboxMailer())
+    files = enabled.state.ctx.files.for_owner("sap", ("profile",))
+    assert files.read("sap_void_cheque", "student", "finance", "student") == b"%PDF-"

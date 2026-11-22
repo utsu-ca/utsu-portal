@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "collections": {
+    "accounts": ["recovery_email"],
+    "media": ["face", "id_card"],
+    "agm_media": ["face", "id_card"],
+    "receipts": ["data_url"],
+    "submissions": ["data", "sap_review", "sap_review_hardship", "sap_previous"],
+    "sap_banking": ["institution_number", "transit_number", "account_number", "pending", "void_cheque"],
+    "financial_profiles": ["institution_number", "transit_number", "account_number", "pending", "void_cheque"],
+    "orders": ["description", "checkout_url", "payment_intent"],
+    "roster_identifiers": ["digits"],
+    "messages": ["body"],
+    "ballot_votes": ["salt", "selection", "voter"]
+  },
+  "financial_access": {
+    "collections": ["financial_profiles", "sap_banking", "orders", "payment_events", "transactions", "receipts"],
+    "submission_forms": ["student_aid_bursary"]
+  },
+  "json_fields": [
+    ["submissions", "data"],
+    ["submissions", "sap_review"],
+    ["submissions", "sap_previous"],
+    ["sap_banking", "pending"],
+    ["sap_banking", "void_cheque"],
+    ["financial_profiles", "pending"],
+    ["financial_profiles", "void_cheque"],
+    ["ballot_votes", "selection"]
+  ]
+}

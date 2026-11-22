@@ -1,0 +1,198 @@
+from __future__ import annotations
+
+import copy
+import json
+import os
+import secrets
+from dataclasses import dataclass, field, fields
+from pathlib import Path
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, Iterable, Mapping, cast
+
+if TYPE_CHECKING:
+    from .contracts import PluginManifest
+
+def env_secret(name: str, default: str | None = None) -> str | None:
+    """Read NAME, or the file named by NAME_FILE (Kubernetes/Docker secret mounts keep values out of env and manifests)."""
+    path = os.environ.get(name + "_FILE")
+    if path:
+        return Path(path).read_text(encoding="utf-8").strip()
+    return os.environ.get(name, default)
+
+
+@dataclass
+class Settings:
+    secret: str = field(default_factory=lambda: secrets.token_hex(32))
+    admin_emails: tuple[str, ...] = ()  # only an account whose OTP-verified email is listed here becomes admin (usernames are never trusted)
+    applicant_email_domains: tuple[str, ...] = ()
+    google_staff_domains: tuple[str, ...] = ()
+    google_client_id: str | None = None
+    google_client_secret: str | None = field(default=None, repr=False)
+    google_bootstrap_admin_email: str | None = None
+    turnstile_site_key: str | None = None
+    turnstile_secret_key: str | None = field(default=None, repr=False)
+    store: str = "memory"  # memory | sqlite:<path> | firestore
+    token_ttl: int = 8 * 3600
+    otp_ttl: int = 600
+    otp_attempts: int = 5  # wrong guesses allowed per account per otp_window (carried across re-sent codes)
+    otp_window: int = 900
+    otp_cooldown: int = 60  # minimum seconds between codes for one account
+    otp_max_sends: int = 5  # codes per account per otp_window
+    recovery_attempts: int = 5  # recovery requests per username per recovery_window, regardless of source IP
+    recovery_window: int = 3600
+    max_image_bytes: int = 1_500_000
+    division_codes: tuple[str, ...] = ("UTSG", "UTM", "UTSC")
+    seed_forms: bool = True
+    enabled_plugins: tuple[str, ...] | None = None  # optional program plug-ins; None enables the full portal profile
+    api_only: bool = False  # serve API routes without the bundled full-portal UI
+    # Program settings stay as compatibility fields for direct Settings(...) callers and existing environment variables.
+    # Runtime module access is scoped through the selected manifest's plugin_settings view.
+    expense_approvals_small: int = 1
+    expense_approvals_large: int = 2
+    expense_large_cents: int = 50_000  # expenses at/above this need the larger approval count
+    default_tax_bps: int = 1300  # Ontario HST 13%
+    max_receipt_bytes: int = 3_000_000
+    user_storage_bytes: int = 15_000_000
+    club_storage_year_bytes: int = 1024 ** 3
+    quota_store: str | None = None
+    receipt_storage_path: str | None = None
+    receipt_cold_remote: str | None = None
+    receipt_archive_enabled: bool = False
+    dev_admin: bool = False  # seed local-development accounts (localhost only; see devadmin.py)
+    commit: str | None = None  # source revision of this deployment, shown in the footer (git checkout is used when unset)
+    branding_dir: str | None = None  # folder holding theme.json and logos, served at /branding (default: the bundled one)
+    max_cheque_bytes: int = 3_000_000
+    sso_issuer: str = "http://localhost:8000"
+    sso_key_pem: str | None = None  # RSA private key; an ephemeral one is generated when unset
+    zoom_client_id: str = "zoom"
+    zoom_client_secret: str | None = None  # SSO client secret shared with Zoom; zoom client is not registered when unset
+    zoom_redirect_uris: tuple[str, ...] = ()
+    zoom_url: str = ""  # meeting link handed to verified online attendees
+    zoom_sso_url: str = ""  # Zoom vanity-URL SSO start (SP-initiated login)
+    agm_verify_mode: str = "manual"  # deprecated; AGM review is always manual
+    agm_grant_ttl: int = 12 * 3600
+    sap_review_enabled: bool = False  # experimental review; not a substitute for the committee process
+    redis_url: str | None = None  # shared realtime bus + rate limits across replicas; in-process when unset
+    data_key: str | None = None  # Fernet key(s), comma separated, for encrypting scans/receipts/audit; derived from secret if unset
+    rate_limit_auth: int = 30  # requests per window per client IP on auth/recovery/token/mail endpoints (0 disables)
+    rate_window: int = 60
+    mail_recipient_rate_limit: int = 5  # queue/retry requests per recipient per rate window (0 disables)
+    max_body_bytes: int = 8_000_000
+    hsts: bool = True
+    anchor: str = "none"  # none | local | ots | http | evm | pkg.module:factory (see anchor.py)
+    anchor_url: str | None = None
+    anchor_token: str | None = None
+    anchor_evm_key: str | None = None  # anchoring wallet private key (hex) for the evm provider; use the _FILE form
+    anchor_chain_id: int | None = None  # required for evm: refuses to send if the RPC reports a different chain
+    anchor_confirmations: int = 12
+    audit_db_access: bool = False  # record every store read/write with the requester (one digest entry per request)
+    auth_signing_key: str | None = None  # Ed25519 PEM held ONLY by the auth service (derived from secret when unset)
+    auth_url: str | None = None  # set => portal runs against a separate auth service
+    auth_public_key: str | None = None  # PEM public key(s) of the auth service, used to verify sessions
+    service_token: str | None = None  # shared by auth service and portal for the internal API (>= 32 chars)
+    stripe_secret_key: str | None = field(default=None, repr=False)
+    stripe_webhook_secret: str | None = field(default=None, repr=False)
+    plugin_config: Mapping[str, Mapping[str, Any]] = field(
+        default_factory=lambda: dict[str, Mapping[str, Any]](), repr=False
+    )
+    static_dir: str | None = None  # optional separately built frontend bundle
+
+    @classmethod
+    def from_env(cls) -> "Settings":
+        env = env_secret
+        secret = env("PORTAL_SECRET")
+        if not secret:
+            raise RuntimeError("PORTAL_SECRET must be set: it peppers the username/student-id hashes and must be stable")
+        if len(secret) < 32:
+            raise RuntimeError("PORTAL_SECRET must be at least 32 characters (e.g. `openssl rand -hex 32`)")
+        admin_emails = tuple(a.strip().lower() for a in (env("PORTAL_ADMIN_EMAILS") or "").split(",") if a.strip())
+        raw_plugins = env("PORTAL_ENABLED_PLUGINS")
+        enabled_plugins = None if raw_plugins is None else tuple(
+            item.strip() for item in raw_plugins.split(",") if item.strip()
+        )
+        raw_config = env("PORTAL_PLUGIN_CONFIG")
+        try:
+            parsed_config: object = json.loads(raw_config) if raw_config is not None else {}
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("plug-in configuration must be a JSON object") from exc
+        plugin_config = _validated_plugin_config(parsed_config)
+        return cls(secret=secret, admin_emails=admin_emails, store=env("PORTAL_STORE", "memory"),
+                   applicant_email_domains=tuple(a.strip().lower() for a in (env("PORTAL_APPLICANT_EMAIL_DOMAINS") or "").split(",") if a.strip()),
+                   google_staff_domains=tuple(a.strip().lower() for a in (env("PORTAL_GOOGLE_STAFF_DOMAINS") or "").split(",") if a.strip()),
+                   google_client_id=env("PORTAL_GOOGLE_CLIENT_ID"), google_client_secret=env("PORTAL_GOOGLE_CLIENT_SECRET"),
+                   google_bootstrap_admin_email=env("PORTAL_GOOGLE_BOOTSTRAP_ADMIN_EMAIL"),
+                   turnstile_site_key=env("PORTAL_TURNSTILE_SITE_KEY"),
+                   turnstile_secret_key=env("PORTAL_TURNSTILE_SECRET_KEY"),
+                   commit=env("PORTAL_COMMIT"),
+                   dev_admin=(env("PORTAL_DEV_ADMIN") or "").strip().lower() in ("1", "true", "yes"),
+                   enabled_plugins=enabled_plugins,
+                   plugin_config=plugin_config,
+                   api_only=env("PORTAL_API_ONLY", "0") == "1",
+                   sso_issuer=env("PORTAL_BASE_URL", "http://localhost:8000").rstrip("/"), sso_key_pem=env("PORTAL_SSO_KEY"),
+                   zoom_client_secret=env("PORTAL_ZOOM_CLIENT_SECRET"), zoom_url=env("PORTAL_ZOOM_URL", ""),
+                   zoom_sso_url=env("PORTAL_ZOOM_SSO_URL", ""),
+                   zoom_redirect_uris=tuple(u for u in env("PORTAL_ZOOM_REDIRECT_URIS", "").split(",") if u),
+                   agm_verify_mode=env("PORTAL_AGM_VERIFY_MODE", "manual"),
+                   sap_review_enabled=env("PORTAL_SAP_REVIEW_ENABLED", "0") == "1",
+                   token_ttl=int(env("PORTAL_TOKEN_TTL", str(8 * 3600))),
+                   auth_signing_key=env("PORTAL_AUTH_SIGNING_KEY"), auth_url=env("PORTAL_AUTH_URL"),
+                   auth_public_key=env("PORTAL_AUTH_PUBLIC_KEY"), service_token=env("PORTAL_SERVICE_TOKEN"),
+                   stripe_secret_key=env("PORTAL_STRIPE_SECRET_KEY"),
+                   stripe_webhook_secret=env("PORTAL_STRIPE_WEBHOOK_SECRET"),
+                   user_storage_bytes=int(env("PORTAL_USER_STORAGE_BYTES", "15000000")),
+                   club_storage_year_bytes=int(env("PORTAL_CLUB_STORAGE_YEAR_BYTES", str(1024 ** 3))),
+                   quota_store=env("PORTAL_QUOTA_STORE"),
+                   receipt_storage_path=env("PORTAL_RECEIPT_STORAGE_PATH"),
+                   receipt_cold_remote=env("PORTAL_RECEIPT_COLD_REMOTE"),
+                   receipt_archive_enabled=env("PORTAL_RECEIPT_ARCHIVE_ENABLED", "0") == "1",
+                   redis_url=env("PORTAL_REDIS_URL"), data_key=env("PORTAL_DATA_KEY"),
+                   rate_limit_auth=int(env("PORTAL_RATE_LIMIT_AUTH", "30")),
+                   mail_recipient_rate_limit=int(env("PORTAL_MAIL_RECIPIENT_RATE_LIMIT", "5")),
+                   hsts=env("PORTAL_HSTS", "1") != "0",
+                   anchor=env("PORTAL_ANCHOR", "none"), anchor_url=env("PORTAL_ANCHOR_URL"), anchor_token=env("PORTAL_ANCHOR_TOKEN"),
+                   anchor_evm_key=env("PORTAL_ANCHOR_EVM_KEY"),
+                   anchor_chain_id=int(env("PORTAL_ANCHOR_CHAIN_ID") or 0) or None,
+                   anchor_confirmations=int(env("PORTAL_ANCHOR_CONFIRMATIONS", "12")),
+                   audit_db_access=env("PORTAL_AUDIT_DB_ACCESS", "0") == "1",
+                   branding_dir=env("PORTAL_BRANDING_DIR"), static_dir=env("PORTAL_STATIC_DIR"))
+
+
+def _validated_plugin_config(raw: object) -> dict[str, dict[str, Any]]:
+    if not isinstance(raw, Mapping):
+        raise RuntimeError("plug-in configuration must be an object of program objects")
+    result: dict[str, dict[str, Any]] = {}
+    for owner, values in cast(Mapping[object, object], raw).items():
+        if not isinstance(owner, str) or not owner or not isinstance(values, Mapping):
+            raise RuntimeError("plug-in configuration must be an object of program objects")
+        program_values: dict[str, Any] = {}
+        for key, value in cast(Mapping[object, Any], values).items():
+            if not isinstance(key, str) or not key:
+                raise RuntimeError(f"plug-in configuration keys for {owner} must be strings")
+            program_values[key] = copy.deepcopy(value)
+        result[owner] = program_values
+    return result
+
+
+def plugin_settings_for(manifests: Iterable["PluginManifest"], settings: Settings) -> Mapping[str, Mapping[str, Any]]:
+    """Expose only declared setting fields to each selected plug-in."""
+    available = {item.name for item in fields(settings)}
+    result: dict[str, Mapping[str, Any]] = {}
+    owners: dict[str, str] = {}
+    configured = _validated_plugin_config(settings.plugin_config)
+    for manifest in manifests:
+        values: dict[str, Any] = {}
+        for key in manifest.settings:
+            if key not in available:
+                raise RuntimeError(f"plug-in {manifest.id} declares unknown setting {key}")
+            owner = owners.get(key)
+            if owner is not None:
+                raise RuntimeError(f"setting {key} is declared by both {owner} and {manifest.id}")
+            owners[key] = manifest.id
+            values[key] = getattr(settings, key)
+        program_values = configured.get(manifest.id, {})
+        unknown = set(program_values) - set(manifest.config)
+        if unknown:
+            raise RuntimeError(f"plug-in {manifest.id} has undeclared configuration keys: {', '.join(sorted(unknown))}")
+        values.update(program_values)
+        result[manifest.id] = MappingProxyType(values)
+    return MappingProxyType(result)

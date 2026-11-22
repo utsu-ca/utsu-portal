@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import ClubRegistrationView from "../views/ClubRegistrationView.svelte";
-import { session } from "../../../lib/session.svelte.js";
+import ClubRegistrationView from "../../../../../src/clubs/frontend/views/ClubRegistrationView.svelte";
+import { session } from "@utsu/portal";
 
 const { apiMock, apiAllPagesMock } = vi.hoisted(() => ({ apiMock: vi.fn(), apiAllPagesMock: vi.fn() }));
-vi.mock("../../../lib/api.js", async importOriginal => ({
+vi.mock("@utsu/portal", async importOriginal => ({
   ...(await importOriginal()), api: apiMock, apiAllPages: apiAllPagesMock,
 }));
-import { api, apiAllPages } from "../../../lib/api.js";
+import { api, apiAllPages } from "@utsu/portal";
 
 beforeEach(() => {
   session.me = { user: { uuid: "bob" } };

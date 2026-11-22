@@ -20,6 +20,13 @@ HEADERS = ["Timestamp", "Username", "Preferred Name", "Preferred Pronouns", "ACO
            "Data Processing Confirmation", "Contact Consent"]
 
 
+def test_verifier_manifest_matches_its_registered_capabilities():
+    from agm.verify import AgmVerifyModule
+    from utsu_core.plugin_host import discover_manifests
+
+    assert AgmVerifyModule.manifest == discover_manifests(external_entry_points=[])["agm_verify"]
+
+
 def test_attendance_paginate_in_uuid_order_and_validate_parameters():
     app = create_app(Settings(secret="s" * 32), mailer=OutboxMailer())
     ctx = app.state.ctx

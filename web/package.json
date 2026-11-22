@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:core": "vite build --mode core-only",
+    "build:subset": "vite build --mode selected",
     "test": "vitest run"
   },
   "devDependencies": {

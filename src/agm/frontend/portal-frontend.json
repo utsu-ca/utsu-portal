@@ -1,0 +1,9 @@
+{
+  "programs": [{
+    "id": "agm",
+    "directory": ".",
+    "menu": ["agmActions"],
+    "views": true,
+    "standalone": ["checkin"]
+  }]
+}

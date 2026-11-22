@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import BallotPanel from "../components/BallotPanel.svelte";
-import ElectionsAdmin from "../views/ElectionsAdmin.svelte";
-import { session } from "../../../lib/session.svelte.js";
+import BallotPanel from "../../../../../src/voting/frontend/components/BallotPanel.svelte";
+import ElectionsAdmin from "../../../../../src/voting/frontend/views/ElectionsAdmin.svelte";
+import { session } from "@utsu/portal";
 
-vi.mock("../../../lib/api.js", async importOriginal => ({ ...(await importOriginal()), api: vi.fn() }));
-import { api } from "../../../lib/api.js";
+vi.mock("@utsu/portal", async importOriginal => ({ ...(await importOriginal()), api: vi.fn() }));
+import { api } from "@utsu/portal";
 
 const options = [{ id: "ada", label: "Ada" }, { id: "bo", label: "Bo" }, { id: "cy", label: "Cy" }];
 const ballot = (extra = {}) => ({

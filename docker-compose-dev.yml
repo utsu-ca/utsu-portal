@@ -9,7 +9,7 @@ services:
       - -ec
       - python /app/testing/dev_seed.py && exec opentelemetry-instrument uvicorn --app-dir /app/testing --factory dev_app:create_dev_app --host 0.0.0.0 --port 8080 --no-server-header
     environment:
-      PYTHONPATH: /app/src
+      PYTHONPATH: /app/src:/app/src/core
       PORTAL_DEV_ADMIN: "1"
       PORTAL_DEV_SEED: "${PORTAL_DEV_SEED:-0}"
       PORTAL_SAP_REVIEW_ENABLED: "1"
@@ -41,9 +41,9 @@ services:
     develop:
       watch:
         - action: restart
-          path: ./src/utsu_core
+          path: ./src
           ignore:
-            - static/
+            - core/utsu_core/static/
             - "**/__pycache__/"
         - action: rebuild
           path: ./pyproject.toml

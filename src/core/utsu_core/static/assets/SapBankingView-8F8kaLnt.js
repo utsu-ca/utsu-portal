@@ -1,0 +1,1 @@
+import{t as e}from"./BankingView-Dbm5f-Md.js";import"./session.svelte-Cx6zubVD.js";import"./legacy-CXSaPbX_.js";import"./portal-api-BE-w7xMv.js";function t(t){e(t,{endpoint:`/sap/banking`,heading:`SABP banking`,initialMessage:`An active SABP application is required.`})}export{t as default};

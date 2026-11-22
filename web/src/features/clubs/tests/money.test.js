@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { formatCents, parseDollars } from "../lib/money.js";
+import { formatCents, parseDollars } from "../../../../../src/clubs/frontend/lib/money.js";
 
 it("converts dollars to cents without floating point surprises", () => {
   expect([parseDollars("25.50"), parseDollars("$0.07"), parseDollars("19.99"), parseDollars("3")]).toEqual([2550, 7, 1999, 300]);
