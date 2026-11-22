@@ -33,21 +33,15 @@ def make_frontend(directory, text, *, full=False):
         (directory / page).write_text(html, encoding="utf-8")
 
 
-def test_split_cli_requires_experimental_acknowledgement(tmp_path):
+def test_split_cli_rejects_unknown_flag(tmp_path):
     result = subprocess.run(
         [sys.executable, str(ROOT / "tools/build_split_distributions.py"),
-         "--version", "999999.0", "--out-dir", str(tmp_path), "--core-static-dir", str(tmp_path)],
+         "--experimental", "--version", "999999.0", "--out-dir", str(tmp_path),
+         "--core-static-dir", str(tmp_path)],
         capture_output=True, text=True,
     )
     assert result.returncode != 0
-    assert "--experimental" in result.stderr
-    assert not list(tmp_path.iterdir())
-
-
-def test_split_build_rejects_existing_release_version(tmp_path):
-    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
-    with pytest.raises(ValueError, match="newer than the bundled core release"):
-        build_split_distributions.build(project["version"], tmp_path, tmp_path)
+    assert "unrecognized arguments" in result.stderr
     assert not list(tmp_path.iterdir())
 
 

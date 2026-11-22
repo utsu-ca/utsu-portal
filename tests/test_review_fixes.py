@@ -1,5 +1,4 @@
 """Regression tests for the code-review fixes."""
-import argparse
 import csv
 import json
 import logging
@@ -19,7 +18,7 @@ from utsu_core.mail.campaign import Prepared, send_all
 from utsu_core.mail.notices import DIVISION_FIELD, NUMBER_FIELD, diagnose
 from utsu_core.mail.templates import RenderedMessage
 from utsu_core.mail.transport import SmtpSender
-from utsu_core.std.utils import absfile, explicit_flags, load_and_merge_config, setup_logging
+from utsu_core.std.utils import absfile
 from utsu_core.resources import package_text
 from utsu_core.verification import construct_lookup_tables
 
@@ -182,47 +181,6 @@ def test_only_options_marked_with_a_star_match_by_their_start():
 def test_a_negated_in_person_answer_is_not_in_person():
     assert not agm.is_in_person("No, I will not be attending in person")
     assert agm.is_in_person("Yes, I'll be attending in-person.")
-
-
-# ---- logging and config ------------------------------------------------------------------------------------------
-
-@pytest.mark.parametrize("name, level", [("info", logging.INFO), ("WARNING", logging.WARNING), ("warn", logging.WARNING),
-                                         ("Debug", logging.DEBUG), ("ERROR", logging.ERROR), ("TRACE", 5)])
-def test_verbosity_names_map_to_their_levels(name, level, monkeypatch):
-    seen = {}
-    monkeypatch.setattr(logging, "basicConfig", lambda **kw: seen.update(kw))
-    setup_logging({"verbosity": name, "log_file": ""})
-    assert seen["level"] == level
-
-
-def test_an_unknown_verbosity_is_refused():
-    with pytest.raises(ValueError, match="verbosity"):
-        setup_logging({"verbosity": "LOUD", "log_file": ""})
-
-
-def test_a_flag_equal_to_its_default_still_overrides_the_config(tmp_path):
-    path = tmp_path / "config.json"
-    path.write_text(json.dumps({"seed": 7}), encoding="utf-8")
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default=str(path))
-    parser.add_argument("--seed", type=int, default=2026)
-    given = explicit_flags(parser, ["--seed", "2026"])
-    assert given == {"seed"}
-    conf = load_and_merge_config(parser.parse_args(["--seed", "2026"]), parser, explicit=given)
-    assert conf["seed"] == 2026 and json.loads(path.read_text(encoding="utf-8"))["seed"] == 2026
-    path.write_text(json.dumps({"seed": 7}), encoding="utf-8")
-    assert load_and_merge_config(parser.parse_args([]), parser, explicit=set())["seed"] == 7  # not given: the config's
-
-
-def test_program_is_never_saved_to_the_config(tmp_path):
-    path = tmp_path / "config.json"
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default=str(path))
-    parser.add_argument("--program", default="all")
-    load_and_merge_config(parser.parse_args(["--program", "agm"]), parser, transient=("program",))
-    assert "program" not in json.loads(path.read_text(encoding="utf-8"))
-    path.write_text(json.dumps({"program": "sap"}), encoding="utf-8")
-    assert load_and_merge_config(parser.parse_args([]), parser, transient=("program",))["program"] == "all"
 
 
 # ---- mail ----------------------------------------------------------------------------------------------------

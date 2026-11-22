@@ -456,75 +456,42 @@ class QuotaStore(Store):
         )
 
     def _sync_catalogue(self) -> None:
-        """Reconcile the durable catalogue with the policies this process runs.
+        """Reconcile the durable catalogue with the policies this process runs, in one atomic update.
 
-        - New policies are declared (epoch bumped).
-        - Policies present in the catalogue but absent here are marked
-          ``retained`` and startup fails closed: their records still need
-          executable rules that are no longer installed.
+        - New policies are declared and the epoch is bumped; an unchanged catalogue keeps its epoch, so replicas
+          starting together do not fence each other.
+        - A catalogued policy with no installed policy of the same shape fails closed: its records still need
+          executable rules that are no longer installed. A same-shape policy under a new name is a rename.
         - A fingerprint mismatch for a known name fails closed.
         """
         _require_atomic_store(self.usage_store, "quota")
         declared = {policy.name: policy for policy in self._declared_policies()}
-        epoch, catalogued = _parse_catalogue(
-            self.usage_store.get(CATALOGUE_COLLECTION, CATALOGUE_ID)
-        )
-        # A sanctioned replacement keeps the same shape under a new name:
-        # treat it as a rename, not a missing retained policy.
         declared_fingerprints = {policy.fingerprint() for policy in declared.values()}
-        missing = sorted(
-            name for name, policy in catalogued.items()
-            if name not in declared and policy.fingerprint() not in declared_fingerprints
-        )
-        if missing:
-            raise RetainedPolicyError(
-                "retained upload quota policies are required but not installed: "
-                + ", ".join(missing)
-            )
-        for name, policy in declared.items():
-            existing = catalogued.get(name)
-            if existing is not None and existing.fingerprint() != policy.fingerprint():
-                raise RetainedPolicyError(
-                    f"upload quota policy {name} changed shape without a catalogue migration"
-                )
-        new_names = set(declared) - set(catalogued)
-        if new_names:
-            merged = {**catalogued, **declared}
-            doc = _catalogue_doc(epoch + 1, merged.values())
-            if epoch == 0 and catalogued == {}:
-                created = self.usage_store.create(CATALOGUE_COLLECTION, CATALOGUE_ID, doc)
-            else:
-                created = False
-            if not created:
-                # Catalogue already exists (or another process won the race):
-                # merge via CAS update so concurrent declarations converge.
-                def merge(current):
-                    current_epoch, current_policies = _parse_catalogue(current)
-                    merged_now = {**current_policies, **declared}
-                    return _catalogue_doc(current_epoch + 1, merged_now.values())
 
-                self.usage_store.update(CATALOGUE_COLLECTION, CATALOGUE_ID, merge)
-                epoch, catalogued = _parse_catalogue(
-                    self.usage_store.get(CATALOGUE_COLLECTION, CATALOGUE_ID)
+        def merge(current):
+            epoch, catalogued = _parse_catalogue(current)
+            missing = sorted(
+                name for name, policy in catalogued.items()
+                if name not in declared and policy.fingerprint() not in declared_fingerprints
+            )
+            if missing:
+                raise RetainedPolicyError(
+                    "retained upload quota policies are required but not installed: " + ", ".join(missing)
                 )
-                missing = sorted(
-                    name for name, policy in catalogued.items()
-                    if name not in declared and policy.fingerprint() not in declared_fingerprints
-                )
-                if missing:
+            for name, policy in declared.items():
+                existing = catalogued.get(name)
+                if existing is not None and existing.fingerprint() != policy.fingerprint():
                     raise RetainedPolicyError(
-                        "retained upload quota policies are required but not installed: "
-                        + ", ".join(missing)
+                        f"upload quota policy {name} changed shape without a catalogue migration"
                     )
-                for name, policy in declared.items():
-                    existing = catalogued.get(name)
-                    if existing is not None and existing.fingerprint() != policy.fingerprint():
-                        raise RetainedPolicyError(
-                            f"upload quota policy {name} changed shape without a catalogue migration"
-                        )
-            self._epoch = epoch + 1 if new_names else epoch
-        else:
-            self._epoch = epoch
+            if current is not None and not set(declared) - set(catalogued):
+                return None
+            return _catalogue_doc(epoch + 1, {**catalogued, **declared}.values())
+
+        record = self.usage_store.update(CATALOGUE_COLLECTION, CATALOGUE_ID, merge)
+        if record is None:
+            raise RetainedPolicyError("quota policy catalogue could not be written")
+        self._epoch = int(record["epoch"])
 
     def _check_epoch(self) -> None:
         """Fence stale processes: refuse writes after a catalogue change."""

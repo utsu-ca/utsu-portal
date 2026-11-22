@@ -4,8 +4,7 @@ The unified UTSU web application and its program modules live under `utsu_core`.
 [README](../README.md) for setup, current functionality and known limitations, and
 [Applicant Portal](Applicant-Portal.md) for portal architecture.
 
-**Migration is not complete.** The former program, mail and export command-line interfaces have been removed.
-Other pages in this wiki document historical batch processing and may reference commands that no longer exist;
+**Migration is not complete.** Other pages in this wiki document historical batch processing;
 they are not production operating instructions.
 
 Historical references:

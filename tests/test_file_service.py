@@ -555,3 +555,106 @@ def test_missing_file_is_not_audited():
     with pytest.raises(FileNotFoundError):
         service.for_owner("clubs").read("receipt", "missing", "member", "club-id")
     assert audit.records == []
+
+
+def test_replicas_starting_together_do_not_fence_each_other():
+    import threading
+
+    usage = MemoryStore()
+    original_get = usage.get
+    barrier = threading.Barrier(2)
+
+    def get_after_both_read(col, id):
+        record = original_get(col, id)
+        if col == upload_quota.CATALOGUE_COLLECTION and record is None:
+            try:
+                barrier.wait(2)
+            except threading.BrokenBarrierError:
+                pass
+        return record
+
+    usage.get = get_after_both_read
+    stores: dict[str, QuotaStore] = {}
+
+    def boot(name):
+        stores[name] = QuotaStore(MemoryStore(), usage, Settings(secret="s" * 32))
+
+    threads = [threading.Thread(target=boot, args=(name,)) for name in "ab"]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    catalogue = original_get(upload_quota.CATALOGUE_COLLECTION, upload_quota.CATALOGUE_ID)
+    assert {store._epoch for store in stores.values()} == {catalogue["epoch"]}
+    for index, store in enumerate(stores.values()):
+        store.put("media", f"scan{index}", {"id": f"scan{index}", "uuid": "user", "face": data_url(b"x")})
+
+
+def test_restart_with_unchanged_policies_keeps_the_epoch():
+    inner, usage = MemoryStore(), MemoryStore()
+    settings = Settings(secret="s" * 32)
+    first = QuotaStore(inner, usage, settings, policies=(program_upload_policy(),))
+    second = QuotaStore(inner, usage, settings, policies=(program_upload_policy(),))
+    assert first._epoch == second._epoch
+    first.put("program_uploads", "x", {"id": "x", "uuid": "user", "size": 1})
+
+
+PROCESS_SCRIPT = """
+import sys
+sys.path[:0] = [sys.argv[1], sys.argv[2], sys.argv[3]]
+from test_file_service import data_url, program_upload_policy
+from utsu_core.services.upload_quota import QuotaStore
+from utsu_core.settings import Settings
+from utsu_core.store import MemoryStore, SQLiteStore
+
+mode = sys.argv[5]
+usage = SQLiteStore(sys.argv[4])
+policies = (program_upload_policy(),) if mode.startswith("extra") else ()
+try:
+    store = QuotaStore(MemoryStore(), usage, Settings(secret="s" * 32), policies=policies)
+except RuntimeError as exc:
+    print("startup-failed:", exc, flush=True)
+    sys.exit(0)
+print("ready", flush=True)
+if mode.endswith("wait"):
+    sys.stdin.readline()
+try:
+    store.put("media", "scan", {"id": "scan", "uuid": "user", "face": data_url(b"x")})
+    print("write-ok", flush=True)
+except RuntimeError as exc:
+    print("write-refused:", exc, flush=True)
+"""
+
+
+def test_quota_catalogue_fences_and_retains_across_real_processes(tmp_path):
+    import subprocess
+    import sys
+
+    root = Path(__file__).resolve().parents[1]
+    quota_db = str(tmp_path / "quota.db")
+
+    def command(mode):
+        return [sys.executable, "-c", PROCESS_SCRIPT, str(root / "src"), str(root / "src/core"),
+                str(root / "tests"), quota_db, mode]
+
+    def run(mode):
+        result = subprocess.run(command(mode), capture_output=True, text=True, timeout=60, check=True)
+        return result.stdout.strip().splitlines()
+
+    stale = subprocess.Popen(command("plain-wait"), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, text=True)
+    try:
+        assert stale.stdout.readline().strip() == "ready"
+        # A newer process declares an extra policy while the older process is still serving.
+        assert run("extra") == ["ready", "write-ok"]
+        # The older process holds the previous epoch and must refuse further writes.
+        stale_output, stale_error = stale.communicate("go\n", timeout=60)
+        assert "write-refused: quota policy catalogue changed" in stale_output, stale_error
+    finally:
+        stale.kill()
+
+    # The provider is no longer installed but its retained records still need it: fail closed.
+    assert run("plain")[0].startswith("startup-failed: retained upload quota policies are required")
+    # Restoring the provider recovers; restarts with unchanged policies keep working.
+    assert run("extra") == ["ready", "write-ok"]

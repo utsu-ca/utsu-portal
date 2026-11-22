@@ -7,10 +7,10 @@
 
 | File | Used for | Notes |
 |---|---|---|
-| Roster CSV (`--import_uoft_data`) | `uoft_data` | Columns `First Name`, `Last Name`, `Truncated Student Number`, `Faculty`, `Division`. Imported **once**; it is read and checked first, so a bad file leaves the previous roster in place. Blank lines are skipped. |
-| Senate export (`--verify_student`) | Senate | see [Senate and Seating](Senate-and-Seating#form-export) |
-| SABP export (`--sap_file`) | SABP | see [Student Aid Bursary Program](Student-Aid-Bursary-Program#form-export) |
-| AGM export (`--agm_file`) | AGM | see [AGM RSVPs](AGM-RSVPs#form-export) |
+| Roster CSV | `uoft_data` | Columns `First Name`, `Last Name`, `Truncated Student Number`, `Faculty`, `Division`. Imported **once**; it is read and checked first, so a bad file leaves the previous roster in place. Blank lines are skipped. |
+| Senate export | Senate | see [Senate and Seating](Senate-and-Seating#form-export) |
+| SABP export | SABP | see [Student Aid Bursary Program](Student-Aid-Bursary-Program#form-export) |
+| AGM export | AGM | see [AGM RSVPs](AGM-RSVPs#form-export) |
 | `data/conversion_table_*.csv` | column names | below |
 | `data/seats_senate.csv` | seating | [Seats file](Senate-and-Seating#seats-file) |
 | `data/wfni_weights.csv` | SABP scoring | [WFNI](Student-Aid-Bursary-Program#wfni-weighted-financial-need-index) |
@@ -18,7 +18,7 @@
 
 ### Roster import behaviour
 
-- The roster is imported **only when `uoft_data` does not exist** in the database, or with `--reimport_uoft_data`.
+- The roster is imported **only when `uoft_data` does not exist** in the database, or on an explicit reimport.
 - Reimporting drops the table first and then verifies **every** application again (except edited verified rows).
 - The roster file may be UTF-8, UTF-16 or Windows-1252 (see [Identity and Verification](Identity-and-Verification#reading-files-people-re-saved)).
 - **Caution:** the table is dropped *before* the new file is validated and the import is not transactional. A

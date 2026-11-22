@@ -9,7 +9,7 @@ here is just the filled-in sheet text as the document body. Like the real ones, 
 the reviewers, the header may name the wrong reviewer, and the scores are messy: ranges such as "2-3", blanks, notes
 continued on further lines, and a few invalid values. Scores are random but reproducible from the seed.
 
---from-sheets fills in the blank batch_NNN.txt sheets that `utsu-sap --reviewers ...` wrote (so the batches match the
+--from-sheets fills in the blank batch_NNN.txt sheets written by SABP processing (so the batches match the
 database); without it, made-up batches are used.
 """
 import argparse
@@ -129,7 +129,7 @@ def main(argv=None) -> None:
     parser.add_argument("--batches", type=int, default=6)
     parser.add_argument("--size", type=int, default=10, help="Applications per made-up batch")
     parser.add_argument("--reviewers", default=",".join(REVIEWERS))
-    parser.add_argument("--from-sheets", help="folder of <reviewer>/batch_NNN.txt written by utsu-sap")
+    parser.add_argument("--from-sheets", help="folder of <reviewer>/batch_NNN.txt written by SABP processing")
     args = parser.parse_args(argv)
     result = generate(args.out, args.seed, args.batches, args.size, args.reviewers.split(","), args.from_sheets)
     for batch, reviewers in sorted(result["assignments"].items()):

@@ -58,7 +58,7 @@ Adds `delegated` (`yes`/`no`). No names or emails are stored.
 Adds: `student_number` (the **last four digits** only; empty when the form gave none or it could not be read), `terms`, `stage`
 (`scored`, `in_review`, `discuss`, `reconciled`, `decided`; NULL for unverified), `aid_type` (`LC`/`AP`),
 `requested_amount`, `wfni`, `emergency`, `flags` (`;`-separated), `batch`, `record`, `awarded_amount`, `decision`.
-`awarded_amount` and `decision` are set only by `--record_decisions` and never overwritten by reprocessing.
+`awarded_amount` and `decision` are set only by recording decisions and never overwritten by reprocessing.
 
 ## `sap_batch_reviewer`
 
@@ -66,7 +66,7 @@ Adds: `student_number` (the **last four digits** only; empty when the form gave 
 
 ## `sap_review`
 
-`(uuid, reviewer)` primary key with `need_level` (0-5) and `notes`; filled by `--merge_reviews`. Note the `uuid` here is
+`(uuid, reviewer)` primary key with `need_level` (0-5) and `notes`; filled by merging reviews. Note the `uuid` here is
 the application uuid copied from the reviewer sheet.
 
 ## `agm_rsvp`

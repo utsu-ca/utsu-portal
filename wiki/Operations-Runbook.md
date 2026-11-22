@@ -17,11 +17,6 @@ A checklist for running a real cycle. Replace paths as needed; all commands run 
 
 ## 1. Import the roster and verify applications
 
-```powershell
-utsu-all --db secrets/db.sqlite --import_uoft_data secrets/uoft_data.csv `
-    --verify_student secrets/senate.csv --sap_file secrets/sabp.csv --agm_file secrets/agm.csv `
-    --reviewers "Ann,Bo,Cy"
-```
 
 Then read the log and these files in `secrets/output/`:
 
@@ -31,11 +26,11 @@ Then read the log and these files in `secrets/output/`:
 
 ## 2. Update as responses arrive
 
-Export the **full** form again and re-run the same command (flags are remembered in `config.json`). Every application in
+Export the **full** form again and re-run the same processing. Every application in
 the export is verified again and the newest verified one per student is binding. See
 [Full Exports and Integrity](Full-Exports-and-Integrity).
 
-If the roster itself changed: add `--reimport_uoft_data`. A student who was verified stays verified (the mismatch is
+If the roster itself changed: reimport it. A student who was verified stays verified (the mismatch is
 logged and counted in `kept_verified_despite_roster`), and unverified ones can now become verified.
 
 ## 3. Handle problems
@@ -57,35 +52,30 @@ logged and counted in `kept_verified_despite_roster`), and unverified ones can n
 
 ## 5. SABP
 
-1. Run with `--reviewers` (or run without and hand the sheets out yourself, then `--issue_batches all`).
+1. Run with reviewers (or run without and hand the sheets out yourself, then record the batches as issued).
 2. Send each reviewer **only** their folder `sap_batches/by_reviewer/<name>/`. They fill in `need_level` (0-5) and `notes`
    in the `.csv` and return it to the same place.
-3. `utsu-sap --merge_reviews`, then resolve `discuss` and `incomplete` rows in
+3. Merging reviews, then resolve `discuss` and `incomplete` rows in
    `sap_merged_ratings.csv`.
 4. Add `decision` (and `awarded_amount`) to that file or a new one, then
-   `utsu-sap --record_decisions decisions.csv`.
+   recording decisions from a decisions CSV.
 5. Decided applications are complete and final for their term.
 
 ## 6. AGM
 
-1. Run with `--agm_file`. Hand out `agm_list_all.csv` (or `agm_list_in_person.csv`) to the door team and
+1. Run with the AGM form export. Hand out `agm_list_all.csv` (or `agm_list_in_person.csv`) to the door team and
    `agm_accommodations.csv` (no names) to the organizers.
 2. Check `agm_unverified.csv` for RSVPs whose `reason` says a name is shared by more than one student, and fix those rows
    with a student number or division.
 
 ## 7. Emails
 
-Always `--dry_run` first, then send. See [Emailing](Emailing#safety-workflow).
+Always preview first, then send. See [Emailing](Emailing#safety-workflow).
 
-```powershell
-python -m utsu_core.mail.notices agm more_info
-python -m utsu_core.mail agm_more_info --recipients secrets/output/notices_agm_more_info.csv --dry_run
-```
 
 ## 8. After the cycle
 
 - [ ] Archive the database, backups and `secrets/output/` per your retention policy, then delete working copies.
-- [ ] `--keep_backups N` trims old backups on later runs.
 - [ ] Do not commit anything under `secrets/`.
 
 ## Quick troubleshooting
@@ -95,7 +85,7 @@ python -m utsu_core.mail agm_more_info --recipients secrets/output/notices_agm_m
 | `Missing required names in columns: {...}` | A form heading changed: update the left column in the lookup table |
 | `The export needs at least one of these columns to identify people` | The export has no name or student-number column |
 | Everything is `unverified` | The roster table is empty or the wrong file was imported; check `SELECT COUNT(*) FROM uoft_data` |
-| `Seats file not found, skipping seating` | `--seats_file` path wrong |
-| `FileNotFoundError` for the Senate file on an SABP-only run | Run `utsu-sap` (`utsu-all` always tries Senate, and only skips it, with a warning, when the file is missing) |
+| `Seats file not found, skipping seating` | seats file path wrong |
+| `FileNotFoundError` for the Senate file on an SABP-only run | Run SABP processing only |
 | Reviewer sheet warning "no longer matches batch" | The batch changed after issue; the reviewer's sheet is left untouched on purpose |
-| `Config file not found` | `config.json` is created on the first normal run |
+

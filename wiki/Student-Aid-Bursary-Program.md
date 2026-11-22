@@ -7,9 +7,7 @@
 `src/sabp/wfni.py`. The program verifies applicants, scores them, cuts anonymized review batches for the
 committee, merges reviewer ratings, and records final decisions. **Disbursement is not tracked.**
 
-```powershell
-utsu-sap --sap_file secrets/sabp.csv [--batch_size 50] [--reviewers "Ann,Bo,Cy"]
-```
+SABP processing takes a form export, a batch size and reviewers.
 
 ## Form export
 
@@ -32,9 +30,9 @@ flowchart LR
     E --> F[Assign to batches]
     F --> G[Write anonymized sheets]
     G --> H[Reviewers rate 0-5]
-    H --> I[--merge_reviews]
+    H --> I[merge reviews]
     I --> J[Committee decides]
-    J --> K[--record_decisions]
+    J --> K[record decisions]
 ```
 
 ### Streams, amounts and flags
@@ -78,7 +76,7 @@ capped **circumstances** bonus (multi-select, "n/a" / "none" excluded).
 
 ## Batches and anonymization
 
-- Verified, binding applications are cut into batches of at most `--batch_size` (default 50), **oldest
+- Verified, binding applications are cut into batches of at most 50, **oldest
   submission first**. A record id looks like `B001-07` (batch 1, record 7).
 - Committee-facing files carry only the application `uuid` and the record id. Names, emails, phone numbers, student
   numbers, postal codes, links and the applicant's own name are redacted from free text (`[name]`, `[email]`, `[phone]`,
@@ -89,7 +87,7 @@ capped **circumstances** bonus (multi-select, "n/a" / "none" excluded).
 
 ### Reviewer sheets
 
-With `--reviewers "Ann,Bo,Cy"` (two or more names) each batch is assigned to **two** reviewers, least loaded first,
+With reviewers (two or more names) each batch is assigned to **two** reviewers, least loaded first,
 saved in `sap_batch_reviewer`. Existing batches keep their reviewers when more are added. Reviewer names are
 sanitized for folder names (`Ann Lee` → `Ann_Lee`).
 
@@ -104,13 +102,11 @@ to the **same place**. If a batch changed since it was issued (for example the l
 so and the merge reports the missing ratings. A batch whose reviewers were assigned or which was marked as issued is
 **closed**: its blank sheets are no longer rewritten and it is never added to.
 
-If sheets are handed out without `--reviewers`, record that with `--issue_batches all` (or `1,2`).
+If sheets are handed out without reviewers, record that (all batches, or specific batch numbers).
 
 ## Merging reviews
 
-```powershell
-utsu-sap --merge_reviews
-```
+Merging reviews writes the merged ratings.
 
 Writes `sap_merged_ratings.csv` and fills the `sap_review` table. Per application: reviewers, each rating, the mean, the
 spread, a `suggested_amount` and a `status`:
@@ -140,15 +136,11 @@ forward; reprocessing never moves it back.
 | Stage | Set when |
 |---|---|
 | `scored` | verified and scored, in a batch not yet handed out |
-| `in_review` | its batch is handed to reviewers (`--reviewers` assigned, or `--issue_batches`) |
-| `discuss` / `reconciled` | `--merge_reviews` finds the two levels 2+ apart / in agreement (one rating stays `in_review`) |
-| `decided` | `--record_decisions decisions.csv` |
+| `in_review` | its batch is handed to reviewers (reviewers assigned, or batches issued) |
+| `discuss` / `reconciled` | merging reviews finds the two levels 2+ apart / in agreement (one rating stays `in_review`) |
+| `decided` | decisions recorded from a decisions CSV |
 
-```powershell
-utsu-sap --issue_batches all      # sheets were handed out without --reviewers
-utsu-sap --merge_reviews
-utsu-sap --record_decisions decisions.csv
-```
+Issuing batches, merging reviews and recording decisions advance the stages.
 
 `decisions.csv` needs `uuid` and `decision`; `awarded_amount` is optional (`0` is allowed). Other columns (for example
 those of `sap_merged_ratings.csv`) are ignored, so the merged file can be filled in and used directly. Rows that cannot be
@@ -163,18 +155,14 @@ such as `2-3` becomes `2.5`). `suggested_amount` is the mean score on an exponen
 scores get an amount, rounded to the nearest $10 and never below `rubric_amount`, the rubric maximum of the mean
 score's whole level (for example a mean of 3 is at least $650, even though the curve gives $583):
 
-```powershell
-python -m utsu_core.programs.sap.merge_docx path\to\reviewers -o secrets\merged_reviews.csv
-```
+Merging reviewer sheets produces `secrets/merged_reviews.csv`.
 
 ### Private banking export
 
 Join the merged reviews with the **same database used to assign their batches** and the original full SABP form
 export:
 
-```powershell
-python -m utsu_core.programs.sap.export_banking secrets\merged_reviews.csv secrets\sabp.csv secrets\data.sqlite -o secrets\reviews_banking.csv
-```
+Exporting banking details produces `secrets/reviews_banking.csv`.
 
 The export preserves the review columns and adds the application UUID, first and last names, email, original email,
 institution name, institution number, transit number, account number and `export_flags`. The record ID resolves to
@@ -241,9 +229,7 @@ separator. Payee names must fit 30 printable ASCII characters; account numbers m
 numbers exactly three digits and transit numbers exactly five digits. Invalid inputs stop the export rather than being
 silently truncated or altered.
 
-```powershell
-python -m utsu_core.programs.sap.export_banking secrets\approved_reviews.csv secrets\sabp.csv secrets\data.sqlite -o secrets\reviews_banking.csv --eft-config secrets\eft_config.json --eft-output secrets\payments_0023.eft
-```
+Exporting banking details with EFT output produces `secrets/reviews_banking.csv` and `secrets/payments_0023.eft`.
 
 Both files contain sensitive information. The EFT is created only after all rows validate and is never overwritten.
 If any application requires manual reconciliation, the CSV is written with the flagged rows, the command exits with an
@@ -265,7 +251,7 @@ stage. Databases from before the `stage` column get it filled in on the next run
 | `sap_verified.csv` | **Private.** Master list of verified binding applications: `uuid, status, student_uuid, uoft_uuid, verification_level, match_method, submission_ts, terms, id, full_name, email, faculty, stream, subsidies, requested_amount, wfni, emergency, flags, batch, record` |
 | `sap_unverified.csv` | **Private.** Same columns for unverified binding applications |
 | `sap_batches/` | Anonymized sheets (above) |
-| `sap_merged_ratings.csv` | Created by `--merge_reviews` |
+| `sap_merged_ratings.csv` | Created by merging reviews |
 | `sap_run.json` | Counts: submissions, binding, verified, unverified, duplicates, non-binding, not considered, `missing_from_export`, `kept_verified_despite_roster`, `stages`, `wfni_weights_sha256`, `batches`, `batch_size`, `reviewers`, `emergency`, `flags` |
 
 Database tables for SABP are described in [Data Model](Data-Model#student_aid).

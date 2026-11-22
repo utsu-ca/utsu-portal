@@ -7,8 +7,7 @@ packages have moved under `utsu_core`. Update external imports accordingly.
 **Migration is in progress.** The web workflows do not yet replace all historical processing. In particular,
 SABP committee review is experimental and disabled by default; bulk historical application migration and payment
 reconciliation/EFT export are not implemented. Do not rely on the current system for a production aid cycle.
-The old program and mail command-line interfaces have been removed. The [wiki](wiki/Home.md) contains historical
-batch documentation and may describe commands and workflows that no longer exist.
+The [wiki](wiki/Home.md) contains historical batch documentation.
 
 ## Local development
 

@@ -17,8 +17,7 @@ python -m pytest --doctest-modules src    # doctests embedded in the source (39)
 | `test_identity.py` | typed ids, matching levels (name / student number / division), backups |
 | `test_unicode.py` | ASCII cleaning, odd inputs, roster import of accented names |
 | `test_full_export.py` | full-export re-runs, edited rows as newer submissions, rebuilt tables, SABP rows that left the export |
-| `test_config.py` | unreadable config is never overwritten |
-| `test_review_fixes.py` | roster import, SABP fixes, WFNI matching, verbosity, config precedence, mail send |
+| `test_review_fixes.py` | roster import, SABP fixes, WFNI matching, mail send |
 | `test_completed.py` | completed applications are final per term |
 | `test_stages.py` | SABP stages, merge, decisions |
 | `test_sap.py`, `test_wfni.py` | batches, reviewers, redaction, WFNI |
@@ -26,14 +25,13 @@ python -m pytest --doctest-modules src    # doctests embedded in the source (39)
 | `test_mail.py` | templates, recipients, notices, review prompt, send loop |
 | `test_lookup.py` | lookup tables |
 
-Not covered by tests (see [Code Review](Code-Review#test-gaps)): the argparse wiring of the commands, `seating.py` and
-the real `SmtpSender` connection. `test_programs.py` checks that each program's spec and schema agree, that every
-command has its own flags, and that programs depend only on `utsu_core`.
+Not covered by tests (see [Code Review](Code-Review#test-gaps)): `seating.py` and
+the real `SmtpSender` connection. `test_programs.py` checks that each program's spec and schema agree
+and that programs depend only on `utsu_core`.
 
 ## Fake data
 
-`utsu-all --testing` generates and runs everything (see [Getting Started](Getting-Started#try-it-with-fake-data-no-personal-data-needed)).
-`python testing/generate_fake_data.py` regenerates just the data: the roster first (from the seats file), then Senate,
+`python testing/generate_fake_data.py` regenerates the data: the roster first (from the seats file), then Senate,
 SABP and AGM exports that each draw applicants from the roster. Flags: `--only`, `--seed`, `--students`, `--sabp-rows`,
 `--sabp-unmatched`, `--sabp-start`, `--sabp-end`, `--agm-rows`. Per-form logic is in `testing/generate_fake_*.py`. The
 generators are seeded, so output is reproducible.

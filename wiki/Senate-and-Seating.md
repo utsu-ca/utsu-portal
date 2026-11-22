@@ -4,11 +4,7 @@
 > implemented web workflow.
 
 `src/senate/program.py` verifies Senate applications; `src/senate/seating.py` assigns seats
-to the verified applicants. Both run with `utsu-senate` (or `utsu-all`).
-
-```powershell
-utsu-senate --verify_student secrets/senate.csv --seats_file data/seats_senate.csv --seed 2026
-```
+to the verified applicants.
 
 ## Form export
 

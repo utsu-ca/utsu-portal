@@ -1,7 +1,10 @@
 # Program package migration
 
-Status: in progress. Program sources have been relocated, but independent distributions and the remaining
-contract and retained-data work are not complete.
+Status: in progress. Program sources and frontends are separated, the standard
+wheel is core-only, and the retained-policy catalogue is implemented.
+Remaining: release verification of installed-wheel frontend compositions and
+a real multi-process retained-data/rollback check before the production
+cutover.
 
 ## Target
 
@@ -179,39 +182,30 @@ At every stage the full portal must remain runnable. Complete each stage's tests
 [plugin architecture plan](07-plugin-architecture-plan.md) contains additional migration detail; current code and
 this target take precedence where its historical status descriptions differ.
 
-## Distribution cutover constraint
+## Distribution cutover (alpha)
 
-The current `utsu-core` wheel owns both core and program files. Installing new program distributions alongside it
-would give multiple distributions ownership of the same paths; uninstalling or upgrading either could remove files
-belonging to the other. Do not publish overlapping wheels as an intermediate migration.
+The standard `utsu-core` wheel is now core-only. Program packages, branding,
+and the full frontend ship as separate distributions built by
+`tools/build_split_distributions.py`; the file-free `utsu-portal` aggregate
+installs them all. Alpha: breaking changes are acceptable, but the wheels
+must remain non-overlapping — installing split wheels into an environment
+containing the older bundled `utsu-core` would give multiple distributions
+ownership of the same paths. Build a fresh environment or container image
+(the Dockerfile does this), verify against retained data before switching
+traffic, and keep the prior image for rollback.
 
-The distribution cutover needs a coordinated release with non-overlapping core and program wheels, a full-portal
-composition that explicitly installs the existing default programs, and an announced upgrade path. Build a fresh
-environment or container image rather than upgrading an existing bundled installation in place; verify it against
-retained data before switching traffic. Keep the prior image or environment for rollback, and do not rewrite data
-as part of the package cutover. A core-only build must not silently become the default for an existing full portal.
-One possible cutover assigns `utsu_core` to the core wheel, Senate resources and its `senate` entry point to a
-Senate wheel, the remaining programs to their own owners, and a file-free full-portal aggregate to install them.
-Senate's built-in descriptor must move to its distribution at the same time to avoid duplicate discovery. This
-cutover has not been completed; the current standard build still owns every program.
-
-An experimental split-wheel builder is available at `tools/build_split_distributions.py`. It requires an explicitly
-newer release version and an output directory without existing wheels, rejects legacy-context programs, generates
-named program manifests, and checks for overlapping wheel paths before publishing the artifacts. Its core wheel
-requires a freshly built core-only frontend; a separate full-frontend wheel owns the full portal UI and is selected
-automatically when installed. `PORTAL_STATIC_DIR` still takes precedence. A previous provisional build produced nine
-non-overlapping wheels before the full UI was split into its own wheel. Source-isolated installations using the
-existing environment's runtime dependencies started core-only, each program (with chat for voting), and the full
-composition in local and split authentication modes; the full composition also served its UI. The earlier
-aggregate resolved all nine wheels in a fresh virtual environment with freshly installed third-party dependencies
-and served the full UI. A fresh aggregate installation of the revised ten-wheel build resolved its dependencies,
-discovered every program and served the full UI and both standalone pages. Its installed frontend manifests also
-built together successfully. The revised build passes isolated core-only and full-portal installation tests.
-With programs disabled, retained records created by the baseline wheel were read and updated by the new core-only
-wheel and then read by the baseline wheel again. Encryption, changed receipt quotas and newly recorded
-financial-access audits survived the SQLite rollback.
-This is not a release verification: do not publish wheels until independent frontend packaging and retained-data
-safeguards are verified.
+The builder rejects legacy-context programs, generates named program
+manifests, and checks for overlapping wheel paths before publishing. Its
+core wheel requires a core-only frontend (`web/.core-dist`, built
+automatically if missing); a separate full-frontend wheel owns the full
+portal UI and is selected automatically when installed. `PORTAL_STATIC_DIR`
+still takes precedence. Source-isolated installations started core-only,
+each program (with chat for voting), and the full composition in local and
+split authentication modes; a fresh aggregate installation resolved its
+dependencies, discovered every program, and served the full UI and both
+standalone pages. A baseline-to-split-to-baseline SQLite rollback check
+retained encrypted financial and receipt records, quota usage, and
+financial-access audits.
 The builder runs with Python 3.12+ and installed `pip`, `setuptools`, `wheel` and `packaging`. First build the
 core-only frontend with `npm --prefix web run build:core`, then run
 `python tools/build_split_distributions.py --experimental --version 0.2.0 --out-dir /tmp/utsu-split-wheels --core-static-dir web/.core-dist`.
@@ -246,13 +240,31 @@ entry point; a provider that fails to load or returns a non-policy fails
 closed. Tests cover provider loading, load failure, removal, stale-process
 fencing, and shape-change rejection.
 
-## Remaining work
+## Verification and remaining work
 
-1. Complete release verification for installed-wheel frontend contributions and standalone entry points across
-   relevant compositions. Confirm the host supplies SABP's WFNI weights input when building that contribution.
-2. Perform retained-data, disabled-provider and rollback tests against a real
-   multi-process deployment; then document the production upgrade procedure
-   and switch the standard distribution cutover only after verification.
+Verified on the alpha cutover:
+
+- **Installed-wheel frontends.** A frontend built from the six installed program wheels' `portal-frontend.json`
+  manifests emitted `index`, `sso`, `checkin` and `finance`. The WFNI default weights are a host build input
+  (`data/wfni_weights.csv`, copied into the Dockerfile's frontend stage), not a program resource.
+- **Container image.** The multi-stage `Dockerfile` builds the core-only bundle in a Node stage, builds the ten
+  split wheels, and installs the `utsu-portal` aggregate plus `utsu-core` extras (extras belong to `utsu-core`,
+  not the file-free aggregate). The running image served the full UI, `checkin.html`, `finance.html`, `sso.html`
+  and `/api/plugins` on a persistent SQLite store and quota store.
+- **Multi-process retained-policy behaviour.** `test_quota_catalogue_fences_and_retains_across_real_processes`
+  runs separate OS processes against a shared SQLite quota file: an older process is fenced when a newer one
+  declares a policy, a process missing a retained provider fails closed, and restoring the provider recovers.
+  A replica-start race (two replicas booting against an empty catalogue) previously bumped the epoch and fenced
+  both; the catalogue is now written by one atomic update that bumps the epoch only when it changes, covered by
+  `test_replicas_starting_together_do_not_fence_each_other`.
+
+Still open:
+
+1. A rolling deployment shape (Kubernetes) rehearsal: the fencing contract means every older replica must be
+   restarted after a policy is declared, and rollback to a binary that predates the catalogue cannot be fenced.
+2. Publishing: choose the release version and index; the Dockerfile defaults to `PORTAL_VERSION=0.2.0`.
+3. Optional: move the retained catalogue to Redis/SQL-backed metadata if a deployment cannot provide an atomic
+   `Store` for `PORTAL_QUOTA_STORE`; the atomic-store requirement currently fails closed.
 
 ## Current local composition baseline
 

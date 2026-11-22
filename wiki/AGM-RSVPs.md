@@ -5,10 +5,6 @@
 
 `src/agm/program.py` processes the AGM voter RSVP export and does its verification.
 
-```powershell
-utsu-agm --agm_file "secrets/RSVP.csv"
-```
-
 ## Form export
 
 Columns are renamed through `data/conversion_table_agm.csv`:
@@ -33,7 +29,7 @@ At least one of the name columns or `Student Number` must exist.
 
 - **Only a `@mail.utoronto.ca` email counts.** An RSVP with a blank email, another domain (even `@utoronto.ca`) or text
   that is not an address is unverified, with the reason `email is not a mail.utoronto.ca address`. This is checked before
-  the name, and the "more information" email asks for the UofT email (`python -m utsu_core.mail.notices agm more_info`).
+  the name, and the "more information" email asks for the UofT email.
 - With **no student number** column, people are matched on their ACORN-registered name alone (level 1, flag
   `name_only_match`).
 - A name shared by several roster students stays unverified (`name shared by N students`, flag `ambiguous_name`) until
@@ -88,9 +84,4 @@ Print or open `agm_list_all.csv` and mark `checked_in` for people who arrive. Th
 
 ## Verification on its own
 
-```powershell
-utsu-agm --verify_only --agm_file "secrets/RSVP.csv" --db secrets/db.sqlite [--output_dir DIR]
-utsu-agm --verify_only --testing
-```
-
-Writes `agm_verification.csv` (status, reason, match method, flags per person) and no lists or database rows.
+Verification writes `agm_verification.csv` (status, reason, match method, flags per person) and no lists or database rows.

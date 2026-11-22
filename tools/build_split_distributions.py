@@ -64,15 +64,15 @@ def build(version: str, output: Path, core_static_dir: Path | None = None) -> No
 
     full_static_dir = (ROOT / "src/core/utsu_core/static").resolve()
     if core_static_dir is None:
-        core_static_dir = full_static_dir
+        core_static_dir = ROOT / "web/.core-dist"
+        if not core_static_dir.is_dir():
+            subprocess.run(
+                ["npm", "--prefix", str(ROOT / "web"), "run", "build:core"], check=True
+            )
     core_static_dir = core_static_dir.resolve()
-    if core_static_dir == full_static_dir:
-        # Alpha default: the committed bundle is the full portal UI. The core
-        # wheel ships it as-is; the frontend wheel owns the same files, so
-        # they must not be installed together. Use --core-static-dir with a
-        # core-only bundle (npm run build:core) for a non-overlapping core.
-        pass
-    elif any((core_static_dir / page).exists() for page in ("checkin.html", "finance.html")):
+    if core_static_dir == full_static_dir or any(
+        (core_static_dir / page).exists() for page in ("checkin.html", "finance.html")
+    ):
         raise ValueError("the core-only frontend bundle must not be the full portal bundle")
     validate_frontend(core_static_dir, ("index.html", "sso.html"))
     validate_frontend(full_static_dir, ("index.html", "sso.html", "checkin.html", "finance.html"))
@@ -232,11 +232,10 @@ def build(version: str, output: Path, core_static_dir: Path | None = None) -> No
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--experimental", action="store_true", required=True,
-                        help="acknowledge that split wheels are not yet release-ready")
-    parser.add_argument("--version", required=True, help="newer version for all split distributions")
+    parser.add_argument("--version", required=True, help="version for all split distributions")
     parser.add_argument("--out-dir", required=True, type=Path, help="directory without existing wheels")
-    parser.add_argument("--core-static-dir", required=True, type=Path, help="freshly built core-only frontend bundle")
+    parser.add_argument("--core-static-dir", type=Path, default=None,
+                        help="core-only frontend bundle (default: web/.core-dist, built if missing)")
     args = parser.parse_args()
     build(args.version, args.out_dir, args.core_static_dir)
 

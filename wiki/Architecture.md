@@ -9,28 +9,24 @@
 |---|---|---|
 | `utsu_core` | `spec.py` | `ProgramSpec`: the declarative description of a program (form lookup table, table and schema, identity columns, key/rank, hooks) |
 | | `pipeline.py` | `Run`: the engine that runs any `ProgramSpec` (read, verify, remembered verification, selection, saving, statuses, alerts, run counts) |
-| | `cli.py` | `ProgramCli`, common flags, config merge, testing mode, roster import, `execute` / `cli_main` |
 | | `importing_data.py` | Roster CSV → validated rows → `uoft_data` in one transaction (schema in `schema/uoft_data.sql`) |
 | | `verification.py` | `decide` / `match_students` (the matching rules); `setup_reader`; `is_uoft_email`; `truncated_numbers` |
 | | `selection.py` | Timestamp parsing, `person_key`, one-binding-per-person selection (`select_current`) |
 | | `integrity.py` | Duplicate detection (logged) |
 | | `resources.py` | Reads the schema files that ship inside a package |
-| `utsu_core.programs` | `runner.py` | `utsu-all`: Senate, SABP and AGM in one run |
-| | `senate/` | `program.py` (spec, `verify_senators`), `seating.py` (seat assignment), `cli.py` (`utsu-senate`), `schema.sql` |
-| | `sap/` | `program.py` (spec, batches, reviews, decisions), `wfni.py` (WFNI scoring), `cli.py` (`utsu-sap`), `schema.sql` |
-| | `agm/` | `program.py` (spec, RSVP processing, lists, verification report), `cli.py` (`utsu-agm`), `schema.sql` |
-| `utsu_core.std` | `utils.py` | Logging setup, config load/save/merge, ASCII cleaning, typed ids, project-root paths |
+| | `senate/` | `program.py` (spec, `verify_senators`), `seating.py` (seat assignment), `schema.sql` |
+| | `sap/` | `program.py` (spec, batches, reviews, decisions), `wfni.py` (WFNI scoring), `schema.sql` |
+| | `agm/` | `program.py` (spec, RSVP processing, lists, verification report), `schema.sql` |
+| `utsu_core.std` | `utils.py` | ASCII cleaning, typed ids, project-root paths |
 | | `database.py` | Connection, consistent backups |
 | | `csv_safe.py` | Encoding-tolerant reading, formula-safe writing (`write_rows`) |
 | | `parsing_utils.py` | Student-number and division helpers |
-| `utsu_core.mail` | `__main__.py` | Mail-merge CLI |
 | | `templates.py`, `recipients.py`, `schema.py` | Template parsing/rendering, recipients and validity, schema introspection |
 | | `campaign.py`, `transport.py` | Preview/confirm/send/log; SMTP and message building |
 | | `notices.py` | Builds recipient files for rejections and more-info requests |
 
 The shared batch-processing engine does not import the program processors, and a processor does not import another
-program (`tests/test_programs.py` checks both). They are all distributed in the `utsu_core` package;
-`pyproject.toml` installs one command per program (`utsu-senate`, `utsu-sap`, `utsu-agm`) and `utsu-all`.
+program (`tests/test_programs.py` checks both). They are all distributed in the `utsu_core` package.
 The portal's HTTP modules and services also live under `utsu_core`.
 
 ## Data flow
@@ -92,6 +88,6 @@ export:
 
 - **A historical form processor**: add a conversion table and a program package with a `schema.sql` and a
   `ProgramSpec` that uses `Run` (see `src/agm/program.py`). The former program CLI and runner entry points are retired.
-- **A new email**: drop `templates/email/<name>.txt`; check columns with `python -m utsu_core.mail --list_fields <name>`.
+- **A new email**: drop `templates/email/<name>.txt`.
 - **A new SABP question**: add the form heading to `conversion_table_sap.csv`, add the question to `QUESTIONS` in
   `src/sabp/wfni.py` and rows to `wfni_weights.csv`.

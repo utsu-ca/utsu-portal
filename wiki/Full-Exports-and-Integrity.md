@@ -30,7 +30,7 @@ The timestamp decides which submission is the newest. If some cannot be read (th
    table is **kept** (it holds the committee's work), see [SABP](#sabp-keeps-the-committees-work).
 6. Write the outputs.
 
-`--reimport_uoft_data` replaces the roster; because every run verifies everything, the next run uses it.
+Reimporting replaces the roster; because every run verifies everything, the next run uses it.
 
 ### Statuses
 

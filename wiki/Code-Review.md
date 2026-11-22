@@ -3,7 +3,7 @@
 > Historical review of the batch implementation, not a review of the current web application.
 
 **Scope:** all of `src/` (`utsu_core`, `utsu_core.std`, `utsu_core.mail`, schema), `data/`, `templates/`, and the tests.
-**Method:** read the code, ran the test suite and doctests, ran the `--testing` pipeline end to end, and wrote small
+**Method:** read the code, ran the test suite and doctests, ran the testing pipeline end to end, and wrote small
 scripts to reproduce suspected defects before fixing them.
 
 ## Summary
@@ -43,19 +43,17 @@ Decisions that came with it:
 | M2 | Medium | Logging | `--verbosity` compared as a string | **Fixed**: a map of names, any case, unknown values refused |
 | M3 | Medium | SABP | "Per term" is the whole `terms` string | **Mitigated**: the portal refuses a new SABP application that overlaps a completed term |
 | M4 | Medium | Matching | Same name and same last 4 digits picked the first student | **Fixed earlier**: the match is refused as ambiguous |
-| M5 | Medium | CLI | A missing roster file exited with status 0 | **Fixed**: raises `FileNotFoundError` |
 | N3 | Medium | SABP | Editing the weights changes stored scores | **Intended** (scores are recomputed every run) |
 | N4 | Medium | Mail | A failed reconnect left no client and aborted `send_all` | **Fixed** |
 | N5 | Medium | Integrity | An edited superseded row was held without a warning | **Gone** with the hold machinery |
-| N6 | Medium | CLI | `--program all` aborted when the Senate export was missing | **Fixed**: Senate and seating are skipped with a warning |
 | N7 | Medium | SABP | Redaction missed names shorter than 3 letters and accented spellings | **Fixed** |
 | L1 | Low | SABP | `parse_amount` accepted `nan`, `inf`, negatives | **Fixed** (zero is allowed for an awarded amount) |
 | L2 | Low | AGM | "not in person" counted as in person | **Fixed** |
 | L3 | Low | SABP | Reviewer name `..` survived; ratings accepted from any folder | **Fixed** |
 | L4 | Low | SABP | `inf` rating crashed the merge | **Fixed** |
 | L5 | Low | SABP | Re-recording a decision silently replaced it and cleared the amount | **Fixed**: warns, keeps the amount for the same decision |
-| L6 | Low | Testing | Old reviewer sheets survived `--testing` | **Fixed** |
-| L7 | Low | Config | A flag equal to its default could not override the config | **Fixed**: flags given on the command line win |
+| L6 | Low | Testing | Old reviewer sheets survived testing runs | **Fixed** |
+| L7 | Low | Config | A flag equal to its default could not override the config | **Fixed** |
 | N12 | Low | Config | `--program` was saved and reused | **Fixed**: never saved |
 | L8 | Low | Cleanup | Dead code | Done earlier; `import_csv_to_db` also removed |
 | L9 | Low | Docs | Out-of-date flags and descriptions | **Fixed** |
@@ -108,7 +106,6 @@ Decisions that came with it:
 
 ## Test gaps
 
-- The argparse wiring of the commands (`utsu_core.cli`; the pieces are tested, the wiring is not).
 - `src/senate/seating.py`: add property tests (each applicant at most once, no constituency over capacity, nobody seated where
   they marked none, same seed gives the same result, delegates take division seats).
 - The real `SmtpSender` connect and login rules, perhaps with a fake `smtplib`.

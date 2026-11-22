@@ -266,11 +266,18 @@ overriding `create`/`replace`); in-memory or non-atomic backends fail closed. Ro
 policy, drain and restart all writers, then activate. Rollback targets must read the catalogue — an older
 binary that ignores it cannot be fenced, so drain before rolling back.
 
-The split-wheel builder is experimental and must not be used for a production cutover. In particular, do not
-install split program wheels into an environment containing the older bundled `utsu-core`; see the
-[migration plan](../docs/design/09-program-package-migration.md) for the fresh-environment and rollback
-requirements. The experimental core wheel contains a core-only frontend; the separate `utsu-portal-frontend`
-wheel supplies the full UI when installed. `PORTAL_STATIC_DIR` overrides either.
+Alpha cutover: the standard `utsu-core` wheel is core-only. Program packages
+(`utsu-program-agm`, `utsu-program-sabp`, `utsu-program-clubs`,
+`utsu-program-senate`, `utsu-program-chat`, `utsu-program-voting`),
+`utsu-branding`, and `utsu-portal-frontend` ship as separate distributions
+built by `tools/build_split_distributions.py`; the file-free `utsu-portal`
+aggregate installs them all. Build a fresh environment or image — do not
+install split wheels into an environment containing the older bundled
+`utsu-core`, which owns the same paths. The core wheel contains a core-only
+frontend; the separate `utsu-portal-frontend` wheel supplies the full UI when
+installed. `PORTAL_STATIC_DIR` overrides either. See the
+[migration plan](../docs/design/09-program-package-migration.md) for the
+fresh-environment and rollback requirements.
 
 ## Kubernetes
 `kubectl apply -k deploy/k8s` (after creating the secrets from `secret.example.yaml`). Includes: restricted namespace,

@@ -8,7 +8,6 @@
 **Historical batch reference (commands removed)**
 - [Getting Started](Getting-Started)
 - [Operations Runbook](Operations-Runbook)
-- [Command-Line Reference](Command-Line-Reference)
 - [Input and Output Files](Input-and-Output-Files)
 - [Senate and Seating](Senate-and-Seating)
 - [Student Aid Bursary Program](Student-Aid-Bursary-Program)

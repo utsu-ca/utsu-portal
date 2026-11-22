@@ -5,12 +5,6 @@
 
 `utsu_core.mail` sends mail-merge emails directly over SMTP, with a safe preview-and-confirm workflow.
 
-```powershell
-python -m utsu_core.mail --list_fields                 # templates + columns from the programs' schema.sql files
-python -m utsu_core.mail senate_verified --dry_run     # render a preview, never connects to SMTP
-python -m utsu_core.mail senate_verified               # preview, confirm, send
-```
-
 ## Templates
 
 Templates live in `templates/email/`. `<name>.txt` is a `Subject: ...` line, a blank line, then the plain-text body. An
@@ -87,33 +81,6 @@ matched back by the student's email, student number or name, **not** by the id.
 and, for `more_info`, `unverified_fields` (which details could not be verified, judged from what the application actually
 gave) or, for `rejection`, `rejection_reason`:
 
-```powershell
-python -m utsu_core.mail.notices senate more_info                              # reads <output_dir>/unverified.csv
-python -m utsu_core.mail.notices sabp more_info                                # reads <output_dir>/sap_unverified.csv
-python -m utsu_core.mail.notices agm rejection --reason "Not a UTSU member"    # reads <output_dir>/agm_unverified.csv
-python -m utsu_core.mail senate_more_info --recipients <output_dir>/notices_senate_more_info.csv
-```
 
 `--input` and `--output` override the files; `--db` the database holding `uoft_data`. For `more_info`, applications that
 now match the roster are skipped (nothing to ask for). A rejection needs `--reason` or a `rejection_reason` column.
-
-## Command reference
-
-`python -m utsu_core.mail [template]`
-
-| Flag | Default | Meaning |
-|---|---|---|
-| `template` | | template name (file stem) |
-| `--template_dir` | `templates/email` | |
-| `--schema_dir` | *(the schemas of `utsu_core` and every program)* | `.sql` files used to validate fields |
-| `--recipients` | `<output_dir>/verified.csv` | recipient CSV |
-| `--query` | | read recipients with a SELECT instead |
-| `--db` | `db` from config | database for `--query` |
-| `--email_field` | `email` | column with the address |
-| `--config` | `config.json` | |
-| `--log_dir` | `<output_dir>` | where `mail_log_<template>.csv` goes |
-| `--resend` | off | also send to addresses already sent |
-| `--dry_run` | off | preview only, never connects |
-| `--list_fields` | off | list templates, schema columns and template fields |
-
-`python -m utsu_core.mail.notices <senate|sabp|agm> <more_info|rejection> [--input F] [--output F] [--db F] [--config F] [--reason TEXT]`

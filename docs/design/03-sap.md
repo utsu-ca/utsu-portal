@@ -43,9 +43,9 @@ private banking export and EFT file.
 | Batch tools | Queue |
 |---|---|
 | Applications placed in batches of 50, sheets handed out per reviewer | No batches. Each application carries its own reviewers |
-| `--reviewers` / `--issue_batches` assigns work up front | Reviewer **claims** the next application, or an admin **assigns** one to a reviewer |
+| Reviewers / issuing batches assigns work up front | Reviewer **claims** the next application, or an admin **assigns** one to a reviewer |
 | Sheets (CSV/DOCX) returned and merged | Reviewer submits a rating on the application in the portal; DOCX import is optional |
-| `stage` written by CLI runs | `stage` is **derived** from the stored facts whenever read |
+| `stage` written by batch runs | `stage` is **derived** from the stored facts whenever read |
 | Record id `B012-01` | Random opaque `review_id` per application (anonymous, not positional) |
 
 ## 3. Data (facts only; nothing here is a cache)

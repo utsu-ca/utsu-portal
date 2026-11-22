@@ -1,8 +1,7 @@
 # 05 Migration and removal of the batch tools
 
 This is a proposed future migration, not a description of completed work. All current functionality is packaged under
-`utsu_core`. The four program command entry points have been removed; their underlying batch processing logic is
-retained for parity and migration work. Portal replacements are not yet complete.
+`utsu_core`. Their underlying batch processing logic is retained for parity and migration work. Portal replacements are not yet complete.
 
 ## 1. What is removed, and when
 
@@ -14,10 +13,9 @@ Removal is the last phase (P6). Nothing is deleted until its replacement passes 
 | Batch processors in `src/utsu_core/programs/{senate,sap,agm}`, `runner.py` | Live program modules | P2-P4 done |
 | `src/utsu_core/mail/` | `services/notices.py` + `Mailer` | P1 done |
 | `src/utsu_core/std/` | `services/text.py`, `services/exports.py` | P1 done |
-| `[project.scripts]` (`utsu-senate`, `utsu-sap`, `utsu-agm`, `utsu-all`) | none | Removed |
 | `testing/generate_fake_*.py` | Keep as test fixtures; add portal-compatible seeding and parity tests as needed | Ongoing |
 | `data/*.csv` | seats/weights become stored data; conversion tables are dropped | P2-P4 |
-| Batch-tool content in `README.md` and `wiki/` (Command-Line-Reference, Input-and-Output-Files, Operations-Runbook, Full-Exports-and-Integrity, ...) | portal docs | P6 |
+| Batch-tool content in `README.md` and `wiki/` (Input-and-Output-Files, Operations-Runbook, Full-Exports-and-Integrity, ...) | portal docs | P6 |
 | `IMPLEMENTATION-COMPLETE.txt`; move `SAP Reimagined Rubric & Procedures Draft.pdf` to `docs/reference/` | n/a | P6 |
 
 Kept: `utsu_core` core, `deploy/`, `infra/`, `Dockerfile*`, `docker-compose*.yml`, `nginx.conf`, observability
@@ -33,7 +31,7 @@ files, `LICENSE`.
 
 ## 3. Data migration (one-off)
 
-`python -m utsu_core.migrate <sqlite-db> --program {senate,sap,agm}`
+A one-off migration of a SQLite database for a program (senate, sap or agm)
 
 - Roster: `uoft_data` -> `roster` (re-keyed with the portal pepper).
 - Senate/AGM: not migrated; they are computed from submissions on request.
@@ -54,12 +52,12 @@ files, `LICENSE`.
 6. UI pages, then the removal PR and docs rewrite.
 
 Parity must be checked directly against the retained processing logic and fixtures (same inputs should give identical
-applications, flags, batches and, for a fixed seed, seats). The old program commands are no longer available.
+applications, flags, batches and, for a fixed seed, seats).
 
 ## 5. Acceptance
 
 - `python -m pytest` passes with the moved tests.
-- Parity run: for a fixed fixture, the portal's computed views equal the CLI's CSV output (Senate/AGM; SAP scores,
+- Parity run: for a fixed fixture, the portal's computed views equal the retained processors' CSV output (Senate/AGM; SAP scores,
   flags and suggested amounts; batches no longer apply).
 - No Senate or AGM derived state is written to the store (test asserts the store is unchanged after list requests).
 - No imports of the retired top-level packages remain; no program module imports another.

@@ -15,13 +15,13 @@ tools described below are not complete. Audience: maintainers. Companion documen
 The repository currently contains two workflows in the same `utsu_core` package:
 
 1. **Batch tools** (`utsu_core`, `utsu_core/programs/{senate,sap,agm}`, `utsu_core.mail`, `utsu_core.std`): CSV-export-in, CSV/DOCX-out
-   programs driven by a CLI and a SQLite file (`utsu-senate`, `utsu-sap`, `utsu-agm`, `utsu-all`).
+   programs driven by a SQLite file.
 2. **The portal** (`utsu_core`): a FastAPI application with accounts, ID verification, forms, clubs, SSO, audit,
    and a module system (`Module.router(ctx)`).
 
 The goal is a repository that is **only the UTSU Portal**. Each program (Senate, SAP, AGM) becomes a **portal
-module** that works on live data in the portal store, replacing the "export a Google Form, run a CLI, hand around
-files" workflow. The batch CLI, the `uoft_data` SQLite database and the Google-Forms-export reading are retired once
+module** that works on live data in the portal store, replacing the "export a Google Form, hand around
+files" workflow. The `uoft_data` SQLite database and the Google-Forms-export reading are retired once
 their behaviour is reproduced (see 05).
 
 Non-goals: changing UTSU policy (seat rules, rubric, WFNI weights, eligibility), rewriting the account/verification
@@ -106,14 +106,14 @@ deployments that run only some programs can pass a subset (the microservice `REM
 | P3 | `programs/senate` (verification, seating, results) | P1 | Senate and seating tests pass |
 | P4 | `programs/sap` (intake, WFNI, batches, review, decisions, banking, EFT) | P1 | `test_sap`, `test_wfni`, `test_eft`, `test_export_banking`, `test_merge_docx`, `test_completed`, `test_stages` pass |
 | P5 | Admin UI pages per program (`static/`) | P2-P4 | Role-gated pages for each program |
-| P6 | Removal of batch tools and docs rewrite (05) | P2-P5 | `utsu_core`, `utsu_core.programs`, `utsu_core.mail`, `utsu_core.std`, CLI scripts gone; wiki rewritten |
+| P6 | Removal of batch tools and docs rewrite (05) | P2-P5 | `utsu_core`, `utsu_core.programs`, `utsu_core.mail`, `utsu_core.std` gone; wiki rewritten |
 
 P2, P3 and P4 are independent after P1 and can proceed in parallel.
 
 ## 5. Risks and open questions
 
 1. **Roster source.** Without `uoft_data` the portal cannot tell "verified student". Decision needed: keep importing
-   the university roster file (admin upload, replace semantics, as `--reimport_uoft_data`) or rely only on face/ID
+   the university roster file (admin upload, replace semantics) or rely only on face/ID
    admin approval. This design assumes the upload is kept (01 section 2).
 2. **Form-to-column parity.** The YAML forms were written for the portal; the CSV `conversion_table_*.csv` mapped the
    Google Forms. Each program doc lists the fields required; diff against the YAML before P2-P4.
