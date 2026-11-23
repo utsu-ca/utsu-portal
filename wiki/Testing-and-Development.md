@@ -5,6 +5,8 @@
 
 ## Tests
 
+Tests live in topic folders under `tests/` (`core`, `audit`, `finance`, `mail`, `agm`, `sap`, `senate`, `voting`, `discussion`, `clubs`, `verification`, `integration`, `devtools`, `packaging`). `tests/conftest.py` puts every folder on `sys.path`, so shared helpers import by module name (`from test_portal import ...`). Do not add `__init__.py` to `tests/core`: it would shadow the `core` package.
+
 ```powershell
 python -m pytest                          # tests/ (179 tests at the time of writing)
 python -m pytest --doctest-modules src    # doctests embedded in the source (39)
@@ -14,19 +16,19 @@ python -m pytest --doctest-modules src    # doctests embedded in the source (39)
 
 | File | Covers |
 |---|---|
-| `test_identity.py` | typed ids, matching levels (name / student number / division), backups |
-| `test_unicode.py` | ASCII cleaning, odd inputs, roster import of accented names |
-| `test_full_export.py` | full-export re-runs, edited rows as newer submissions, rebuilt tables, SABP rows that left the export |
-| `test_review_fixes.py` | roster import, SABP fixes, WFNI matching, mail send |
-| `test_completed.py` | completed applications are final per term |
-| `test_stages.py` | SABP stages, merge, decisions |
-| `test_sap.py`, `test_wfni.py` | batches, reviewers, redaction, WFNI |
-| `test_agm.py` | AGM lists and verification |
-| `test_mail.py` | templates, recipients, notices, review prompt, send loop |
-| `test_lookup.py` | lookup tables |
+| `verification/test_identity.py` | typed ids, matching levels (name / student number / division), backups |
+| `verification/test_unicode.py` | ASCII cleaning, odd inputs, roster import of accented names |
+| `integration/test_full_export.py` | full-export re-runs, edited rows as newer submissions, rebuilt tables, SABP rows that left the export |
+| `integration/test_review_fixes.py` | roster import, SABP fixes, WFNI matching, mail send |
+| `sap/test_completed.py` | completed applications are final per term |
+| `sap/test_stages.py` | SABP stages, merge, decisions |
+| `sap/test_sap.py`, `sap/test_wfni.py` | batches, reviewers, redaction, WFNI |
+| `agm/test_agm.py` | AGM lists and verification |
+| `mail/test_mail.py` | templates, recipients, notices, review prompt, send loop |
+| `verification/test_lookup.py` | lookup tables |
 
 Not covered by tests (see [Code Review](Code-Review#test-gaps)): `seating.py` and
-the real `SmtpSender` connection. `test_programs.py` checks that each program's spec and schema agree
+the real `SmtpSender` connection. `core/test_programs.py` checks that each program's spec and schema agree
 and that programs depend only on `core`.
 
 ## Fake data
@@ -43,7 +45,7 @@ generators are seeded, so output is reproducible.
 - Never write personal data to the log. Application ids are fine; names, emails and student numbers are not.
 - Any CSV that people open must be written with `SafeDictWriter` / `SafeWriter`, and read with `open_csv`.
 - Paths: use `absfile(...)`, never the current directory.
-- New behaviour on re-runs needs a test in `test_full_export.py` style: build the DB in `tmp_path`, run with the full export twice.
+- New behaviour on re-runs needs a test in `integration/test_full_export.py` style: build the DB in `tmp_path`, run with the full export twice.
 
 ## Publishing this wiki
 

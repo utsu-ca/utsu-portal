@@ -48,5 +48,5 @@ def test_a_program_depends_on_the_core_and_not_on_the_other_programs(program):
 
 
 def test_shared_processing_engine_does_not_import_programs():
-    for module in imported_packages("core/core", recursive=False):
+    for module in imported_packages("core", recursive=False):
         assert not module.startswith(("core.programs", "core.mail")), module

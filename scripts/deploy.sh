@@ -74,4 +74,6 @@ fi
 echo "Deploying $image"
 echo "  enabled:   ${PORTAL_ENABLED_PLUGINS:-none (core only)}"
 echo "  branding:  $PORTAL_BRANDING_PATH"
+# The portal image comes from scripts/build.sh. The dev-only Vite container is built here, from its own Dockerfile.
+[ "$dev" = 1 ] && "${compose[@]}" -f "$override" build web
 "${compose[@]}" -f "$override" up -d --no-build

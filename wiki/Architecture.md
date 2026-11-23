@@ -26,7 +26,7 @@
 | | `notices.py` | Builds recipient files for rejections and more-info requests |
 
 The shared batch-processing engine does not import the program processors, and a processor does not import another
-program (`tests/test_programs.py` checks both). They are all distributed in the `core` package.
+program (`tests/core/test_programs.py` checks both). They are all distributed in the `core` package.
 The portal's HTTP modules and services also live under `core`.
 
 ## Data flow

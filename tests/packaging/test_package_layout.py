@@ -1,5 +1,6 @@
 import os
 import importlib
+import shutil
 import importlib.util
 import subprocess
 import sys
@@ -15,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_batch_modules_do_not_require_portal_dependencies(tmp_path):
-    env = {**os.environ, "PYTHONPATH": os.pathsep.join((str(ROOT / "src"), str(ROOT / "src/core")))}
+    env = {**os.environ, "PYTHONPATH": str(ROOT / "src")}
     subprocess.run(
         [sys.executable, "-S", "-c",
          "import core.programs.agm.program, core.programs.sap.program, "
@@ -33,7 +34,7 @@ def test_batch_modules_do_not_require_portal_dependencies(tmp_path):
       "core.programs.agm.program", "sabp.program", "senate.program", "agm.program")),
 ])
 def test_composition_imports_stay_within_their_boundary(tmp_path, statement, forbidden):
-    env = {**os.environ, "PYTHONPATH": os.pathsep.join((str(ROOT / "src"), str(ROOT / "src/core")))}
+    env = {**os.environ, "PYTHONPATH": str(ROOT / "src")}
     subprocess.run(
         [sys.executable, "-c",
          f"{statement}; import sys; "
@@ -66,7 +67,7 @@ def test_packaged_program_schemas_and_portal_assets():
 def test_standard_wheel_is_core_only():
     configuration = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     find = configuration["tool"]["setuptools"]["packages"]["find"]
-    assert find["where"] == ["src/core"]
+    assert find["where"] == ["src"]
     assert find["include"] == ["core", "core.*"]
     package_data = configuration["tool"]["setuptools"]["package-data"]
     assert set(package_data) == {"core"}
@@ -78,7 +79,16 @@ def test_program_frontend_manifests_exist_for_split_wheels():
         assert (frontend / "portal-frontend.json").is_file()
 
 
+def isolated_core(tmp_path):
+    """A copy of core alone, so the program packages that sit beside it in src/ count as uninstalled."""
+    site = tmp_path / "site"
+    shutil.copytree(ROOT / "src/core", site / "core",
+                    ignore=shutil.ignore_patterns("frontend", "static", "__pycache__"))
+    return site
+
+
 def test_legacy_schema_discovery_skips_only_uninstalled_programs(tmp_path):
+    site = isolated_core(tmp_path)
     package = tmp_path / "agm"
     package.mkdir()
     (package / "__init__.py").write_text("", encoding="utf-8")
@@ -88,7 +98,7 @@ def test_legacy_schema_discovery_skips_only_uninstalled_programs(tmp_path):
          "import sys; sys.path[:0] = sys.argv[1:]; "
          "from pathlib import Path; from core.resources import schema_dirs; "
          "assert schema_dirs('core.programs') == [Path(sys.argv[1]) / 'agm']",
-         str(tmp_path), str(ROOT / "src/core")],
+         str(tmp_path), str(site)],
         cwd=tmp_path, check=True,
     )
     (package / "__init__.py").write_text("raise RuntimeError('broken program package')", encoding="utf-8")
@@ -96,7 +106,7 @@ def test_legacy_schema_discovery_skips_only_uninstalled_programs(tmp_path):
         [sys.executable, "-I", "-S", "-c",
          "import sys; sys.path[:0] = sys.argv[1:]; "
          "from core.resources import schema_dirs; schema_dirs('core.programs')",
-         str(tmp_path), str(ROOT / "src/core")],
+         str(tmp_path), str(site)],
         cwd=tmp_path, capture_output=True, text=True,
     )
     assert result.returncode != 0
@@ -141,7 +151,7 @@ if sys.argv[4] == '0':
 assert not attempted, attempted
 """
     subprocess.run(
-        [sys.executable, "-I", "-c", script, str(ROOT / "src/core"), str(static), str(branding),
+        [sys.executable, "-I", "-c", script, str(ROOT / "src"), str(static), str(branding),
          "1" if api_only else "0"],
         cwd=tmp_path, check=True,
     )
@@ -187,13 +197,12 @@ def test_portal_factory_is_exported_from_core():
     assert create_app is factory
 
 
-@pytest.mark.parametrize("package_path", ["src/core/version.py", "src/core/version.py"])
-def test_development_version_finds_git_root_after_core_relocation(tmp_path, monkeypatch, package_path):
+def test_development_version_finds_git_root_from_the_core_package(tmp_path, monkeypatch):
     from core import version
 
     (tmp_path / ".git").mkdir()
     (tmp_path / "pyproject.toml").touch()
-    source = tmp_path / package_path
+    source = tmp_path / "src/core/version.py"
     source.parent.mkdir(parents=True)
     source.touch()
     monkeypatch.setattr(version, "__file__", str(source))

@@ -182,7 +182,7 @@ assert 'id="app"' in TestClient(create_app(Settings(secret='s' * 32))).get('/').
     branding = tmp_path / "branding"
     branding.mkdir()
     (branding / "theme.json").write_text("{}", encoding="utf-8")
-    core_wheel = next(artifact for artifact in artifacts if artifact.name.startswith("core-"))
+    core_wheel = next(artifact for artifact in artifacts if artifact.name.startswith("utsu_core-"))
     subprocess.run(
         [sys.executable, "-m", "pip", "install", "--no-index", "--no-deps", "--target", str(core_only),
          str(core_wheel)],

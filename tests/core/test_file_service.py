@@ -602,14 +602,14 @@ def test_restart_with_unchanged_policies_keeps_the_epoch():
 
 PROCESS_SCRIPT = """
 import sys
-sys.path[:0] = [sys.argv[1], sys.argv[2], sys.argv[3]]
+sys.path[:0] = [sys.argv[1], sys.argv[2]]
 from test_file_service import data_url, program_upload_policy
 from core.services.upload_quota import QuotaStore
 from core.settings import Settings
 from core.store import MemoryStore, SQLiteStore
 
-mode = sys.argv[5]
-usage = SQLiteStore(sys.argv[4])
+mode = sys.argv[4]
+usage = SQLiteStore(sys.argv[3])
 policies = (program_upload_policy(),) if mode.startswith("extra") else ()
 try:
     store = QuotaStore(MemoryStore(), usage, Settings(secret="s" * 32), policies=policies)
@@ -635,7 +635,7 @@ def test_quota_catalogue_fences_and_retains_across_real_processes(tmp_path):
     quota_db = str(tmp_path / "quota.db")
 
     def command(mode):
-        return [sys.executable, "-c", PROCESS_SCRIPT, str(root / "src"), str(root / "src/core"),
+        return [sys.executable, "-c", PROCESS_SCRIPT, str(root / "src"),
                 str(Path(__file__).resolve().parent), quota_db, mode]
 
     def run(mode):

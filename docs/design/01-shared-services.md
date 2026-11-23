@@ -83,4 +83,4 @@ reviewer may claim from the queue, and edits are limited to their own ratings.
 ## 7. Testing
 
 Existing tests move with the code. Services are tested without the HTTP layer; routers by `TestClient` (as
-`tests/test_portal.py` does) with the `memory` store and `OutboxMailer`.
+`tests/core/test_portal.py` does) with the `memory` store and `OutboxMailer`.

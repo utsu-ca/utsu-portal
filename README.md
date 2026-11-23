@@ -2,7 +2,8 @@
 
 `core` is the backend and web client for UTSU applications, including AGM registration, Senate applications and
 the Student Aid Bursary Program (SABP). The former `utsu_portal`, `utsu_programs`, `utsu_std` and `utsu_mail`
-packages have moved under `core`. Update external imports accordingly.
+packages have moved under `core` (itself renamed from `utsu_core`; the distribution is still `utsu-core`).
+Update external imports accordingly.
 
 **Migration is in progress.** The web workflows do not yet replace all historical processing. In particular,
 SABP committee review is experimental and disabled by default; bulk historical application migration and payment
@@ -134,7 +135,7 @@ The generated-user integration test creates synthetic accounts in an isolated in
 exercises AGM registration, pagination, check-in and export. It uses 24 users by default; for a larger repeatable run:
 
 ```sh
-UTSU_FAKE_USER_COUNT=210 python -m pytest tests/test_generated_user_load.py -q --durations=1
+UTSU_FAKE_USER_COUNT=210 python -m pytest tests/devtools/test_generated_user_load.py -q --durations=1
 ```
 
 The count can be set from 1 to 2000. This sequential, in-process correctness test disables authentication

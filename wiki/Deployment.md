@@ -103,7 +103,7 @@ Everything goes through the `Store` interface (`get/put/delete/list/create/repla
 sort projection per collection/order/filter shape on first use and keep it synchronized with writes; Firestore uses
 native ordered queries and backfills casefold fields once when needed. Subsequent pages seek from the cursor rather
 than loading and sorting the collection again. The suite runs the same store contract tests on every backend
-(`tests/test_stores.py`).
+(`tests/core/test_stores.py`).
 Firestore may require composite indexes for some equality-filter/order combinations; provision the indexes indicated
 by Firestore before enabling those list endpoints in production.
 
@@ -265,6 +265,35 @@ The quota store must be a persistent, shared, atomic backend (SQLite, SQL, Fires
 overriding `create`/`replace`); in-memory or non-atomic backends fail closed. Rollout order: declare the new
 policy, drain and restart all writers, then activate. Rollback targets must read the catalogue — an older
 binary that ignores it cannot be fenced, so drain before rolling back.
+
+### Choosing programs: `config/portal.yaml`
+
+One file decides what a portal contains. `config/portal.yaml` lists `core` (always on) and each program as `true` or
+`false`; `config/branding/` holds the theme, logo and favicon.
+
+```yaml
+core: true
+programs:
+  agm: true
+  sabp: false      # not installed, no finance UI
+  senate: true
+  chat: true
+  voting: true     # requires chat
+branding: branding
+```
+
+```sh
+scripts/build.sh  [--config FILE] [--tag NAME] [--dev]      # installs the programs set to true and builds the matching UI
+scripts/deploy.sh [--config FILE] [--image NAME] [--dev]    # enables them at start-up and mounts config/branding
+scripts/deploy.sh --down [--dev]
+```
+
+Build decides what is *installed*; deploy decides what is *enabled* (`PORTAL_ENABLED_PLUGINS`) and mounts the branding
+folder, so a theme change only needs a redeploy. Turning a program on needs a rebuild, and `deploy.sh` stops with the
+list of programs the image lacks. The selection is stored on the image as the `ca.utsu.portal.programs` label. `--dev`
+adds the live-source dev stack: the Vite UI on `http://127.0.0.1:5173`, the mail inbox on `:8025` (local sign-in codes
+arrive there), Jaeger on `:16686`, Prometheus on `:9090` and Grafana on `:3000`. Per-program settings can be set under
+`plugin_config:`, keyed by plug-in id. `tools/portal_config.py` validates the file.
 
 Alpha cutover: the standard `utsu-core` wheel is core-only. Program packages
 (`utsu-program-agm`, `utsu-program-sabp`, `utsu-program-clubs`,

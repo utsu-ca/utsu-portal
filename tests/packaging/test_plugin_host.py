@@ -31,7 +31,7 @@ from core.plugin_host import (
 from core.settings import Settings
 from core.store import MemoryStore, SQLiteStore, Store
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_frontend_metadata_reports_only_enabled_programs(monkeypatch: pytest.MonkeyPatch):
@@ -268,7 +268,7 @@ def test_clubs_typed_manifest_and_receipt_capabilities_are_scoped():
 
 
 def test_core_only_profile_does_not_import_or_mount_programs():
-    env = {**os.environ, "PYTHONPATH": os.pathsep.join((str(ROOT / "src"), str(ROOT / "src/core")))}
+    env = {**os.environ, "PYTHONPATH": str(ROOT / "src")}
     subprocess.run(
         [
             sys.executable,
@@ -1137,7 +1137,7 @@ def test_enabled_plugin_environment_parses_empty_and_lists(monkeypatch: pytest.M
 
 def _installed_copy_of(identifier: str, tmp_path: Path, **overrides: object) -> metadata.EntryPoint:
     catalogue = json.loads(
-        (Path(__file__).resolve().parents[1] / "src/core/plugin_manifests/builtin.json").read_text("utf-8")
+        (Path(__file__).resolve().parents[2] / "src/core/plugin_manifests/builtin.json").read_text("utf-8")
     )
     declaration = {**next(item for item in catalogue["plugins"] if item["id"] == identifier), **overrides}
     filename = f"{identifier}.utsu-plugin.json"

@@ -372,9 +372,9 @@ Audit log entry created
 
 ### Unit Tests
 ```bash
-pytest tests/test_authsvc.py
-pytest tests/test_mail.py
-pytest tests/test_identity.py
+pytest tests/core/test_authsvc.py
+pytest tests/mail/test_mail.py
+pytest tests/verification/test_identity.py
 ```
 
 ### Integration Tests (Docker Compose)

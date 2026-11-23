@@ -42,6 +42,8 @@ export default defineConfig(({ mode }) => {
 
   return {
     base: "/static/",
+    // The dev container mounts src/ read-only, so its dependency cache lives elsewhere.
+    cacheDir: process.env.PORTAL_VITE_CACHE_DIR || undefined,
     resolve: {
       alias: [{ find: /^@utsu\/portal$/, replacement: here("src/lib/portal-api.js") }],
     },

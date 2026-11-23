@@ -49,7 +49,7 @@ code, not security sandboxes.
 
 1. **Baseline and boundary preparation.** Record existing behavior and remove individual reverse dependencies
    where their contracts can be preserved and tested independently. The initial targeted baseline is
-   `.venv/bin/python -m pytest -q tests/test_file_service.py tests/test_clubs.py tests/test_plugin_host.py`:
+   `.venv/bin/python -m pytest -q tests/core/test_file_service.py tests/clubs/test_clubs.py tests/packaging/test_plugin_host.py`:
    50 passed on the current working tree. Receipt storage now receives the club academic-year policy from its
    owner instead of importing the Clubs implementation; the same targeted suite passes with 51 tests.
    The public `FormsService` contract now also exposes the existing owner-scoped keyset paging operation.
@@ -154,7 +154,8 @@ code, not security sandboxes.
    passed 191.
    A wheel installed outside the checkout passed full-portal and disabled-program startup checks, as well as
    compatibility-import and schema-resource checks.
-   The core implementation lives in `src/core`; its installed import name remains `core`.
+   The core implementation lives in `src/core`, a top-level package named `core` like `agm` or `sabp`; the core
+   frontend source is `src/core/frontend`. The import name was `utsu_core` and the distribution is still `utsu-core`.
    Development Python paths, Compose watch configuration and the full frontend build output use the new location.
    A wheel installed outside the checkout preserves resources, aliases and full/core-only API startup.
    Legacy schema discovery skips genuinely uninstalled program packages while still reporting errors in installed
@@ -257,6 +258,14 @@ Verified on the alpha cutover:
   A replica-start race (two replicas booting against an empty catalogue) previously bumped the epoch and fenced
   both; the catalogue is now written by one atomic update that bumps the epoch only when it changes, covered by
   `test_replicas_starting_together_do_not_fence_each_other`.
+
+- **Config-driven build and deploy.** `config/portal.yaml` selects programs; `scripts/build.sh` installs only those and
+  builds a matching UI (full, selected or core-only); `scripts/deploy.sh` enables them and refuses a config that asks
+  for a program the image lacks. Verified: the full config built and ran the dev stack; an AGM+Senate config produced an
+  image with only `utsu-program-agm` and `utsu-program-senate`, served `checkin.html` and not `finance.html`, and
+  `deploy.sh` rejected the full config against it.
+- **Layout.** `web/` is now `src/core/frontend/` and the `utsu_core` package is flattened to `src/core/` (import name
+  `core`), so `core` is a top-level package like `agm` and `sabp`.
 
 Still open:
 
