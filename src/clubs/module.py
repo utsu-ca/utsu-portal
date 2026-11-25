@@ -15,10 +15,15 @@ from pydantic import BaseModel, Field, field_validator
 
 from core.contracts import FileKind, PluginManifest, PluginServices, RegistrationContext
 from core.pagination import PageOrder, paginate_store
-from core.permissions import PERM_CLUBS_FINANCE, PERM_CLUBS_MANAGE
+from core.permissions import (
+    PERM_CLUB_BALLOTS_MANAGE, PERM_CLUB_DISCUSS, PERM_CLUB_MEMBERS_MANAGE, PERM_CLUB_VOTE, PERM_CLUBS_FINANCE,
+    PERM_CLUBS_MANAGE,
+)
 from core.security import clean_text
 from core.services.email import EmailDeliveryUnknown, EmailNotConfigured
 from core.services.receipt_storage import TORONTO, academic_year
+
+from .membership import COL_MEMBERS, ClubDirectory, COL_REQUESTS, member_key, member_record, membership_router, ordinary_member, scoped_role
 
 name = "clubs"
 ROLES = ("owner", "treasurer", "executive")
@@ -39,6 +44,10 @@ def effective_status(c: dict, now: int) -> str:
     if c["status"] == "approved" and approval_year(c) != academic_year(now):
         return "expired"
     return c["status"]
+
+
+def club_is_active(club: dict, now: int) -> bool:
+    return effective_status(club, now) == "approved"
 
 
 def _has_admin_role(account: dict) -> bool:
@@ -140,13 +149,30 @@ class ClubsModule:
             "settings",
             "store",
         ),
-        collections=("clubs", "receipts", "transactions"),
+        collections=(COL_MEMBERS, COL_REQUESTS, "clubs", "receipts", "transactions"),
+        provides=("club_directory",),
         quota_domains=("club",),
+        scoped_roles=(
+            ("club_executive", "executive of one club"),
+            ("club_member", "officer or member (including honorary) of one approved club"),
+            ("club_officer", "owner, treasurer or executive of one approved club"),
+            ("club_owner", "owner of one club"),
+            ("club_treasurer", "treasurer of one club"),
+        ),
         permissions=(
             (PERM_CLUBS_MANAGE, "Review club registration applications."),
+            (PERM_CLUB_BALLOTS_MANAGE, "Run one club's ballots and boards."),
+            (PERM_CLUB_DISCUSS, "Read and post on one club's discussion boards."),
             (PERM_CLUBS_FINANCE, "Manage club transactions and grants."),
+            (PERM_CLUB_MEMBERS_MANAGE, "Manage one club's members, join requests and honorary members."),
+            (PERM_CLUB_VOTE, "Vote in one club's ballots."),
         ),
         role_permissions=(
+            ("club_executive", (PERM_CLUB_MEMBERS_MANAGE,)),
+            ("club_member", (PERM_CLUB_DISCUSS, PERM_CLUB_VOTE)),
+            ("club_officer", (PERM_CLUB_BALLOTS_MANAGE,)),
+            ("club_owner", (PERM_CLUB_MEMBERS_MANAGE,)),
+            ("club_treasurer", (PERM_CLUB_MEMBERS_MANAGE,)),
             ("clubs", (PERM_CLUBS_MANAGE,)),
             ("finance", (PERM_CLUBS_FINANCE,)),
         ),
@@ -179,6 +205,9 @@ class ClubsModule:
             )
 
         registration.register_file_kind("club_receipt", file_kind)
+        registration.provide("club_directory", ClubDirectory)
+        for role in ("club_owner", "club_treasurer", "club_executive", "club_officer", "club_member"):
+            registration.register_scoped_role(role, scoped_role(role, club_is_active))
 
     def startup(self, services: PluginServices) -> None:
         for existing in services.store.list("clubs"):
@@ -221,6 +250,8 @@ class ClubsModule:
         def balance(cid: str) -> int:
             return sum((t["gross_cents"] if t["kind"] != "expense" else -t["gross_cents"])
                        for t in S.list("transactions", club_id=cid) if t["status"] == "approved")
+
+        r.include_router(membership_router(services, club, club_is_active))  # before /clubs/{cid}
 
         # ---------------- registration ----------------
         @r.post("/clubs", status_code=201)
@@ -315,9 +346,13 @@ class ClubsModule:
         @r.post("/clubs/{cid}/members")
         def add_member(cid: str, b: MemberIn, a: dict = verified):
             c = club(cid)
-            member(c, a["uuid"], ("owner",))
-            if b.role not in ROLES[1:]:
-                raise HTTPException(422, f"role must be one of {ROLES[1:]}")
+            if b.role == "member":  # an officer may invite ordinary members; only the owner invites officers
+                if not services.auth.has_permission(a, PERM_CLUB_MEMBERS_MANAGE, scope=cid):
+                    raise HTTPException(403, "not permitted to manage this club's members")
+            elif b.role in ROLES[1:]:
+                member(c, a["uuid"], ("owner",))
+            else:
+                raise HTTPException(422, f"role must be one of {ROLES[1:] + ('member',)}")
             contact = services.identity.resolve_contact(b.username)
             if not contact or contact.status != "verified":
                 raise HTTPException(422, "member must be a verified account")
@@ -330,8 +365,11 @@ class ClubsModule:
             def invite(cur):
                 if not cur:
                     raise HTTPException(404, "unknown club")
-                member(cur, a["uuid"], ("owner",))
-                if cur["members"].get(uid) == b.role or cur["members"].get(uid) == "owner":
+                if b.role != "member":
+                    member(cur, a["uuid"], ("owner",))
+                if cur["members"].get(uid) == b.role or cur["members"].get(uid) == "owner" or (
+                        b.role == "member" and (uid in cur["members"] or ordinary_member(
+                            S.get(COL_MEMBERS, member_key(cid, uid)), services.now()))):
                     raise HTTPException(409, "account already has this club role")
                 pending = cur.setdefault("invitations", {})
                 if uid in pending:
@@ -364,13 +402,17 @@ class ClubsModule:
                 if not invitation or invitation["id"] != invitation_id:
                     raise HTTPException(404, "invitation not found")
                 old_role["value"] = cur["members"].get(a["uuid"])
-                if b.approve:
+                if b.approve and invitation["role"] != "member":
                     cur["members"][a["uuid"]] = invitation["role"]
                 del pending[a["uuid"]]
                 return cur
 
             c = S.update("clubs", cid, decide)
             role = c["members"].get(a["uuid"])
+            if b.approve and role is None:  # an invitation to be an ordinary member
+                S.put(COL_MEMBERS, member_key(cid, a["uuid"]),
+                      member_record(cid, a["uuid"], "invitation", a["uuid"], services.now()))
+                role = "member"
             services.audit.record(a["uuid"], "club.invitation_accepted" if b.approve else "club.invitation_declined",
                              f"club:{cid}", {"role": old_role["value"]}, {"role": role},
                              {"invitation": invitation_id})

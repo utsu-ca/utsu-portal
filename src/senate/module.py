@@ -13,7 +13,7 @@ from core.contracts import (
 )
 from core.pagination import PageOrder, paginate_items, paginate_page
 from core.services.exports import csv_response
-from core.permissions import PERM_SENATE_APPLICATIONS
+from core.permissions import PERM_SENATE_APPLICATIONS, PERM_SENATE_APPLY
 from .seating import FACULTY, assign_seats, tier_index
 
 PREFERENCES = {
@@ -62,13 +62,15 @@ def compute_seating(services: PluginServices, seed: int) -> dict:
                                       "application": submission["id"], "missing": missing})
         if any(not valid_preference(data[field]) for field in PREFERENCES):
             raise HTTPException(409, {"error": "invalid seating preference", "application": submission["id"]})
+        held = submission.get("membership")  # the active membership held when applying
         check = services.identity.roster(view["uuid"])
-        if not check or not check.rostered or check.division is None:
+        division = (held or {}).get("division") or (check.division if check and check.rostered else None)
+        if division is None:
             raise HTTPException(409, {"error": "verified roster record unavailable", "application": submission["id"]})
         prefs = {constituency: tier for field, constituency in PREFERENCES.items()
                  if (tier := tier_index(data[field])) is not None}
         applicants.append({"uuid": view["uuid"], "full_name": view["name"],
-                           "division_code": check.division,
+                           "division_code": division,
                            "delegated": data.get("delegated", False), "prefs": prefs,
                            "public_listing": data.get("public_listing", False)})
     applicants.sort(key=lambda item: item["uuid"])
@@ -95,7 +97,7 @@ def application_view(services: PluginServices, submission: dict) -> dict:
         "data": submission["data"],
         "submission_status": submission["status"],
         "updated_at": submission["updated_at"],
-        "eligible": person.status == "verified" and bool(check and check.rostered)
+        "eligible": person.status == "verified" and bool(submission.get("membership") or check and check.rostered)
                     and submission["status"] != "rejected",
         "roster_reason": check.reason if check else "roster check unavailable",
     }
@@ -107,7 +109,7 @@ class SenateModule:
     def configure(self, registration: RegistrationContext) -> None:
         raw = resources.files(__package__).joinpath("forms", "senate_application.yaml").read_text(encoding="utf-8")
         registration.register_form("senate_application", FormContribution(yaml=raw))
-        registration.register_submission_policy("senate_application", SubmissionPolicy(require_roster=True))
+        registration.register_submission_policy("senate_application", SubmissionPolicy(permission=PERM_SENATE_APPLY, keep_membership=True))
         registration.register_notification_type("senate", NotificationType("senate_application", "senate_admin"))
 
     def router(self, services: PluginServices) -> APIRouter:

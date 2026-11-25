@@ -4,11 +4,24 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Mapping, Protocol
+from typing import Any, Callable, Mapping, Protocol
 
 AUDIENCES = ("members", "staff")
 THREAD_TYPE = "discussion-topic"
 DEFAULT_KIND = "discussion"
+
+
+@dataclass(frozen=True)
+class Audience:
+    """
+    Who may read and post on a board that belongs to one subject of its consumer (for example one club). A board
+    names it as `{identifier}/{scope}`; `scope_exists(scope)` must accept the scope when the board is created and
+    `can_view(account, scope)` is called for every read, so access to one scope never carries over to another.
+    """
+
+    description: str
+    can_view: Callable[[Mapping[str, Any], str], bool]
+    scope_exists: Callable[[str], bool]
 
 
 @dataclass(frozen=True)
@@ -22,6 +35,7 @@ class TopicKind:
 
 class DiscussionService(Protocol):
     def register_topic_kind(self, identifier: str, kind: TopicKind) -> None: ...
+    def register_audience(self, identifier: str, audience: Audience) -> None: ...
     def boards(self) -> list[dict[str, Any]]: ...
     def ensure_board(self, board_id: str, title: str, description: str = "",
                      audience: str = "members") -> dict[str, Any]: ...

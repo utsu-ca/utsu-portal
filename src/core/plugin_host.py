@@ -15,6 +15,7 @@ from .contracts import CORE_PLUGIN_API_MAJOR, PLUGIN_MANIFEST_SCHEMA_VERSION, Pl
 from .protection import FINANCIAL_AUDIT_COLLECTIONS, FINANCIAL_AUDIT_FORMS, JSON_SENSITIVE, SENSITIVE
 from .plugin_runtime import KNOWN_PLUGIN_SERVICES, SUPPORTED_PLUGIN_SERVICES, TypedPluginAdapter
 from .permissions import is_oauth_scope_token
+from .role_catalogue import MEMBER_ROLES
 from .settings import Settings
 
 ENTRY_POINT_GROUP = "utsu.portal.plugins"
@@ -30,7 +31,7 @@ _CORE_SECRET_SETTINGS = {"stripe_secret_key", "stripe_webhook_secret", "zoom_cli
 _CORE_COLLECTIONS = frozenset({
     "accounts", "users", "emails", "usernames", "student_ids", "google_subjects", "auth_bootstrap", "otps",
     "verifications", "media", "roster_checks", "roster_identifiers", "roster_meta", "roster_name", "roster_last",
-    "role_locks", "sso_codes", "sso_tokens", "forms", "form_versions", "email_delivery", "notice_delivery",
+    "honorary_members", "role_locks", "sso_codes", "sso_tokens", "forms", "form_versions", "email_delivery", "notice_delivery",
     "upload_quotas", "health", "messages", "message_threads", "message_reads", "anchors", "anchor_ledger",
     "public_content", "financial_profiles", "orders", "payment_events",
 })
@@ -70,7 +71,7 @@ def parse_manifest(value: object, source: str, default_interface: str = "plugin"
         "id", "version", "core_api_major", "factory", "kind", "auth_modes", "dependencies", "order", "form_ids",
         "interface", "roles", "protection", "json_protection", "settings", "config",
         "services", "collections", "provides", "unlinkable", "default_enabled",
-        "permissions", "role_permissions", "financial_access", "quota_domains", "frontend",
+        "permissions", "role_permissions", "financial_access", "quota_domains", "frontend", "derived_roles", "scoped_roles",
     }
     unknown = set(raw) - allowed
     if unknown:
@@ -86,6 +87,8 @@ def parse_manifest(value: object, source: str, default_interface: str = "plugin"
     roles_raw = raw.get("roles", {})
     permissions_raw = raw.get("permissions", {})
     role_permissions_raw = raw.get("role_permissions", {})
+    derived_roles_raw = raw.get("derived_roles", {})
+    scoped_roles_raw = raw.get("scoped_roles", {})
     protection_raw = raw.get("protection", {})
     json_protection_raw = raw.get("json_protection", {})
     settings = _string_tuple(raw, "settings", (), source)
@@ -216,6 +219,20 @@ def parse_manifest(value: object, source: str, default_interface: str = "plugin"
         if not _PLUGIN_ID.fullmatch(role_id) or not isinstance(description, str) or not description.strip():
             raise PluginHostError(f"{source}: invalid role declaration")
         roles.append((role_id, description))
+    derived_mapping = _object_mapping(derived_roles_raw, f"{source} derived roles")
+    derived_roles: list[tuple[str, str]] = []
+    for role_id, description in derived_mapping.items():
+        if (not _PLUGIN_ID.fullmatch(role_id) or role_id in MEMBER_ROLES or role_id in dict(roles)
+                or not isinstance(description, str) or not description.strip()):
+            raise PluginHostError(f"{source}: invalid derived role declaration")
+        derived_roles.append((role_id, description))
+    scoped_mapping = _object_mapping(scoped_roles_raw, f"{source} scoped roles")
+    scoped_roles: list[tuple[str, str]] = []
+    for role_id, description in scoped_mapping.items():
+        if (not _PLUGIN_ID.fullmatch(role_id) or role_id in MEMBER_ROLES or role_id in dict(roles)
+                or role_id in dict(derived_roles) or not isinstance(description, str) or not description.strip()):
+            raise PluginHostError(f"{source}: invalid scoped role declaration")
+        scoped_roles.append((role_id, description))
     permission_mapping = _object_mapping(permissions_raw, f"{source} permissions")
     permissions: list[tuple[str, str]] = []
     for scope, description in permission_mapping.items():
@@ -226,7 +243,9 @@ def parse_manifest(value: object, source: str, default_interface: str = "plugin"
         permissions.append((scope, description))
     role_permission_mapping = _object_mapping(role_permissions_raw, f"{source} role_permissions")
     role_permissions: list[tuple[str, tuple[str, ...]]] = []
-    declared_roles, declared_permissions = {role for role, _ in roles}, {scope for scope, _ in permissions}
+    declared_roles = ({role for role, _ in roles} | {role for role, _ in derived_roles}
+                      | {role for role, _ in scoped_roles} | set(MEMBER_ROLES))
+    declared_permissions = {scope for scope, _ in permissions}
     for role, scope_values in role_permission_mapping.items():
         if role not in declared_roles:
             raise PluginHostError(f"{source}: permissions reference undeclared role {role}")
@@ -271,7 +290,8 @@ def parse_manifest(value: object, source: str, default_interface: str = "plugin"
                           tuple(sorted(collections)), tuple(sorted(provides)), tuple(sorted(unlinkable)),
                           default_enabled, tuple(sorted(permissions)), tuple(sorted(role_permissions)),
                           tuple(sorted(config)), tuple(sorted(audit_collections)), tuple(sorted(audit_forms)),
-                          tuple(sorted(quota_domains)), frontend)
+                          tuple(sorted(quota_domains)), frontend, tuple(sorted(derived_roles)),
+                          tuple(sorted(scoped_roles)))
 
 
 def _read_builtin_manifests() -> list[PluginManifest]:
@@ -417,7 +437,7 @@ def select_manifests(
             if owner is not None:
                 raise PluginHostError(f"form {form_id} is declared by both {owner} and {manifest.id}")
             form_owners[form_id] = manifest.id
-        for role_id in dict(manifest.roles):
+        for role_id in (*dict(manifest.roles), *dict(manifest.derived_roles), *dict(manifest.scoped_roles)):
             owner = role_owners.get(role_id)
             if owner is not None:
                 raise PluginHostError(f"role {role_id} is declared by both {owner} and {manifest.id}")

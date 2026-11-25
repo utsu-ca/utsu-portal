@@ -20,10 +20,10 @@ from core.contracts import (
     ThreadAccess,
     ThreadType,
 )
-from core.permissions import PERM_DISCUSSION_MODERATE
+from core.permissions import PERM_DISCUSSION_MODERATE, PERM_DISCUSSION_PARTICIPATE
 from core.pagination import PageOrder, paginate_page, paginate_store
 
-from .contracts import AUDIENCES, DEFAULT_KIND, THREAD_TYPE, TopicKind
+from .contracts import AUDIENCES, DEFAULT_KIND, THREAD_TYPE, Audience, TopicKind
 
 MAX_POST = 8000
 _BOARD_ID = re.compile(r"^[a-z0-9][a-z0-9-]{1,47}$")
@@ -75,6 +75,7 @@ class DiscussionRuntime:
     def __init__(self, services: PluginServices) -> None:
         self._s = services
         self._kinds: dict[str, tuple[str, TopicKind]] = {}
+        self._audiences: dict[str, tuple[str, Audience]] = {}
         self._frozen = False
 
     def for_consumer(self, consumer: str) -> "DiscussionClient":
@@ -94,6 +95,29 @@ class DiscussionRuntime:
             raise ValueError(f"topic kind {identifier} is already registered")
         self._kinds[identifier] = (owner, kind)
 
+    def register_audience(self, owner: str, identifier: str, audience: Audience) -> None:
+        if self._frozen:
+            raise RuntimeError("discussion audiences are frozen")
+        if not isinstance(audience, Audience) or not callable(audience.can_view) or not callable(audience.scope_exists):
+            raise TypeError(f"audience {identifier} is not an Audience")
+        if not _KIND_ID.fullmatch(identifier or ""):
+            raise ValueError(f"audience ID {identifier!r} is invalid")
+        key = f"{owner}:{identifier}"
+        if key in self._audiences:
+            raise ValueError(f"audience {key} is already registered")
+        self._audiences[key] = (owner, audience)
+
+    def _audience(self, key: object) -> tuple[Audience, str] | None:
+        base, sep, scope = str(key).partition("/")
+        entry = self._audiences.get(base)
+        return (entry[1], scope) if entry and sep and scope else None
+
+    def _valid_audience(self, audience: object) -> bool:
+        if audience in AUDIENCES:
+            return True
+        found = self._audience(audience)
+        return bool(found and found[0].scope_exists(found[1]))
+
     def kind_owner(self, identifier: str) -> str | None:
         entry = self._kinds.get(identifier)
         return entry[0] if entry else None
@@ -105,11 +129,27 @@ class DiscussionRuntime:
         if account.get("status") != "verified":
             return False, False
         moderator = self._s.auth.has_permission(account, PERM_DISCUSSION_MODERATE)
-        return moderator, moderator or self._s.auth.is_rostered(account)
+        return moderator, moderator or self._s.auth.has_permission(account, PERM_DISCUSSION_PARTICIPATE)
 
-    @staticmethod
-    def board_visible(board: Mapping[str, Any], moderator: bool, member: bool) -> bool:
-        return moderator or (member and board.get("audience") == "members")
+    def board_visible(self, board: Mapping[str, Any], moderator: bool, member: bool,
+                      account: Mapping[str, Any] | None = None) -> bool:
+        if moderator or (member and board.get("audience") == "members"):
+            return True
+        found = self._audience(board.get("audience"))
+        if found is None or account is None:
+            return False
+        try:
+            return bool(found[0].can_view(account, found[1]))
+        except Exception:
+            return False
+
+    def scoped_boards(self, account: Mapping[str, Any]) -> list[dict[str, Any]]:
+        """The boards of scoped audiences this account may see (a moderator already sees every board)."""
+        boards = [board for base in self._audiences
+                  for board in self._s.store.list("discussion_boards", audience_kind=base)
+                  if self.board_visible(board, False, False, account)]
+        return sorted((_board_public(board) for board in boards),
+                      key=lambda board: (board["archived"], board["title"].casefold(), board["id"]))
 
     def access(self, account: Mapping[str, Any], topic_id: str) -> ThreadAccess | None:
         """Thread authorizer. A topic's author keeps access to it, so a plug-in can open a topic on behalf of an
@@ -121,7 +161,7 @@ class DiscussionRuntime:
         if topic is None or board is None:
             return None
         moderator, member = self.viewer(account)
-        if not (topic.get("author") == account.get("uuid") or self.board_visible(board, moderator, member)):
+        if not (topic.get("author") == account.get("uuid") or self.board_visible(board, moderator, member, account)):
             return None
         return ThreadAccess(read=True, post=not topic.get("locked") and not board.get("archived"), staff=moderator)
 
@@ -163,11 +203,13 @@ class DiscussionRuntime:
                      owner: str = "discussion") -> dict[str, Any]:
         if not _BOARD_ID.fullmatch(board_id or ""):
             raise ValueError("board ID must be 2-48 lowercase letters, digits or hyphens")
-        if audience not in AUDIENCES:
-            raise ValueError(f"audience must be one of {', '.join(AUDIENCES)}")
+        if not self._valid_audience(audience):
+            raise ValueError(f"audience must be one of {', '.join(AUDIENCES)}, or a registered scoped audience")
         board = {"id": board_id, "title": clean_line(title, 120, "title"),
                  "description": clean_text(description, 2000, "description"), "audience": audience,
                  "archived": False, "owner": owner, "created_by": actor, "created_at": self._s.now()}
+        if audience not in AUDIENCES:
+            board["audience_kind"] = audience.partition("/")[0]
         if not self._s.store.create("discussion_boards", board_id, board):
             raise AlreadyExists(f"board {board_id} already exists")
         self._s.audit.record(actor or "system", "discussion.board.created", f"discussion_boards/{board_id}", None,
@@ -184,6 +226,7 @@ class DiscussionRuntime:
             if changes["audience"] not in AUDIENCES:
                 raise ValueError(f"audience must be one of {', '.join(AUDIENCES)}")
             clean["audience"] = changes["audience"]
+            clean["audience_kind"] = None
         if changes.get("archived") is not None:
             clean["archived"] = bool(changes["archived"])
         before: dict[str, Any] = {}
@@ -313,6 +356,9 @@ class DiscussionClient:
     def register_topic_kind(self, identifier: str, kind: TopicKind) -> None:
         self._runtime.register_kind(self._consumer, identifier, kind)
 
+    def register_audience(self, identifier: str, audience: Audience) -> None:
+        self._runtime.register_audience(self._consumer, identifier, audience)
+
     def boards(self) -> list[dict[str, Any]]:
         return self._runtime.all_boards()
 
@@ -321,6 +367,8 @@ class DiscussionClient:
         board = self._runtime.board(board_id)
         if board is not None:
             return _board_public(board)
+        if audience not in AUDIENCES:  # one of this consumer's scoped audiences: `identifier/scope`
+            audience = f"{self._consumer}:{audience}"
         try:
             return self._runtime.create_board(board_id, title, description, audience, None, self._consumer)
         except AlreadyExists:
@@ -422,7 +470,7 @@ class DiscussionPlugin:
         def visible_board(board_id: str, account: Mapping[str, Any]) -> tuple[dict[str, Any], bool, bool]:
             board = runtime.board(board_id)
             moderator, member = runtime.viewer(account)
-            if board is None or not runtime.board_visible(board, moderator, member):
+            if board is None or not runtime.board_visible(board, moderator, member, account):
                 raise HTTPException(404, "board not found")
             return board, moderator, member
 
@@ -446,6 +494,7 @@ class DiscussionPlugin:
                 "next_cursor": next_cursor,
                 "moderator": moderator,
                 "member": member,
+                "scoped_boards": [] if moderator else runtime.scoped_boards(a),
             }
 
         @r.post("/boards")

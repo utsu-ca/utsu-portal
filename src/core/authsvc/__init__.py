@@ -20,12 +20,13 @@ from ..modules.roles import RolesModule
 from ..settings import Settings
 from ..permissions import permission_catalogue_for, role_permissions_for
 from ..store import Store
-from ..services.account_check import check_account
-from ..services.roster import StoreRoster, match_person
+from ..services.account_check import check_account, with_honorary
+from ..services.roster import StoreRoster, match_person, roster_session
 
 
 class Lookup(BaseModel):
-    username: str
+    username: str = ""
+    student_number: str = ""
 
 
 class RosterPerson(BaseModel):
@@ -71,7 +72,13 @@ class InternalModule:
         @r.post("/resolve")
         def resolve(b: Lookup, authorization: str | None = Header(None)):
             guard(authorization)
-            uid = ctx.uid(b.username)
+            if b.student_number:
+                found = ctx.identity.resolve_student_number(b.student_number)
+                if not found:
+                    raise HTTPException(404)
+                uid = found["uuid"]
+            else:
+                uid = ctx.uid(b.username)
             d = view(uid)
             if not d:
                 raise HTTPException(404)
@@ -81,10 +88,16 @@ class InternalModule:
         def roster_account(uid: str, authorization: str | None = Header(None)):
             guard(authorization)
             user = ctx.store.get("users", uid)
-            if not user or not ctx.store.get("roster_meta", "current"):
+            if not user:
                 raise HTTPException(404)
-            digits = (ctx.store.get("roster_identifiers", uid) or {}).get("digits")
-            return {"uuid": uid, **check_account(StoreRoster(ctx.store), user, digits)}
+            check = None
+            if ctx.store.get("roster_meta", "current"):
+                digits = (ctx.store.get("roster_identifiers", uid) or {}).get("digits")
+                check = {"uuid": uid, **check_account(StoreRoster(ctx.store), user, digits, roster_session(ctx.store))}
+            check = with_honorary(ctx.store, uid, check)  # an honorary member needs no roster
+            if check is None:
+                raise HTTPException(404)
+            return check
 
         @r.post("/roster/match")
         def roster_match(body: RosterPerson, authorization: str | None = Header(None)):

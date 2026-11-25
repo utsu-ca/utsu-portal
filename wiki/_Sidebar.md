@@ -4,6 +4,7 @@
 - [Setup and current functionality](../README.md)
 - [Applicant Portal](Applicant-Portal)
 - [Discussions and Voting](Discussions-and-Voting)
+- [Fee opt-outs and refunds](Fee-Opt-Outs)
 
 **Historical batch reference (commands removed)**
 - [Getting Started](Getting-Started)

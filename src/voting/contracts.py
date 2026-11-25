@@ -14,10 +14,17 @@ MEMBERS = "members"
 
 @dataclass(frozen=True)
 class Electorate:
-    """Who may vote. `is_eligible(account)` is called for every vote; raising or returning False refuses it."""
+    """
+    Who may vote. `is_eligible(account)` is called for every vote; raising or returning False refuses it.
+    A `scoped` electorate belongs to one subject of its consumer (for example one club): a ballot names it as
+    `{identifier}/{scope}`, `scope_exists(scope)` must accept that scope when the ballot is created, and
+    `is_eligible(account, scope)` is called with it, so eligibility in one scope never carries over to another.
+    """
 
     description: str
-    is_eligible: Callable[[Mapping[str, Any]], bool]
+    is_eligible: Callable[..., bool]
+    scoped: bool = False
+    scope_exists: Callable[[str], bool] | None = None
 
 
 @dataclass(frozen=True)

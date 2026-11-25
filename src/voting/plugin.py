@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from core.contracts import MessageRateLimited, PluginManifest, PluginServices, RegistrationContext
-from core.permissions import PERM_ELECTIONS_ADMIN
+from core.permissions import PERM_ELECTIONS_ADMIN, PERM_VOTING_VOTE
 from chat.contracts import DiscussionService, TopicKind
 
 from .contracts import MEMBERS, METHODS, THRESHOLDS, VISIBILITIES, BallotSpec, Electorate
@@ -119,28 +119,38 @@ class VotingRuntime:
             raise ValueError(f"electorate {key} is already registered")
         self._electorates[key] = (owner, electorate)
 
+    def _electorate(self, key: object) -> tuple[Electorate, str | None] | None:
+        """The electorate a ballot names and its scope: `owner:id`, or `owner:id/scope` for a scoped one."""
+        base, sep, scope = str(key).partition("/")
+        entry = self._electorates.get(base)
+        if entry is None or entry[1].scoped != bool(sep) or (sep and not scope):
+            return None
+        return entry[1], (scope if sep else None)
+
     def electorates(self) -> list[dict[str, str]]:
-        registered = [{"id": key, "description": entry[1].description} for key, entry in self._electorates.items()]
+        registered = [{"id": key, "description": entry[1].description}
+                      for key, entry in self._electorates.items() if not entry[1].scoped]
         return [{"id": MEMBERS, "description": "Verified members on the membership roster"},
                 *sorted(registered, key=lambda item: item["id"])]
 
     def _electorate_label(self, key: str) -> str | None:
         if key == MEMBERS:
             return "Members"
-        entry = self._electorates.get(key)
-        return entry[1].description if entry else None
+        found = self._electorate(key)
+        return found[0].description if found else None
 
     def eligible(self, ballot: Mapping[str, Any], account: Mapping[str, Any]) -> bool:
         if account.get("status") != "verified":
             return False
         key = ballot.get("electorate")
         if key == MEMBERS:
-            return self._s.auth.is_rostered(account)
-        entry = self._electorates.get(str(key))
-        if entry is None:
+            return self._s.auth.has_permission(account, PERM_VOTING_VOTE)
+        found = self._electorate(key)
+        if found is None:
             return False  # the electorate's plug-in is disabled: refuse rather than guess
+        electorate, scope = found
         try:
-            return bool(entry[1].is_eligible(account))
+            return bool(electorate.is_eligible(account, scope) if electorate.scoped else electorate.is_eligible(account))
         except Exception:
             return False
 
@@ -153,8 +163,12 @@ class VotingRuntime:
             raise ValueError(f"method must be one of {', '.join(METHODS)}")
         if spec.visibility not in VISIBILITIES:
             raise ValueError(f"visibility must be one of {', '.join(VISIBILITIES)}")
-        if electorate != MEMBERS and electorate not in self._electorates:
-            raise ValueError(f"unknown electorate {electorate}")
+        if electorate != MEMBERS:
+            found = self._electorate(electorate)
+            if found is None:
+                raise ValueError(f"unknown electorate {electorate}")
+            if found[0].scoped and not (found[0].scope_exists and found[0].scope_exists(found[1])):
+                raise ValueError(f"unknown electorate scope {electorate}")
         title = _clean_line(spec.title, 200, "title")
         description = _clean_text(spec.description, 8000, "description")
         options = _options(spec.method, spec.options)

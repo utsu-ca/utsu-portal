@@ -51,7 +51,8 @@ def test_roster_import_and_match_over_store():
     from core.store import MemoryStore
     store = MemoryStore()
     text = _roster_csv("Ann Marie,Lee,xxxxx3161x,ARTSC,UC", "Sam,Lee,xxxxx0001x,ARTSC,TRIN")
-    assert roster.import_roster(store, text) == {"imported": True, "count": 2, "checked": 0, "rostered": 0}
+    assert roster.import_roster(store, text) == {"imported": True, "count": 2, "session": "Fall 1969", "checked": 0,
+                                                 "rostered": 0}
     assert roster.import_roster(store, "bad") == {"imported": False, "count": 2}  # kept unless replacing
     r = roster.StoreRoster(store)
     exact = roster.match_person({"full_name": "sam lee", "id": "1000000019"}, r)
@@ -79,6 +80,24 @@ def test_roster_replace_removes_old_students():
     roster.import_roster(store, _roster_csv("Bo,Chan,xxxxx1111x,ARTSC,UC"), replace_existing=True)
     r = roster.StoreRoster(store)
     assert not r.by_name("Ann Lee") and r.by_name("Bo Chan")
+
+
+def test_membership_session_follows_the_roster_session():
+    from datetime import datetime
+    from core.services import account_check, roster
+    from core.store import MemoryStore
+    at = lambda y, m, d: int(datetime(y, m, d, 12, tzinfo=roster.TORONTO).timestamp())
+    store = MemoryStore()
+    store.put("users", "u1", {"uuid": "u1", "first_name": "Ann", "last_name": "Lee"})
+    store.put("roster_identifiers", "u1", {"digits": "3161"})
+    assert account_check.membership_status(store, "u1", at(2026, 10, 1)) == "inactive"
+    out = roster.import_roster(store, _roster_csv("Ann,Lee,xxxxx3161x,ARTSC,UC"), now=at(2026, 10, 1))
+    assert out["session"] == "Fall 2026" and out["rostered"] == 1
+    assert store.get("roster_checks", "u1")["membership_session"] == "Fall 2026"
+    assert account_check.membership_status(store, "u1", at(2026, 12, 31)) == "active"
+    assert account_check.membership_status(store, "u1", at(2027, 1, 1)) == "inactive"  # Winter needs a new roster
+    roster.import_roster(store, _roster_csv("Ann,Lee,xxxxx3161x,ARTSC,UC"), True, at(2027, 1, 15))
+    assert account_check.membership_status(store, "u1", at(2027, 4, 30)) == "active"
 
 
 def test_roster_doctests():

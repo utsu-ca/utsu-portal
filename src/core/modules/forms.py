@@ -81,7 +81,7 @@ class FormsModule:
         def submit(fid: str, b: SubmitIn, acct: dict = verified):
             v = published(fid)
             policy = get_submission_policy(ctx, fid)
-            validate_submission_eligibility(ctx, policy, acct)
+            membership = validate_submission_eligibility(ctx, policy, acct)
             if (b.version, b.hash) != (v["version"], v["hash"]):
                 raise HTTPException(409, {"error": "form changed; reload", "version": v["version"], "hash": v["hash"]})
             try:
@@ -98,6 +98,8 @@ class FormsModule:
                     "id": key, "form_id": fid, "uuid": acct["uuid"], "version": v["version"], "hash": v["hash"],
                     "data": data, "status": "submitted", "updated_at": ctx.now(), "history": history,
                 }
+                if membership:
+                    candidate["membership"] = membership
                 if policy is not None and policy.save is not None:
                     result = policy.save(prev, candidate)
                 else:

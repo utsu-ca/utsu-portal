@@ -12,8 +12,10 @@ import io
 import logging
 import re
 from dataclasses import dataclass, replace
+from datetime import datetime
 from difflib import SequenceMatcher
 from typing import Iterable, Protocol
+from zoneinfo import ZoneInfo
 
 from .text import UOFT_MAIL_DOMAIN, clean_text, normalize_case, typed_uuid
 
@@ -27,6 +29,27 @@ MAX_CANDIDATES = 3
 # how alike two first names have to be (0 to 1, `difflib` ratio) to be taken as the same name
 FUZZY_THRESHOLD = 0.85
 COL_NAME, COL_LAST, COL_META = "roster_name", "roster_last", "roster_meta"
+TORONTO = ZoneInfo("America/Toronto")
+
+
+def membership_session(timestamp: int) -> str:
+    """
+    The membership session a moment falls in (Toronto time): Sep-Dec Fall, Jan-Apr Winter, May-Aug Summer, named with
+    the calendar year. This is not the September-August academic year.
+
+    >>> [membership_session(int(datetime(y, m, d, 12, tzinfo=TORONTO).timestamp()))
+    ...  for y, m, d in ((2026, 8, 31), (2026, 9, 1), (2026, 12, 31), (2027, 1, 1), (2027, 4, 30), (2027, 5, 1))]
+    ['Summer 2026', 'Fall 2026', 'Fall 2026', 'Winter 2027', 'Winter 2027', 'Summer 2027']
+    """
+    date = datetime.fromtimestamp(timestamp, TORONTO)
+    season = "Fall" if date.month >= 9 else "Winter" if date.month <= 4 else "Summer"
+    return f"{season} {date.year}"
+
+
+def roster_session(store) -> str | None:
+    """The membership session the current roster was imported for, or None when no roster is loaded."""
+    meta = store.get(COL_META, "current")
+    return None if not meta else meta.get("session") or membership_session(meta.get("imported_at", 0))
 
 
 def is_uoft_email(email: str) -> bool:
@@ -162,7 +185,8 @@ def read_roster_rows(text: str) -> list[Student]:
 def import_roster(store, text: str, replace_existing: bool = False, now: int = 0) -> dict:
     """
     Import a roster CSV. The file is checked before anything is written, so a bad file leaves the old roster. Without
-    `replace_existing` an existing roster is kept (`imported` is False). Returns {"imported", "count"}.
+    `replace_existing` an existing roster is kept (`imported` is False). The roster belongs to the membership session of
+    `now`. Returns {"imported", "count"}, plus "session" and the account check counts when imported.
     """
     meta = store.get(COL_META, "current")
     if meta and not replace_existing:
@@ -181,9 +205,10 @@ def import_roster(store, text: str, replace_existing: bool = False, now: int = 0
                 store.delete(col, old["key"])
         for key, rows in buckets.items():
             store.put(col, key, {"key": key, "students": rows})
-    store.put(COL_META, "current", {"count": len(students), "imported_at": now})
+    session = membership_session(now)
+    store.put(COL_META, "current", {"count": len(students), "imported_at": now, "session": session})
     from .account_check import check_accounts  # the whole-DB account check runs on every new roster
-    return {"imported": True, "count": len(students), **check_accounts(store, now)}
+    return {"imported": True, "count": len(students), "session": session, **check_accounts(store, now)}
 
 
 # --- matching ---------------------------------------------------------------------------------------------------------

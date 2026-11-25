@@ -23,6 +23,11 @@ CHEQUE_BYTES = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF"
 CHEQUE = "data:application/pdf;base64," + base64.b64encode(CHEQUE_BYTES).decode()
 
 
+def import_ada_roster(c, admin):
+    roster = "First Name,Last Name,Truncated Student Number,Faculty,Division\nAda,Lovelace,xxxxx6789x,ARTSC,UC\n"
+    assert c.post("/api/admin/roster", json={"csv": roster}, headers=admin).status_code == 200
+
+
 def test_living_costs_subsidies_prioritize_emergency_reviews():
     inner, mail = MemoryStore(), OutboxMailer()
     c = TestClient(create_app(Settings(secret="s" * 32, admin_emails=("boss@x.ca",), sap_review_enabled=True),
@@ -118,6 +123,7 @@ def test_import_historical_decisions_is_private_atomic_and_non_overlapping():
     register(c, mail, "ada", "ada@x.ca")
     user = login(c, mail, "ada")
     activate(c, admin, user)
+    import_ada_roster(c, admin)
     uid = c.get("/api/me", headers=user).json()["user"]["uuid"]
     path = f"/api/admin/sap/applications/{uid}/history"
     record = {"source": "batch B012-01", "terms": ["Fall 2025"], "approved": True, "amount": 500,
@@ -234,8 +240,10 @@ def test_sap_application_access_and_encryption():
     data = {"terms": ["Fall 2026"], "enrolment": "Full-time", "monthly_income": 500,
             "monthly_expenses": 1500, "amount_requested": 1000, "hardship": "private " * 10,
             "contact_email": "ada@example.ca", "consent": True}
-    response = c.put("/api/forms/student_aid_bursary/submission",
-                     json={"version": form["version"], "hash": form["hash"], "data": data}, headers=user)
+    body = {"version": form["version"], "hash": form["hash"], "data": data}
+    assert c.put("/api/forms/student_aid_bursary/submission", json=body, headers=user).status_code == 403  # not a member
+    import_ada_roster(c, admin)
+    response = c.put("/api/forms/student_aid_bursary/submission", json=body, headers=user)
     assert response.status_code == 200, response.text
     uid = c.get("/api/me", headers=user).json()["user"]["uuid"]
     assert c.post(f"/api/admin/sap/applications/{uid}/enqueue", headers=admin).status_code == 503
@@ -244,9 +252,7 @@ def test_sap_application_access_and_encryption():
     assert "private" not in stored["data"] and "ada@example.ca" not in stored["data"]
     assert c.get("/api/me/sap", headers=user).json()["data"]["hardship"] == data["hardship"].strip()
     assert c.get("/api/admin/sap/applications", headers=user).status_code == 403
-    assert not c.get("/api/admin/sap/applications", headers=admin).json()["items"][0]["eligible"]
-    roster = "First Name,Last Name,Truncated Student Number,Faculty,Division\nAda,Lovelace,xxxxx6789x,ARTSC,UC\n"
-    assert c.post("/api/admin/roster", json={"csv": roster}, headers=admin).status_code == 200
+    assert c.get("/api/admin/sap/applications", headers=admin).json()["items"][0]["eligible"]
     assert c.get("/api/me/sap", headers=user).json()["eligible"]
     assert c.get("/api/admin/sap/applications?limit=0", headers=admin).status_code == 422
     assert c.get("/api/admin/sap/applications?limit=201", headers=admin).status_code == 422
@@ -261,6 +267,7 @@ def test_sap_scoring_requires_weights_and_complete_questionnaire():
     register(c, mail, "ada", "ada@x.ca")
     user = login(c, mail, "ada")
     activate(c, admin, user)
+    import_ada_roster(c, admin)
     form = c.get("/api/forms/student_aid_bursary/static").json()
     data = {"terms": ["Fall 2026"], "enrolment": "Full-time", "monthly_income": 500,
             "monthly_expenses": 1500, "amount_requested": 1000, "hardship": "private " * 10,
@@ -335,6 +342,7 @@ def test_sap_banking_is_encrypted_private_and_irreversibly_destroyed():
     register(c, mail, "ada", "ada@x.ca")
     user = login(c, mail, "ada")
     activate(c, admin, user)
+    import_ada_roster(c, admin)
     banking = {"institution_number": "001", "transit_number": "00023", "account_number": "0000456"}
     assert c.put("/api/sap/banking", json=banking, headers=user).status_code == 409
     form = c.get("/api/forms/student_aid_bursary/static").json()
@@ -369,6 +377,7 @@ def test_banking_reverification_is_single_use_encrypted_and_requires_acceptance(
     register(c, mail, "ada", "ada@x.ca")
     user = login(c, mail, "ada")
     activate(c, admin, user)
+    import_ada_roster(c, admin)
     form = c.get("/api/forms/student_aid_bursary/static").json()
     data = {"terms": ["Fall 2026"], "enrolment": "Full-time", "monthly_income": 500,
             "monthly_expenses": 1500, "amount_requested": 1000, "hardship": "private " * 10,
@@ -433,6 +442,7 @@ def test_finance_controller_flags_failed_validation_and_reviews_the_void_cheque(
     register(c, mail, "ada", "ada@x.ca")
     user = login(c, mail, "ada")
     activate(c, admin, user)
+    import_ada_roster(c, admin)
     form = c.get("/api/forms/student_aid_bursary/static").json()
     data = {"terms": ["Fall 2026"], "enrolment": "Full-time", "monthly_income": 500,
             "monthly_expenses": 1500, "amount_requested": 1000, "hardship": "private " * 10,

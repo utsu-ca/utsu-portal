@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PROGRAMS = {
     "agm": ("agm", "agm_verify"),
     "sabp": ("sap",),
-    "clubs": ("clubs",),
+    "clubs": ("clubs", "club_governance"),
     "senate": ("senate",),
     "chat": ("discussion",),
     "voting": ("voting",),

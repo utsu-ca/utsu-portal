@@ -8,6 +8,8 @@ export function financeActions({ verified, has }) {
 export function registrationActions({ verified, has }) {
   const actions = [];
   if (verified) actions.push({ id: "club-register", label: "Register or manage a club", view: "clubRegistration" });
+  if (verified) actions.push({ id: "club-membership", label: "Join a club", view: "clubMembership" });
+  if (verified) actions.push({ id: "club-members", label: "Manage club members", view: "clubMembers" });
   if (has("clubs")) actions.push({ id: "club-review", label: "Review registrations", view: "clubAdmin" });
   return actions;
 }

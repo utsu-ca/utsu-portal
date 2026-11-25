@@ -245,7 +245,7 @@ def test_clubs_typed_manifest_and_receipt_capabilities_are_scoped():
     manifest = manifests["clubs"]
     assert ClubsModule.manifest == manifest
     assert {"club_receipts", "club_invitation_link"} <= set(manifest.services)
-    assert manifest.collections == ("clubs", "receipts", "transactions")
+    assert manifest.collections == ("club_members", "club_requests", "clubs", "receipts", "transactions")
     assert manifest.quota_domains == ("club",)
 
     for service in ("club_receipts", "club_invitation_link"):
@@ -342,7 +342,7 @@ def test_typed_forms_paging_preserves_form_ownership(store_factory: Callable[[],
 def test_builtin_full_profile_preserves_order_and_form_ownership():
     manifests, modules = load_modules("local")
     assert [module.name for module in modules] == [
-        "sso", "auth", "profile", "payments", "forms", "agm", "agm_verify", "senate", "sap",
+        "sso", "auth", "profile", "payments", "fees", "forms", "agm", "agm_verify", "senate", "sap",
         "messaging", "content", "notices", "admin", "clubs", "audit", "roles",
     ]
     assert {form_id for manifest in manifests for form_id in manifest.form_ids} == {

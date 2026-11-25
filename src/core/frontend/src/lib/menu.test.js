@@ -33,8 +33,8 @@ describe("signing in exposes program functions", () => {
   it("adds the member's own actions", () => {
     expect(actions(member, "bursaries")).toEqual(["Apply for a bursary", "Banking information"]);
     expect(actions(member, "agm")).toEqual(["RSVP for the AGM", "My invitation"]);
-    expect(actions(member, "club-registration")).toEqual(["Register or manage a club"]);
-    expect(labels(findNode(member, n => n.id === "profile").items)).toEqual(["Account", "Financial information", "Orders and payments", "My applications", "Sign out"]);
+    expect(actions(member, "club-registration")).toEqual(["Register or manage a club", "Join a club", "Manage club members"]);
+    expect(labels(findNode(member, n => n.id === "profile").items)).toEqual(["Account", "Financial information", "Orders and payments", "Fee opt-outs", "My applications", "Sign out"]);
   });
 
   it("gives unverified accounts only the profile", () => {
@@ -58,7 +58,7 @@ describe("signing in exposes program functions", () => {
     expect(actions(admin, "senate")).toContain("Administer seating");
     expect(actions(admin, "club-registration")).toContain("Review registrations");
     expect(actions(admin, "club-finances")).toContain("Approve expenses and grants");
-    expect(labels(findNode(admin, n => n.id === "administration").items)).toEqual(["Payment orders", "Forms", "Identity checks", "Roles", "Student roster", "Page content"]);
+    expect(labels(findNode(admin, n => n.id === "administration").items)).toEqual(["Payment orders", "Fees and levy groups", "Fee refunds", "Levy groups", "Forms", "Identity checks", "Roles", "Student roster", "Member lookup", "Page content"]);
   });
 });
 

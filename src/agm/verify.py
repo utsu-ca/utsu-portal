@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from core.contracts import FileKind, PluginManifest, PluginServices, RegistrationContext
-from core.permissions import PERM_AGM_ID_REVIEW
+from core.permissions import PERM_AGM_ID_REVIEW, PERM_AGM_RSVP
 
 from .state import AgmVerificationAccess
 
@@ -72,7 +72,7 @@ class AgmVerifyModule:
         router = APIRouter(prefix="/api")
         state = cast(AgmVerificationAccess, services.provided["agm_verification"])
         grant_ttl = state.grant_ttl
-        verified = services.auth.require_rostered()
+        verified = services.auth.require_permission(PERM_AGM_RSVP)
         reviewer = services.auth.require_permission(PERM_AGM_ID_REVIEW)
 
         def queue() -> list[dict[str, Any]]:

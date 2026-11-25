@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 import urllib.error
 import urllib.request
@@ -17,6 +18,7 @@ from fastapi import HTTPException
 
 from . import security
 from .contracts import ContactSummary
+from .services.account_check import read_check
 from .services.roster import StoreRoster, match_person
 
 log = logging.getLogger("core.identity")
@@ -38,14 +40,28 @@ class Identity:
     def roster_check(self, uuid: str) -> dict | None: ...
     def roster_match(self, person: dict) -> dict | None: ...
 
-    def resolve_contact(self, username: str) -> ContactSummary | None:
-        resolved = self.resolve(username)
+    def resolve_student_number(self, student_number: str) -> dict[str, Any] | None: ...
+
+    @staticmethod
+    def _contact(resolved: dict[str, Any] | None) -> ContactSummary | None:
         if not resolved or not resolved.get("account"):
             return None
         account: dict[str, Any] = resolved["account"]
         user: dict[str, Any] = resolved.get("user") or {}
         return ContactSummary(resolved["uuid"], account.get("status"), bool(account.get("email_verified")),
                               user.get("email"))
+
+    def resolve_contact(self, username: str) -> ContactSummary | None:
+        return self._contact(self.resolve(username))
+
+    def find_contact(self, email: str = "", student_number: str = "") -> ContactSummary | None:
+        """The account with this email address or this full student number (exactly one is given)."""
+        if bool(email.strip()) == bool(student_number.strip()):
+            return None
+        if student_number.strip():
+            return self._contact(self.resolve_student_number(student_number))
+        value = email.strip()
+        return self._contact(self.resolve(value)) if "@" in value else None
 
     def ping(self) -> bool:
         return True
@@ -88,8 +104,16 @@ class LocalIdentity(Identity):
         a = self.account(uid)
         return {"uuid": uid, "account": a, "user": self.user(uid)} if a else None
 
+    def resolve_student_number(self, student_number):
+        digits = re.sub(r"\D", "", student_number)
+        if not 7 <= len(digits) <= 10:
+            return None
+        uid = (self.ctx.store.get("student_ids", security.student_id_uuid(self.ctx.settings.secret, digits)) or {}).get("uuid")
+        account = self.account(uid) if uid else None
+        return {"uuid": uid, "account": account, "user": self.user(uid)} if account else None
+
     def roster_check(self, uuid):
-        return self.ctx.store.get("roster_checks", uuid)
+        return read_check(self.ctx.store, uuid)
 
     def roster_match(self, person):
         if not self.ctx.store.get("roster_meta", "current"):
@@ -155,6 +179,13 @@ class RemoteIdentity(Identity):
     def resolve(self, username):
         try:
             return self.fetch("/internal/resolve", {"username": username})
+        except Exception:
+            log.exception("auth service unreachable")
+            return None
+
+    def resolve_student_number(self, student_number):
+        try:
+            return self.fetch("/internal/resolve", {"student_number": student_number})
         except Exception:
             log.exception("auth service unreachable")
             return None

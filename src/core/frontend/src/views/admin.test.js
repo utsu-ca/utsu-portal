@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import AdminRoster from "./AdminRoster.svelte";
+import AdminMembers from "./AdminMembers.svelte";
 
 vi.mock("../lib/api.js", async importOriginal => ({ ...(await importOriginal()), api: vi.fn(), downloadReport: vi.fn() }));
 import { api } from "../lib/api.js";
@@ -60,5 +61,52 @@ describe("roster upload", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Service unavailable");
     await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(await screen.findByText("No roster entries.")).toBeInTheDocument();
+  });
+});
+
+describe("member lookup", () => {
+  const member = (extra = {}) => ({
+    uuid: "u1", name: "Ada Lovelace", email: "ada@example.test", student_number: "xxxxx7890x", status: "verified", roles: [],
+    roster: { rostered: false, reason: "name not found", division: null },
+    membership: { session: "Fall 2026", live_member: false, rostered_member: false }, honorary: null, ...extra,
+  });
+
+  it("looks an account up and grants then removes honorary membership", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    api.mockImplementation((path, options) => {
+      if (options?.method === "PUT") return Promise.resolve(member({
+        membership: { session: "Fall 2026", live_member: true, rostered_member: true },
+        honorary: { session: "Fall 2026", reason: "Past president", current: true },
+      }));
+      if (options?.method === "DELETE") return Promise.resolve(member());
+      return Promise.resolve(member());
+    });
+    render(AdminMembers);
+    await fireEvent.input(screen.getByLabelText("Email address"), { target: { value: " ada@example.test " } });
+    await fireEvent.click(screen.getByRole("button", { name: "Look up" }));
+    expect(await screen.findByText("Ada Lovelace")).toBeInTheDocument();
+    expect(api).toHaveBeenCalledWith("/admin/members/lookup?email=ada%40example.test");
+    expect(screen.getByText(/Member of this session: no/)).toBeInTheDocument();
+
+    const grant = screen.getByRole("button", { name: "Grant honorary membership" });
+    expect(grant).toBeDisabled();
+    await fireEvent.input(screen.getByLabelText("Reason"), { target: { value: "Past president" } });
+    await fireEvent.click(grant);
+    expect(await screen.findByText(/Member of this session: yes/)).toBeInTheDocument();
+    expect(api).toHaveBeenCalledWith("/admin/members/u1/honorary", { method: "PUT", body: { reason: "Past president", division: "" } });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Remove honorary membership" }));
+    expect(await screen.findByText(/Member of this session: no/)).toBeInTheDocument();
+    expect(api).toHaveBeenCalledWith("/admin/members/u1/honorary", { method: "DELETE" });
+  });
+
+  it("looks up by student number and reports a missing account", async () => {
+    api.mockRejectedValueOnce(new Error("no account with that student number"));
+    render(AdminMembers);
+    await fireEvent.change(screen.getByLabelText("Look up by"), { target: { value: "student_number" } });
+    await fireEvent.input(screen.getByLabelText("Full student number"), { target: { value: "1234567890" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Look up" }));
+    expect(await screen.findByText("no account with that student number")).toBeInTheDocument();
+    expect(api).toHaveBeenCalledWith("/admin/members/lookup?student_number=1234567890");
   });
 });

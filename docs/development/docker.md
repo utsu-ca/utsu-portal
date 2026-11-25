@@ -56,42 +56,36 @@ docker compose --env-file secrets/dev.env -p utsu-portal-dev \
   -f docker-compose.yml -f docker-compose-dev.yml logs -f portal
 ```
 
-## Opt in to generated fixtures
+## Load sample records
 
-Use a separate Compose project so generated records do not mix with ordinary development. On the first run,
-start without Watch: a source edit can restart the portal before its initial seed is complete. This example uses
-different host ports so both projects can run at once:
+`scripts/seed.sh` fills a running dev portal with sample applicants, form submissions and bursary applications. It is
+an external client: it makes the same HTTP calls a browser does, signs in as `admin@dev-local.test`, and reads
+sign-in codes from the dev mail inbox. It never touches the database, so it works on whatever instance is running and
+runs the real validation. Nothing is seeded at start-up.
 
 ```sh
-PORTAL_DEV_SEED=1 PORTAL_WEB_PORT=5174 PORTAL_PORT=8001 PORTAL_MAIL_INBOX_PORT=8026 \
-PORTAL_JAEGER_PORT=16687 PORTAL_PROMETHEUS_PORT=9091 PORTAL_GRAFANA_PORT=3001 \
-docker compose --env-file secrets/dev.env -p utsu-portal-generated \
-  -f docker-compose.yml -f docker-compose-dev.yml up --build -d --wait --wait-timeout 960
+scripts/deploy.sh --dev              # start the stack first
+scripts/seed.sh                      # roster + 30 submissions each for AGM, Senate and SABP
+scripts/seed.sh --only senate sabp --per-program 10
+scripts/seed.sh --skip-roster        # run it again: nothing is duplicated
 ```
 
-Wait for this command to succeed before opening http://127.0.0.1:5174/static/. To enable live reload afterward,
-rerun the same command with `up --watch` in place of `up --build -d --wait --wait-timeout 960`.
-With the ports above, the seeded stack's mail inbox is at http://127.0.0.1:8026/.
-Before the API starts, the first run imports the full 1,200-student roster and registers exactly 1,000 students
-sampled with a fixed seed (`UTSU-482`), in addition to the standard dev accounts. Each sampled student is
-verified and has a synthetic student number (`12345NNNN0`) linked to the roster automatically. Sign-in uses
-`student+NNNN@dev-local.test`, where `NNNN` is the four-digit roster identifier.
+It generates a fake roster and form exports (`testing/generate_fake_*.py`), imports the roster, then for each
+program that is enabled on the instance registers and verifies a student account (`student+NNNN@dev-local.test`,
+where `NNNN` is the roster's four-digit identifier) for applicants the portal verifies, and files their application.
+Half of the SABP applicants also get synthetic banking details. Programs that are not enabled are skipped, so it works
+on a subset deployment. The data is deterministic, so a second run uses the same people.
 
-The seeder checks every AGM, Senate, and SABP row through the API and saves exactly 30 submissions per
-program, sampled reproducibly from exact roster matches among the registered students. For repeated
-submissions, the latest matching row is the candidate for that student. On the first seed, 15 of the SABP applicants
-receive synthetic banking details (institution `000`, transit `12345`, account `12345NNNN`). No legacy contact email
-or banking details are imported. Subsequent portal starts rerun the checks in memory without overwriting local edits,
-and do not add banking details to an existing generated database.
-Use a fresh Compose project to get these counts if you already seeded an earlier version.
+- **Roster.** It refuses to replace a roster that is already loaded. Use `--skip-roster` when an earlier seed loaded it,
+  or `--replace-roster` to overwrite it.
+- **Speed.** Auth endpoints allow 30 requests a minute per client and the seeder waits when told to, which makes a
+  full seed slow. Redeploy with `PORTAL_RATE_LIMIT_AUTH=0 scripts/deploy.sh --dev` and it takes about a minute.
+- **Safety.** It needs `PORTAL_DEV_ADMIN=1` on a localhost `PORTAL_BASE_URL`, and refuses a non-local `--url`
+  unless `--allow-remote` is given for a test environment you own.
+- **Other instances.** Point it elsewhere with `--url` and `--mail-url` (or `PORTAL_URL` and `PORTAL_MAIL_URL`);
+  `scripts/seed.sh` reads `PORTAL_PORT` and `PORTAL_MAIL_INBOX_PORT` when you run the stack on other ports.
 
-If startup reports `Refusing to seed a populated database`, that project's PostgreSQL volume already has
-accounts or a roster but no completed fixture seed. Starting with seeding disabled can populate a volume
-with local role accounts alone. Stop the blocked project with `down` (without `-v`), then rerun the command
-above with a project name you have not used before. The new project gets a fresh volume; the original volume
-and its data are preserved. Use the same recovery if startup reports `Previous dev seed did not complete`.
-`audit_months` duplicate-key lines from an older portal process do not require a volume reset. Restart
-`portal` to load the fix; PostgreSQL retains the old log lines until its container is replaced.
+To start from nothing, remove the database volume: `docker compose ... down -v`.
 
 ## Stop and deploy
 

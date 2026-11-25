@@ -13,9 +13,9 @@ from .. import security
 from ..context import Context, roles_of
 from ..identity import permits_backup_signin
 from ..security import clean_text
-from ..services.account_check import check_one
+from ..services.account_check import check_one, membership_status
 from ..services.google_staff import register_routes as register_google_routes
-from ..services.roster import get_trunc_id
+from ..services.roster import get_trunc_id, membership_session
 from ..services.usernames import release, reserve, username_key
 from ..services import turnstile
 
@@ -289,7 +289,9 @@ class AuthModule:
         def me(acct: dict = user_dep):
             u = S.get("users", acct["uuid"])
             result = {"user": _public_user(u), "status": acct["status"], "role": acct["role"],
-                      "roles": sorted(roles_of(acct, ctx.roles))}
+                      "roles": sorted(roles_of(acct, ctx.roles)),
+                      "membership_session": membership_session(ctx.now()),
+                      "membership": membership_status(S, acct["uuid"], ctx.now())}
             if acct.get("google_staff_username"):
                 result["staff_sso"] = True
             if permits_backup_signin(acct):

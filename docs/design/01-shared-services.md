@@ -24,8 +24,31 @@ SQLite, no CSV and no writes.
 - Roster is stored as lookup buckets (`roster_name`, `roster_last`) plus `roster_meta` (see `services/roster.py`).
 - `POST /api/admin/roster` (role `admin`): upload CSV, validated **before** replacing (a bad file leaves the old
   roster). `replace` defaults to true.
+- **Membership session** (Toronto time): Sep 1-Dec 31 Fall, Jan 1-Apr 30 Winter, May 1-Aug 31 Summer, with the calendar
+  year (e.g. `Fall 2026`); not the September-August academic year. A roster upload belongs to the session it is
+  imported in (`roster_meta.session`).
+- **Membership is RBAC.** Two roles are derived from the roster check on every request and can never be assigned:
+  `live_member` (on the roster now, whichever session it is for) and `rostered_member` (on the roster of the current
+  session). Each program declares what it needs by adding its own permissions to the manifest `permissions` and mapping
+  them to one of these roles in `role_permissions`: AGM RSVP, voting and discussion use `live_member`; Senate and SABP
+  applications use `rostered_member` (checked when applying; `SubmissionPolicy.keep_membership` stores the membership held
+  on the submission so the application stays eligible if the applicant later leaves the roster). `admin` does not
+  cover these permissions: an administrator must be a member to hold them. Non-members keep a normal account and can
+  join or form clubs; club ballots and boards use club membership checked live, not these roles. A plug-in can also
+  declare its own derived role (`derived_roles` + `register_derived_role`), e.g. AGM `credentialed` (approved online ID
+  verification, permission `utsu:agm:online:attend`).
+- **Admin tools.** `GET /api/admin/members/lookup?email=|student_number=` finds an account (audited). `PUT` /
+  `DELETE /api/admin/members/{uid}/honorary` grants or removes honorary membership for the current session; it feeds
+  both derived roles, also through the auth service in a split deployment.
+- **Club roles are scoped, never global.** A plug-in declares `scoped_roles`, held in one scope (a club ID), and
+  checks `has_permission(account, PERM, scope=club_id)`; a scoped permission asked without a scope is an error, and a
+  scoped role is never stored on an account or covered by `admin`. Clubs declare `club_owner`, `club_treasurer`,
+  `club_executive` (any club status) and `club_officer`, `club_member` (approved clubs only). Ordinary members and
+  join requests live in `club_members` / `club_requests`, apart from the officers in the club record, so members get
+  no access to the ledger or receipts. The opt-in `club_governance` plug-in gives each club a scoped voting electorate
+  and discussion audience (`club/<club id>`), with an optional per-club "UTSU members only" rule for its ballots.
 - **Central account check** (`services/account_check.py`): every upload runs a whole-DB pass over all accounts and
-  stores `roster_checks/{uuid}` = {rostered, reason, checked_at}. Accounts activated later are checked on approval.
+  stores `roster_checks/{uuid}` = {rostered, membership_session, reason, checked_at}. Accounts activated later are checked on approval.
   Matching is exact name narrowed by the four roster-masked digits before the final student-number digit; these are
   distinct from the last four digits used for recovery. Fuzzy matches do not count because the account already
   carries its legal name. In split deployments the auth service owns the roster and computes checks for the portal.

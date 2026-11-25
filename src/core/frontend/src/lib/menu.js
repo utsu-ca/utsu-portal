@@ -14,10 +14,14 @@ export function buildMenu({ signedIn = false, verified = false, has = () => fals
   const programEnabled = id => compiled.has(id) && enabled(id);
   const administration = [
     ...user(has("payments_finance"), { id: "admin-orders", label: "Payment orders", view: "paymentOrders" }),
+    ...user(has("fees_admin"), { id: "admin-fees", label: "Fees and levy groups", view: "adminFees" }),
+    ...user(has("fees_finance"), { id: "admin-fee-refunds", label: "Fee refunds", view: "feeRefunds" }),
+    ...user(has("levy_group") || has("fees_admin"), { id: "levy-groups", label: "Levy groups", view: "levyGroups" }),
     ...user(has("forms_editor"), { id: "admin-forms", label: "Forms", view: "adminForms" }),
     ...user(has("verifier"), { id: "admin-verifications", label: "Identity checks", view: "adminVerifications" }),
     ...user(has("admin"), { id: "admin-roles", label: "Roles", view: "adminRoles" }),
     ...user(has("admin"), { id: "admin-roster", label: "Student roster", view: "adminRoster" }),
+    ...user(has("admin"), { id: "admin-members", label: "Member lookup", view: "adminMembers" }),
     ...user(has("admin"), { id: "admin-content", label: "Page content", view: "adminContent" }),
   ];
   // Discussion and voting are opt-in plug-ins; they are listed only where the deployment runs them.
@@ -65,6 +69,7 @@ export function buildMenu({ signedIn = false, verified = false, has = () => fals
       { id: "profile-account", label: "Account", view: "account" },
       ...user(verified, { id: "profile-financial", label: "Financial information", view: "banking", props: { shared: true } }),
       ...user(verified, { id: "profile-orders", label: "Orders and payments", view: "orders" }),
+      ...user(verified, { id: "profile-fees", label: "Fee opt-outs", view: "feeOptOut" }),
       { id: "profile-applications", label: "My applications", view: "status" },
       { id: "profile-signout", label: "Sign out", action: "signOut" },
     ] : [] },

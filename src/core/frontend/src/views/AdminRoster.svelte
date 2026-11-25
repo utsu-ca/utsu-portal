@@ -51,6 +51,12 @@
 <div class="card">
   <h2>Roster entries</h2>
   <p class="help">Email and last login are shown only for a uniquely matched portal account. A dash means information is unavailable.</p>
+  {#if page}
+    <p>Membership session: <strong>{page.session}</strong> (September–December Fall, January–April Winter, May–August Summer).</p>
+    {#if page.roster_session !== page.session}
+      <p role="alert">{page.roster_session ? `The loaded roster is for ${page.roster_session}` : "No roster is loaded"}, so there are no active members for {page.session}. Import a roster for this session.</p>
+    {/if}
+  {/if}
   {#if loadError}
     <p role="alert">Could not load roster: {loadError}</p>
     <button onclick={() => load(page?.offset ?? 0)} disabled={loading}>Retry</button>

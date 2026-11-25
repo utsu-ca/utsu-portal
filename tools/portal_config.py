@@ -18,11 +18,12 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT / "config" / "portal.yaml"
 
 # Distribution package -> backend plug-in ids. Frontend contribution ids are the same minus `agm_verify`, which
-# shares the AGM frontend. Keep in step with PROGRAMS in tools/build_split_distributions.py.
+# shares the AGM frontend, and `club_governance`, an opt-in backend plug-in of the clubs package that needs the chat
+# and voting programs installed to be enabled. Keep in step with PROGRAMS in tools/build_split_distributions.py.
 PROGRAMS: dict[str, tuple[str, ...]] = {
     "agm": ("agm", "agm_verify"),
     "sabp": ("sap",),
-    "clubs": ("clubs",),
+    "clubs": ("clubs", "club_governance"),
     "senate": ("senate",),
     "chat": ("discussion",),
     "voting": ("voting",),
@@ -48,7 +49,7 @@ class PortalConfig:
 
     @property
     def frontend_ids(self) -> tuple[str, ...]:
-        return tuple(identifier for identifier in self.plugin_ids if identifier != "agm_verify")
+        return tuple(identifier for identifier in self.plugin_ids if identifier not in {"agm_verify", "club_governance"})
 
     @property
     def composition(self) -> str:

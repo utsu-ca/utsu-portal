@@ -13,6 +13,8 @@ from core.services.submissions import (
     get_submission_policy,
     validate_submission_eligibility,
 )
+from core.permissions import PERM_AGM_RSVP, PERM_SENATE_APPLY
+from core.services.roster import membership_session
 from core.settings import Settings
 
 IMG = "data:image/png;base64," + base64.b64encode(b"\x89PNG fake").decode()
@@ -85,7 +87,8 @@ def test_admin_roster_listing_masks_and_paginates(env):
     login_event = next(e for e in ctx.audit.entries() if e["actor"] == ada["uuid"] and e["action"] == "auth.login")
     assert first == {"items": [{"name": "Ada L.", "student_number": "xxxx6789",
                                 "email": "ada@x.ca", "last_login": login_event["ts"]}],
-                     "total": 3, "offset": 0, "limit": 1}
+                     "total": 3, "offset": 0, "limit": 1,
+                     "session": membership_session(ctx.now()), "roster_session": membership_session(ctx.now())}
     rest = c.get("/api/admin/roster?offset=1&limit=2", headers=ah).json()
     assert rest["items"] == [
         {"name": "Dani C.", "student_number": "xxxx1920", "email": "dani@x.ca", "last_login": None},
@@ -97,6 +100,58 @@ def test_admin_roster_listing_masks_and_paginates(env):
     register(c, mail, "ada2", "ada2@x.ca", sn="2222267890")
     duplicate = c.get("/api/admin/roster?limit=1", headers=ah).json()["items"][0]
     assert duplicate["email"] is None and duplicate["last_login"] is None
+
+
+def test_admin_roster_lists_no_members_after_the_session_changes(env):
+    c, mail = env
+    ah, _ = setup_admin_and_user(c, mail)
+    roster = "First Name,Last Name,Truncated Student Number,Faculty,Division\nAda,Lovelace,xxxxx6789x,ARTSC,UC\n"
+    assert c.post("/api/admin/roster", json={"csv": roster}, headers=ah).status_code == 200
+    ctx = c.app.state.ctx
+    session = membership_session(ctx.now())
+    assert c.get("/api/admin/roster", headers=ah).json()["total"] == 1
+    with patch.object(ctx, "now", return_value=ctx.now() + 150 * 24 * 3600):  # a later session
+        later = c.get("/api/admin/roster", headers=ah).json()
+    assert later["total"] == 0 and later["roster_session"] == session != later["session"]
+
+
+def test_applying_requires_active_membership_but_later_loss_keeps_the_submission(env):
+    from core.services.submissions import validate_submission_eligibility
+    c, mail = env
+    ah, uh = setup_admin_and_user(c, mail)
+    activate(c, ah, uh)
+    roster = "First Name,Last Name,Truncated Student Number,Faculty,Division\nAda,Lovelace,xxxxx6789x,ARTSC,UC\n"
+    assert c.post("/api/admin/roster", json={"csv": roster}, headers=ah).status_code == 200
+    ctx = c.app.state.ctx
+    ada = ctx.store.get("accounts", ctx.uid("ada"))
+    apply = SubmissionPolicy(permission=PERM_SENATE_APPLY, keep_membership=True)
+    live = SubmissionPolicy(permission=PERM_AGM_RSVP)
+    kept = validate_submission_eligibility(ctx, apply, ada)
+    assert kept["session"] == membership_session(ctx.now())
+    with patch.object(ctx, "now", return_value=ctx.now() + 150 * 24 * 3600):  # the next session, no new roster yet
+        assert validate_submission_eligibility(ctx, live, ada) is None  # a live member until the roster changes
+        with pytest.raises(HTTPException) as refused:
+            validate_submission_eligibility(ctx, apply, ada)
+    assert refused.value.status_code == 403 and "active member" in refused.value.detail
+
+
+def test_membership_roles_are_derived_from_the_roster_and_not_assignable(env):
+    from core.permissions import PERM_AGM_ONLINE, PERM_FORMS_MANAGE
+    c, mail = env
+    ah, uh = setup_admin_and_user(c, mail)
+    activate(c, ah, uh)
+    ctx = c.app.state.ctx
+    ada, boss = (ctx.store.get("accounts", ctx.uid(name)) for name in ("ada", "boss"))
+    assert not ctx.has_permission(ada, PERM_AGM_RSVP)  # no roster loaded
+    roster = "First Name,Last Name,Truncated Student Number,Faculty,Division\nAda,Lovelace,xxxxx6789x,ARTSC,UC\n"
+    assert c.post("/api/admin/roster", json={"csv": roster}, headers=ah).status_code == 200
+    assert ctx.has_permission(ada, PERM_AGM_RSVP) and ctx.has_permission(ada, PERM_SENATE_APPLY)
+    assert not ctx.has_permission(ada, PERM_AGM_ONLINE)  # credentialed needs an approved AGM ID verification
+    assert ctx.has_permission(boss, PERM_FORMS_MANAGE) and not ctx.has_permission(boss, PERM_AGM_RSVP)  # admin, not member
+    with patch.object(ctx, "now", return_value=ctx.now() + 150 * 24 * 3600):  # next session, roster not yet updated
+        assert ctx.has_permission(ada, PERM_AGM_RSVP) and not ctx.has_permission(ada, PERM_SENATE_APPLY)
+    for role in ("live_member", "rostered_member"):
+        assert c.put("/api/admin/roles", json={"username": "ada", "roles": [role]}, headers=ah).status_code >= 400
 
 
 def test_admin_roster_listing_does_not_expose_fuzzy_matches(env):
@@ -488,3 +543,42 @@ def test_schema_validation():
     a = formdef.parse_yaml("id: a\nversion: 1\ntitle: t\nfields:\n  - {id: x, type: text, label: X}\n")
     b = formdef.parse_yaml("fields: [{label: X, type: text, id: x}]\ntitle: t\nversion: 1\nid: a\n")
     assert formdef.schema_hash(a) == formdef.schema_hash(b)
+
+
+def test_admin_member_lookup_and_honorary_membership(env):
+    from core.permissions import PERM_AGM_RSVP, PERM_SENATE_APPLY
+    c, mail = env
+    ah, uh = setup_admin_and_user(c, mail)
+    activate(c, ah, uh)
+    ctx = c.app.state.ctx
+    ada = ctx.store.get("accounts", ctx.uid("ada"))
+    assert c.get("/api/admin/members/lookup?email=ada@x.ca", headers=uh).status_code == 403
+    assert c.get("/api/admin/members/lookup", headers=ah).status_code == 422
+    assert c.get("/api/admin/members/lookup?email=ada@x.ca&student_number=1234567890", headers=ah).status_code == 422
+    assert c.get("/api/admin/members/lookup?email=nobody@x.ca", headers=ah).status_code == 404
+    found = c.get("/api/admin/members/lookup?email=ADA@x.ca", headers=ah).json()
+    assert found["uuid"] == ada["uuid"] and found["name"] == "Ada Lovelace" and found["student_number"] == "xxxxx7890x"
+    assert c.get("/api/admin/members/lookup?student_number=123-456-7890", headers=ah).json()["uuid"] == ada["uuid"]
+    assert found["membership"] == {"session": membership_session(ctx.now()), "live_member": False,
+                                   "rostered_member": False} and found["honorary"] is None
+    assert not ctx.has_permission(ada, PERM_AGM_RSVP)
+
+    granted = c.put(f"/api/admin/members/{ada['uuid']}/honorary", json={"reason": "Past president", "division": "uc"},
+                    headers=ah)
+    assert granted.status_code == 200, granted.text
+    view = granted.json()
+    assert view["membership"]["live_member"] and view["membership"]["rostered_member"]
+    assert view["honorary"]["reason"] == "Past president" and view["honorary"]["division"] == "UC"
+    assert not view["roster"]["rostered"]  # honorary is not a roster match
+    assert ctx.has_permission(ada, PERM_AGM_RSVP) and ctx.has_permission(ada, PERM_SENATE_APPLY)
+    assert c.get("/api/me", headers=uh).json()["membership"] == "active"
+    with patch.object(ctx, "now", return_value=ctx.now() + 150 * 24 * 3600):  # the grant is for this session only
+        assert not ctx.has_permission(ada, PERM_AGM_RSVP)
+
+    assert c.put(f"/api/admin/members/{ada['uuid']}/honorary", json={"reason": "x"}, headers=ah).status_code == 422
+    assert c.put(f"/api/admin/members/{ada['uuid']}/honorary", json={"reason": "Past president"}, headers=uh).status_code == 403
+    assert c.delete(f"/api/admin/members/{ada['uuid']}/honorary", headers=ah).json()["honorary"] is None
+    assert not ctx.has_permission(ada, PERM_AGM_RSVP)
+    assert c.delete(f"/api/admin/members/{ada['uuid']}/honorary", headers=ah).status_code == 404
+    actions = [e["action"] for e in ctx.audit.entries()]
+    assert {"member.lookup", "membership.honorary_granted", "membership.honorary_revoked"} <= set(actions)

@@ -7,11 +7,12 @@ services:
     command:
       - /bin/sh
       - -ec
-      - python /app/testing/dev_seed.py && exec opentelemetry-instrument uvicorn --app-dir /app/testing --factory dev_app:create_dev_app --host 0.0.0.0 --port 8080 --no-server-header
+      - exec opentelemetry-instrument uvicorn --app-dir /app/testing --factory dev_app:create_dev_app --host 0.0.0.0 --port 8080 --no-server-header
     environment:
-      PYTHONPATH: /app/src:/app/src/core
+      PYTHONPATH: /app/src
       PORTAL_DEV_ADMIN: "1"
-      PORTAL_DEV_SEED: "${PORTAL_DEV_SEED:-0}"
+      # Auth endpoints allow 30 requests a minute per client; testing/seed_portal.py waits for that. Set 0 to seed quickly.
+      PORTAL_RATE_LIMIT_AUTH: "${PORTAL_RATE_LIMIT_AUTH:-30}"
       PORTAL_SAP_REVIEW_ENABLED: "1"
       PORTAL_BASE_URL: "http://127.0.0.1:${PORTAL_WEB_PORT:-5173}"
       PORTAL_SMTP_URL: ""
@@ -37,7 +38,7 @@ services:
       - ./testing:/app/testing:ro
       - ./data:/app/data:ro
     healthcheck:
-      start_period: 900s
+      start_period: 120s
     develop:
       watch:
         - action: restart

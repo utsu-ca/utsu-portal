@@ -2,16 +2,17 @@
 from __future__ import annotations
 
 import json
+import re
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from .. import audit
-from ..context import Context
+from .. import audit, security
+from ..context import Context, roles_of
 from ..contracts import FileKind
 from ..permissions import PERM_IDENTITY_VERIFICATION_REVIEW
-from ..services.account_check import check_one
-from ..services.roster import COL_NAME, Student, import_roster
+from ..services.account_check import COL_HONORARY, check_one, is_active_member, is_live_member, read_check
+from ..services.roster import COL_NAME, Student, division_of, import_roster, membership_session, roster_session
 from ..services.text import normalize_case
 
 name = "admin"
@@ -25,6 +26,33 @@ class Decision(BaseModel):
 class RosterIn(BaseModel):
     csv: str
     replace: bool = True
+
+
+class HonoraryIn(BaseModel):
+    reason: str = Field(min_length=3, max_length=200)
+    division: str = Field("", max_length=64)
+
+
+def _member_view(ctx: Context, uid: str) -> dict:
+    S, now = ctx.store, ctx.now()
+    user, account = S.get("users", uid) or {}, S.get("accounts", uid) or {}
+    check = read_check(S, uid) or {}
+    grant = S.get(COL_HONORARY, uid)
+    session = membership_session(now)
+    return {
+        "uuid": uid,
+        "name": f"{user.get('first_name', '')} {user.get('last_name', '')}".strip(),
+        "preferred_name": user.get("preferred_name", ""),
+        "email": user.get("email", ""),
+        "student_number": f"xxxxx{user['student_number']}x" if user.get("student_number") else None,
+        "status": account.get("status"),
+        "roles": sorted(roles_of(account, ctx.roles)),
+        "roster": {"rostered": bool(check.get("rostered")), "reason": check.get("reason", ""),
+                   "division": check.get("division"), "membership_session": check.get("membership_session")},
+        "membership": {"session": session, "live_member": is_live_member(check, now),
+                       "rostered_member": is_active_member(check, now)},
+        "honorary": {**grant, "current": grant["session"] == session} if grant else None,
+    }
 
 
 class AdminModule:
@@ -60,8 +88,10 @@ class AdminModule:
         @r.get("/roster")
         def list_roster(offset: int = Query(0, ge=0), limit: int = Query(25, ge=1, le=100),
                         actor: dict = ctx.require_admin()):
+            session, loaded = membership_session(ctx.now()), roster_session(S)
+            current = loaded == session  # only a roster of the current membership session lists active members
             students = sorted(
-                (Student(*row) for bucket in S.list(COL_NAME) for row in bucket["students"]),
+                (Student(*row) for bucket in S.list(COL_NAME) for row in bucket["students"]) if current else (),
                 key=lambda student: (student.first_name, student.last_name, student.uuid),
             )
             page = students[offset:offset + limit]
@@ -116,7 +146,8 @@ class AdminModule:
                     "last_login": login["ts"] if login else None,
                 })
             ctx.audit.record(actor["uuid"], "roster.view", "roster", meta={"offset": offset, "returned": len(items)})
-            return {"items": items, "total": len(students), "offset": offset, "limit": limit}
+            return {"items": items, "total": len(students), "offset": offset, "limit": limit,
+                    "session": session, "roster_session": loaded}
 
         @r.post("/roster")
         def upload_roster(b: RosterIn, a: dict = ctx.require_admin()):
@@ -126,6 +157,56 @@ class AdminModule:
                 raise HTTPException(422, str(e))
             ctx.audit.record(a["uuid"], "roster.uploaded", "roster", None, out)
             return out
+
+        def member_uid(email: str, student_number: str) -> str:
+            if bool(email.strip()) == bool(student_number.strip()):
+                raise HTTPException(422, "give either an email or a student number")
+            if email.strip():
+                address = email.strip().lower()
+                uid = (S.get("emails", ctx.email_key(address)) or {}).get("uuid")
+                user = S.get("users", uid) if uid else None
+                if not user or user.get("email", "").lower() != address:
+                    raise HTTPException(404, "no account with that email")
+                return uid
+            digits = re.sub(r"\D", "", student_number)
+            if not 7 <= len(digits) <= 10:
+                raise HTTPException(422, "enter the full student number (7 to 10 digits)")
+            uid = (S.get("student_ids", security.student_id_uuid(ctx.settings.secret, digits)) or {}).get("uuid")
+            if not uid or not S.get("users", uid):
+                raise HTTPException(404, "no account with that student number")
+            return uid
+
+        @r.get("/members/lookup")
+        def lookup_member(email: str = Query("", max_length=320), student_number: str = Query("", max_length=32),
+                          actor: dict = ctx.require_admin()):
+            uid = member_uid(email, student_number)
+            ctx.audit.record(actor["uuid"], "member.lookup", f"user:{uid}", None, None,
+                             {"by": "email" if email.strip() else "student_number"})
+            return _member_view(ctx, uid)
+
+        @r.put("/members/{uid}/honorary")
+        def grant_honorary(uid: str, b: HonoraryIn, actor: dict = ctx.require_admin()):
+            account = S.get("accounts", uid)
+            if not account or not S.get("users", uid):
+                raise HTTPException(404, "no such account")
+            if account["status"] != "verified":
+                raise HTTPException(409, "honorary membership can only be granted to verified accounts")
+            before = S.get(COL_HONORARY, uid)
+            grant = {"uuid": uid, "session": membership_session(ctx.now()), "reason": b.reason.strip(),
+                     "division": division_of(b.division) or None,
+                     "granted_by": actor["uuid"], "granted_at": ctx.now()}
+            S.put(COL_HONORARY, uid, grant)
+            ctx.audit.record(actor["uuid"], "membership.honorary_granted", f"user:{uid}", before, grant)
+            return _member_view(ctx, uid)
+
+        @r.delete("/members/{uid}/honorary")
+        def revoke_honorary(uid: str, actor: dict = ctx.require_admin()):
+            before = S.get(COL_HONORARY, uid)
+            if not before:
+                raise HTTPException(404, "no honorary membership")
+            S.delete(COL_HONORARY, uid)
+            ctx.audit.record(actor["uuid"], "membership.honorary_revoked", f"user:{uid}", before, None)
+            return _member_view(ctx, uid)
 
         @r.get("/verifications")
         def pending(_: dict = admin):

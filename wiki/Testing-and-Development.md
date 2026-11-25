@@ -33,6 +33,9 @@ and that programs depend only on `core`.
 
 ## Fake data
 
+To load generated records into a running dev portal use `scripts/seed.sh` (see
+[docs/development/docker.md](../docs/development/docker.md#load-sample-records)); it calls the HTTP API only.
+
 `python testing/generate_fake_data.py` regenerates the data: the roster first (from the seats file), then Senate,
 SABP and AGM exports that each draw applicants from the roster. Flags: `--only`, `--seed`, `--students`, `--sabp-rows`,
 `--sabp-unmatched`, `--sabp-start`, `--sabp-end`, `--agm-rows`. Per-form logic is in `testing/generate_fake_*.py`. The

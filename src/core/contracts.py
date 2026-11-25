@@ -46,6 +46,8 @@ class PluginManifest:
     audit_forms: tuple[str, ...] = ()
     quota_domains: tuple[str, ...] = ()
     frontend: bool = False
+    derived_roles: tuple[tuple[str, str], ...] = ()  # roles this plug-in computes (never stored on an account)
+    scoped_roles: tuple[tuple[str, str], ...] = ()  # derived roles held within one scope (e.g. one club), never globally
 
 
 class AuthService(Protocol):
@@ -55,8 +57,8 @@ class AuthService(Protocol):
     def require_verified(self) -> AuthDependency: ...
     def require_rostered(self) -> AuthDependency: ...
     def require_permission(self, *permissions: str) -> AuthDependency: ...
-    def has_permission(self, account: Mapping[str, Any], *permissions: str) -> bool: ...
-    def has_any_permission(self, account: Mapping[str, Any], *permissions: str) -> bool: ...
+    def has_permission(self, account: Mapping[str, Any], *permissions: str, scope: str | None = None) -> bool: ...
+    def has_any_permission(self, account: Mapping[str, Any], *permissions: str, scope: str | None = None) -> bool: ...
     def require_role(self, *roles: str) -> AuthDependency: ...
     def has_role(self, account: Mapping[str, Any], *roles: str) -> bool: ...
     def is_rostered(self, account: Mapping[str, Any]) -> bool: ...
@@ -94,6 +96,7 @@ class IdentityService(Protocol):
     def same_roster_person(self, first_uuid: str, second_uuid: str) -> bool: ...
     def preferred_name(self, uuid: str) -> str | None: ...
     def resolve_contact(self, username: str) -> ContactSummary | None: ...
+    def find_contact(self, email: str = "", student_number: str = "") -> ContactSummary | None: ...
 
 
 @dataclass(frozen=True)
@@ -125,6 +128,9 @@ class _UnavailableIdentity:
         raise RuntimeError("core identity service is unavailable")
 
     def resolve_contact(self, username: str) -> ContactSummary | None:
+        raise RuntimeError("core identity service is unavailable")
+
+    def find_contact(self, email: str = "", student_number: str = "") -> ContactSummary | None:
         raise RuntimeError("core identity service is unavailable")
 
 
@@ -236,7 +242,13 @@ class FormContribution:
 
 @dataclass(frozen=True)
 class SubmissionPolicy:
-    require_roster: bool = False
+    """
+    `permission` is what an account must hold to submit (a membership permission is granted through the derived
+    `live_member` / `rostered_member` roles). `keep_membership` stores the membership held at submission on it, so the
+    application stays eligible if the applicant is later off the roster.
+    """
+    permission: str | None = None
+    keep_membership: bool = False
     save: Callable[[dict[str, Any] | None, dict[str, Any]], dict[str, Any]] | None = None
     validate_status_change: Callable[[dict[str, Any]], None] | None = None
 
@@ -438,6 +450,14 @@ class RegistrationContext:
 
     def register_role(self, identifier: str, value: Any) -> None:
         self.register("role", identifier, value)
+
+    def register_scoped_role(self, identifier: str, value: Callable[[PluginServices], Callable[[Mapping[str, Any], str], bool]]) -> None:
+        """A scoped role is held in one scope (a club ID) while `value(services)(account, scope)` is true."""
+        self.register("scoped_role", identifier, value)
+
+    def register_derived_role(self, identifier: str, value: Callable[[PluginServices], Callable[[Mapping[str, Any]], bool]]) -> None:
+        """A derived role is held while `value(services)(account)` is true; it is declared in the manifest."""
+        self.register("derived_role", identifier, value)
 
     def register_form(self, identifier: str, value: FormContribution) -> None:
         self.register("form", identifier, value)

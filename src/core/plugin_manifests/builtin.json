@@ -51,6 +51,31 @@
       "order": 25
     },
     {
+      "id": "fees",
+      "version": "0.1.0",
+      "core_api_major": 1,
+      "factory": "core.modules.fees:FeesModule",
+      "kind": "core",
+      "auth_modes": ["local", "remote"],
+      "dependencies": ["profile"],
+      "roles": {
+        "fees_admin": "manage opt-out fees, opt-out windows and levy groups",
+        "fees_finance": "process fee refund requests",
+        "levy_group": "view fee opt-outs and predicted levy payments for assigned levy groups"
+      },
+      "permissions": {
+        "utsu:fees:manage": "Manage opt-out fees, opt-out windows and levy groups.",
+        "utsu:fees:refunds:manage": "Process fee refund requests and read the payout banking details.",
+        "utsu:fees:levy:view": "View fee opt-outs and predicted levy payments for assigned levy groups."
+      },
+      "role_permissions": {
+        "fees_admin": ["utsu:fees:manage", "utsu:fees:levy:view"],
+        "fees_finance": ["utsu:fees:refunds:manage"],
+        "levy_group": ["utsu:fees:levy:view"]
+      },
+      "order": 27
+    },
+    {
       "id": "sso",
       "version": "0.1.0",
       "core_api_major": 1,
@@ -137,13 +162,20 @@
         "checkin": "AGM check-in and attendance",
         "agm_admin": "view AGM registrations and verify roster matches"
       },
+      "derived_roles": {
+        "credentialed": "holds an approved online ID verification grant for the AGM"
+      },
       "permissions": {
         "utsu:agm:checkin:manage": "Manage AGM check-in and attendance.",
-        "utsu:agm:registrations:manage": "View AGM registrations and verify roster matches."
+        "utsu:agm:registrations:manage": "View AGM registrations and verify roster matches.",
+        "utsu:agm:rsvp": "RSVP for the AGM, as a member on the roster now.",
+        "utsu:agm:online:attend": "Attend the AGM online, with an approved ID verification."
       },
       "role_permissions": {
         "checkin": ["utsu:agm:checkin:manage"],
-        "agm_admin": ["utsu:agm:registrations:manage"]
+        "agm_admin": ["utsu:agm:registrations:manage"],
+        "live_member": ["utsu:agm:rsvp"],
+        "credentialed": ["utsu:agm:online:attend"]
       },
       "order": 40
     },
@@ -186,10 +218,12 @@
         "senate_admin": "view Senate applications"
       },
       "permissions": {
-        "utsu:senate:applications:manage": "View and administer Senate applications."
+        "utsu:senate:applications:manage": "View and administer Senate applications.",
+        "utsu:senate:apply": "Apply for a Senate seat, as a member of the current membership session."
       },
       "role_permissions": {
-        "senate_admin": ["utsu:senate:applications:manage"]
+        "senate_admin": ["utsu:senate:applications:manage"],
+        "rostered_member": ["utsu:senate:apply"]
       },
       "order": 50
     },
@@ -229,12 +263,14 @@
       "permissions": {
         "utsu:sap:applications:manage": "View and administer student aid applications.",
         "utsu:sap:banking:manage": "Review and manage student aid banking details.",
-        "utsu:sap:reviews:manage": "Review student aid applications."
+        "utsu:sap:reviews:manage": "Review student aid applications.",
+        "utsu:sap:apply": "Apply for student aid, as a member of the current membership session."
       },
       "role_permissions": {
         "sap_admin": ["utsu:sap:applications:manage"],
         "sap_finance": ["utsu:sap:banking:manage"],
-        "sap_reviewer": ["utsu:sap:reviews:manage"]
+        "sap_reviewer": ["utsu:sap:reviews:manage"],
+        "rostered_member": ["utsu:sap:apply"]
       },
       "order": 60
     },
@@ -258,19 +294,36 @@
         "audit", "auth", "club_invitation_link", "club_receipts", "email",
         "files", "identity", "now", "quotas", "settings", "store"
       ],
-      "collections": ["clubs", "receipts", "transactions"],
+      "collections": ["clubs", "receipts", "transactions", "club_members", "club_requests"],
+      "provides": ["club_directory"],
       "quota_domains": ["club"],
       "roles": {
         "finance": "club transactions and grants",
         "clubs": "club registration decisions"
       },
+      "scoped_roles": {
+        "club_owner": "owner of one club",
+        "club_treasurer": "treasurer of one club",
+        "club_executive": "executive of one club",
+        "club_officer": "owner, treasurer or executive of one approved club",
+        "club_member": "officer or member (including honorary) of one approved club"
+      },
       "permissions": {
         "utsu:clubs:finance:manage": "Manage club transactions and grants.",
-        "utsu:clubs:applications:manage": "Review club registration applications."
+        "utsu:clubs:applications:manage": "Review club registration applications.",
+        "utsu:clubs:members:manage": "Manage one club's members, join requests and honorary members.",
+        "utsu:clubs:vote": "Vote in one club's ballots.",
+        "utsu:clubs:discuss": "Read and post on one club's discussion boards.",
+        "utsu:clubs:ballots:manage": "Run one club's ballots and boards."
       },
       "role_permissions": {
         "finance": ["utsu:clubs:finance:manage"],
-        "clubs": ["utsu:clubs:applications:manage"]
+        "clubs": ["utsu:clubs:applications:manage"],
+        "club_owner": ["utsu:clubs:members:manage"],
+        "club_treasurer": ["utsu:clubs:members:manage"],
+        "club_executive": ["utsu:clubs:members:manage"],
+        "club_officer": ["utsu:clubs:ballots:manage"],
+        "club_member": ["utsu:clubs:discuss", "utsu:clubs:vote"]
       },
       "order": 100
     },
@@ -320,10 +373,12 @@
         "discussion_moderator": "moderate discussions: boards, locking, pinning and redaction"
       },
       "permissions": {
-        "utsu:discussion:moderate": "Moderate discussion boards, topics, and messages."
+        "utsu:discussion:moderate": "Moderate discussion boards, topics, and messages.",
+        "utsu:discussion:participate": "Read and post on member discussion boards, as a member on the roster now."
       },
       "role_permissions": {
-        "discussion_moderator": ["utsu:discussion:moderate"]
+        "discussion_moderator": ["utsu:discussion:moderate"],
+        "live_member": ["utsu:discussion:participate"]
       },
       "order": 130
     },
@@ -351,12 +406,27 @@
         "elections_admin": "run ballots and polls, and break the seal on sealed ballots (every opening is logged)"
       },
       "permissions": {
-        "utsu:voting:elections:manage": "Manage ballots, polls, and sealed-ballot unsealing."
+        "utsu:voting:elections:manage": "Manage ballots, polls, and sealed-ballot unsealing.",
+        "utsu:voting:vote": "Vote in UTSU-wide ballots, as a member on the roster now."
       },
       "role_permissions": {
-        "elections_admin": ["utsu:voting:elections:manage"]
+        "elections_admin": ["utsu:voting:elections:manage"],
+        "live_member": ["utsu:voting:vote"]
       },
       "order": 140
+    },
+    {
+      "id": "club_governance",
+      "version": "0.1.0",
+      "core_api_major": 1,
+      "factory": "clubs.governance:ClubGovernancePlugin",
+      "kind": "program",
+      "interface": "plugin",
+      "default_enabled": false,
+      "dependencies": ["clubs", "discussion", "voting"],
+      "services": ["audit", "auth", "now", "provided", "store"],
+      "collections": ["club_ballots", "club_settings"],
+      "order": 150
     }
   ]
 }

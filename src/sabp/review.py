@@ -112,7 +112,8 @@ def application_view(services: PluginServices, submission: dict) -> dict:
         "updated_at": submission["updated_at"],
         "revision": submission.get("_rev", 0),
         "review_hardship_prepared": bool(submission.get("sap_review_hardship")),
-        "eligible": account.get("status") == "verified" and bool(check and check.rostered)
+        "eligible": account.get("status") == "verified"
+                    and bool(submission.get("membership") or check and check.rostered)
                     and submission["status"] != "rejected",
         "roster_reason": check.reason if check else "roster check unavailable",
         "wfni": scoring(services, submission["data"]),

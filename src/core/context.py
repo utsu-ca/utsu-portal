@@ -5,7 +5,7 @@ import hashlib
 import hmac
 import time
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from fastapi import Depends, Header, HTTPException
 from fastapi.params import Depends as AuthDependency
@@ -14,7 +14,7 @@ from . import security
 from .events import EventBus
 from .mailer import Mailer
 from .permissions import CORE_PERMISSIONS, CORE_ROLE_PERMISSIONS
-from .role_catalogue import ROLES
+from .role_catalogue import MEMBER_ROLES, ROLES
 from .services.anchors import AnchorRuntime
 from .services.email import EmailDeliveryService, EmailDeliveryUnknown, EmailNotConfigured
 from .services.files import DocumentService
@@ -60,6 +60,8 @@ class Context:
     messaging: MessagingRuntime = field(init=False)
     anchors: AnchorRuntime = field(init=False)
     provided: dict[str, tuple[str, Any]] = field(default_factory=dict)  # name -> (provider plug-in, service)
+    derived_roles: dict[str, Callable[[Mapping[str, Any]], bool]] = field(default_factory=dict)  # plug-in computed roles
+    scoped_roles: dict[str, Callable[[Mapping[str, Any], str], bool]] = field(default_factory=dict)  # held per scope
     # --- helpers -----------------------------------------------------------
     def now(self) -> int:
         return int(time.time())
@@ -212,29 +214,76 @@ class Context:
         if unknown:
             raise ValueError(f"unknown permissions: {', '.join(sorted(unknown))}")
 
-    def has_permission(self, account: Mapping[str, Any], *permissions: str) -> bool:
-        if not permissions:
-            raise ValueError("at least one permission is required")
-        self._validate_permissions(permissions)
+    def derived_roles_of(self, account: Mapping[str, Any], only: set[str] | None = None) -> set[str]:
+        """
+        The membership roles (`MEMBER_ROLES`) and plug-in derived roles an account holds right now, or just those
+        among `only`. They are computed from the roster check, never stored, so they follow the roster and the
+        membership session as they change. Each is a keyed lookup for this one account, never a scan.
+        """
         if account.get("status") != "verified":
-            return False
-        granted_roles = roles_of(account, self.roles)
-        if "admin" in granted_roles:
-            return True
-        granted = {scope for role in granted_roles for scope in self.role_permissions.get(role, ())}
-        return set(permissions) <= granted
+            return set()
+        from .services.account_check import is_active_member, is_live_member
+        names = {*MEMBER_ROLES, *self.derived_roles} if only is None else only
+        held: set[str] = set()
+        if names & set(MEMBER_ROLES):
+            check, now = self.identity.roster_check(account["uuid"]), self.now()
+            if "live_member" in names and is_live_member(check, now):
+                held.add("live_member")
+            if "rostered_member" in names and is_active_member(check, now):
+                held.add("rostered_member")
+        return held | {role for role in names & set(self.derived_roles) if self.derived_roles[role](account)}
 
-    def has_any_permission(self, account: Mapping[str, Any], *permissions: str) -> bool:
+    def _derived_scopes(self) -> set[str]:
+        names = {*MEMBER_ROLES, *self.derived_roles}
+        return {scope for role in names for scope in self.role_permissions.get(role, ())}
+
+    def _scoped_scopes(self) -> set[str]:
+        return {scope for role in self.scoped_roles for scope in self.role_permissions.get(role, ())}
+
+    def _granted(self, account: Mapping[str, Any], wanted: set[str], scope: str | None = None) -> set[str]:
+        """
+        The wanted permissions the account holds. `admin` covers all except those granted through a derived or scoped
+        role: an administrator who is not a member (of the club) is no more a member than anyone else. Only the
+        derived roles that could grant a still-missing permission are computed, and only when one is missing.
+        A scoped permission is only ever granted for the one scope asked about (a club ID), so holding a role in one
+        club grants nothing in another.
+        """
+        scoped = wanted & self._scoped_scopes()
+        if scoped and not scope:
+            raise ValueError(f"permissions need a scope: {', '.join(sorted(scoped))}")
+        roles = roles_of(account, self.roles)
+        granted = {scope_ for role in roles for scope_ in self.role_permissions.get(role, ())}
+        derived = wanted & self._derived_scopes()
+        if "admin" in roles:
+            granted |= wanted - derived - scoped
+        missing = derived - granted
+        if missing:
+            needed = {role for role in (*MEMBER_ROLES, *self.derived_roles)
+                      if missing & set(self.role_permissions.get(role, ()))}
+            granted |= {scope_ for role in self.derived_roles_of(account, needed)
+                        for scope_ in self.role_permissions.get(role, ())}
+        missing = scoped - granted
+        if missing and scope and account.get("status") == "verified":
+            for role, holds_in in self.scoped_roles.items():
+                if missing & set(self.role_permissions.get(role, ())) and holds_in(account, scope):
+                    granted |= set(self.role_permissions.get(role, ()))
+        return granted & wanted
+
+    def has_permission(self, account: Mapping[str, Any], *permissions: str, scope: str | None = None) -> bool:
         if not permissions:
             raise ValueError("at least one permission is required")
         self._validate_permissions(permissions)
         if account.get("status") != "verified":
             return False
-        granted_roles = roles_of(account, self.roles)
-        if "admin" in granted_roles:
-            return True
-        granted = {scope for role in granted_roles for scope in self.role_permissions.get(role, ())}
-        return bool(set(permissions) & granted)
+        return self._granted(account, set(permissions), scope) == set(permissions)
+
+    def has_any_permission(self, account: Mapping[str, Any], *permissions: str, scope: str | None = None) -> bool:
+        if not permissions:
+            raise ValueError("at least one permission is required")
+        self._validate_permissions(permissions)
+        if account.get("status") != "verified":
+            return False
+        return bool(self._granted(account, set(permissions), scope))
 
     def require_permission(self, *permissions: str) -> AuthDependency:
         """Require all named permissions on a verified account (OAuth scope semantics)."""

@@ -132,11 +132,11 @@ class _AuthAdapter:
     def require_permission(self, *permissions: str) -> AuthDependency:
         return self._project(self._ctx.require_permission(*permissions))
 
-    def has_permission(self, account: Mapping[str, Any], *permissions: str) -> bool:
-        return self._ctx.has_permission(account, *permissions)
+    def has_permission(self, account: Mapping[str, Any], *permissions: str, scope: str | None = None) -> bool:
+        return self._ctx.has_permission(account, *permissions, scope=scope)
 
-    def has_any_permission(self, account: Mapping[str, Any], *permissions: str) -> bool:
-        return self._ctx.has_any_permission(account, *permissions)
+    def has_any_permission(self, account: Mapping[str, Any], *permissions: str, scope: str | None = None) -> bool:
+        return self._ctx.has_any_permission(account, *permissions, scope=scope)
 
     def has_role(self, account: Mapping[str, Any], *roles: str) -> bool:
         return account.get("status") == "verified" and bool(roles_of(account, self._ctx.roles) & {"admin", *roles})
@@ -190,6 +190,9 @@ class _IdentityAdapter:
 
     def resolve_contact(self, username: str) -> ContactSummary | None:
         return self._ctx.identity.resolve_contact(username)
+
+    def find_contact(self, email: str = "", student_number: str = "") -> ContactSummary | None:
+        return self._ctx.identity.find_contact(email, student_number)
 
 
 class _AgmSSORegistrationAdapter:
@@ -534,6 +537,20 @@ class TypedPluginAdapter:
             if kind == "role":
                 if identifier not in declared_roles:
                     raise ValueError(f"plug-in {self.name} registered undeclared role {identifier}")
+            elif kind == "scoped_role":
+                if identifier not in dict(self.manifest.scoped_roles):
+                    raise ValueError(f"plug-in {self.name} registered undeclared scoped role {identifier}")
+                if not callable(value):
+                    raise TypeError(f"plug-in {self.name} scoped role {identifier} needs a factory")
+                holds_in = value(services)
+                ctx.scoped_roles[identifier] = lambda account, scope, holds_in=holds_in: bool(holds_in(account, scope))
+            elif kind == "derived_role":
+                if identifier not in dict(self.manifest.derived_roles):
+                    raise ValueError(f"plug-in {self.name} registered undeclared derived role {identifier}")
+                if not callable(value):
+                    raise TypeError(f"plug-in {self.name} derived role {identifier} needs a factory")
+                holds = value(services)
+                ctx.derived_roles[identifier] = lambda account, holds=holds: bool(holds(account))
             elif kind == "file":
                 if "files" not in self.manifest.services:
                     raise CapabilityUnavailable(f"plug-in {self.name} must declare the files service")

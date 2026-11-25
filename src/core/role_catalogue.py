@@ -16,6 +16,14 @@ CORE_ROLES = {
 }
 
 
+# Membership roles are computed from the roster check on every request and can never be assigned to an account. Programs
+# grant their own permissions to them (`role_permissions`) to declare what membership they need.
+MEMBER_ROLES = {
+    "live_member": "on the student roster now, whichever membership session the roster is for",
+    "rostered_member": "on the student roster of the current membership session (Fall, Winter or Summer)",
+}
+
+
 def role_catalogue_for(manifests: Iterable[PluginManifest]) -> dict[str, str]:
     catalogue = dict(CORE_ROLES)
     owners = {role_id: "core" for role_id in catalogue}

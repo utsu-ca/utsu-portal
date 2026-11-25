@@ -18,7 +18,7 @@ from core.contracts import (
     SubmissionPolicy,
 )
 from core.pagination import PageOrder, paginate_page, paginate_store
-from core.permissions import PERM_AGM_CHECKIN, PERM_AGM_REGISTRATIONS
+from core.permissions import PERM_AGM_CHECKIN, PERM_AGM_ONLINE, PERM_AGM_REGISTRATIONS, PERM_AGM_RSVP
 from core.services.exports import csv_response
 
 from .state import AgmVerificationState
@@ -69,18 +69,27 @@ class AgmModule:
         permissions=(
             (PERM_AGM_CHECKIN, "Manage AGM check-in and attendance."),
             (PERM_AGM_REGISTRATIONS, "View AGM registrations and verify roster matches."),
+            (PERM_AGM_RSVP, "RSVP for the AGM, as a member on the roster now."),
+            (PERM_AGM_ONLINE, "Attend the AGM online, with an approved ID verification."),
         ),
         role_permissions=(
             ("agm_admin", (PERM_AGM_REGISTRATIONS,)),
             ("checkin", (PERM_AGM_CHECKIN,)),
+            ("credentialed", (PERM_AGM_ONLINE,)),
+            ("live_member", (PERM_AGM_RSVP,)),
         ),
+        derived_roles=(("credentialed", "holds an approved online ID verification grant for the AGM"),),
     )
 
     def configure(self, registration: RegistrationContext) -> None:
         yaml = resources.files(__package__).joinpath("forms", "agm_rsvp.yaml").read_text(encoding="utf-8")
         registration.register_form("agm_rsvp", FormContribution(yaml=yaml))
-        registration.register_submission_policy("agm_rsvp", SubmissionPolicy(require_roster=True))
+        registration.register_submission_policy("agm_rsvp", SubmissionPolicy(permission=PERM_AGM_RSVP))
         registration.register_notification_type("agm", NotificationType("agm_rsvp", "agm_admin"))
+        registration.register_derived_role(
+            "credentialed",
+            lambda services: lambda account: AgmVerificationState(services).has_grant(account["uuid"]),
+        )
         registration.provide("agm_verification", AgmVerificationState)
 
     def router(self, services: PluginServices) -> APIRouter:
@@ -90,17 +99,21 @@ class AgmModule:
         submissions = services.forms
         zoom_url = services.settings["zoom_url"]
         zoom_sso_url = services.settings["zoom_sso_url"]
-        verified = services.auth.require_rostered()
+        verified = services.auth.require_permission(PERM_AGM_RSVP)
         checkin_admin = services.auth.require_permission(PERM_AGM_CHECKIN)
         agm_admin = services.auth.require_permission(PERM_AGM_REGISTRATIONS)
 
+        def is_member(uuid: str) -> bool:
+            account = services.identity.account(uuid)
+            return bool(account and services.auth.has_permission(account, PERM_AGM_RSVP))
+
         def zoom_eligibility(uuid: str) -> str | None:
-            roster = services.identity.roster(uuid)
-            if not roster or not roster.rostered:
+            account = services.identity.account(uuid)
+            if not account or not services.auth.has_permission(account, PERM_AGM_RSVP):
                 return "not on the student roster"
             if not state.is_online(uuid):
                 return "not registered to attend online"
-            return None if state.has_grant(uuid) else "online ID verification required"
+            return None if services.auth.has_permission(account, PERM_AGM_ONLINE) else "online ID verification required"
 
         services.agm_sso.register_zoom_client(zoom_eligibility)
 
@@ -151,8 +164,7 @@ class AgmModule:
             person = services.identity.person(uuid) if UUID.match(uuid) else None
             if person is None or person.status != "verified":
                 raise HTTPException(404, "unknown or unverified attendee")
-            roster = services.identity.roster(uuid)
-            if not roster or not roster.rostered:
+            if not is_member(uuid):
                 raise HTTPException(403, "attendee is not on the student roster")
             submission = state.rsvp(uuid)
             if not submission:
@@ -235,7 +247,7 @@ class AgmModule:
                         "proxy_name": submission["data"].get("proxy_name", ""),
                         "submission_status": submission["status"],
                         "eligible": account.get("status") == "verified"
-                        and bool(roster and roster.rostered)
+                        and services.auth.has_permission(account, PERM_AGM_RSVP)
                         and submission["status"] != "rejected",
                         "roster_reason": roster.reason if roster else "roster check unavailable",
                         "checked_in": store.get("agm_attendance", uuid) is not None,

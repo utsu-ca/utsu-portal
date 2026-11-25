@@ -14,7 +14,7 @@ from core.contracts import (
     RegistrationContext,
     SubmissionPolicy,
 )
-from core.permissions import PERM_SAP_APPLICATIONS, PERM_SAP_FINANCE, PERM_SAP_REVIEW
+from core.permissions import PERM_SAP_APPLICATIONS, PERM_SAP_APPLY, PERM_SAP_FINANCE, PERM_SAP_REVIEW
 from .applications import (
     HistoricalDecision,
     HistoricalRating,
@@ -143,6 +143,8 @@ class SapModule:
         registration.register_submission_policy(
             "student_aid_bursary",
             SubmissionPolicy(
+                permission=PERM_SAP_APPLY,
+                keep_membership=True,
                 save=submission_policy.save,
                 validate_status_change=submission_policy.validate_status_change,
             ),

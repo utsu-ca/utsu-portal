@@ -232,7 +232,7 @@ def test_split_roster_drives_program_eligibility_and_seating():
     other_roster = roster.replace("Ada,Lovelace", "Other,Person")
     assert ac.post("/api/admin/roster", json={"csv": other_roster}, headers=admin).status_code == 200
     assert pc.get("/api/agm/invitation", headers=user).status_code == 403
-    assert not pc.get("/api/me/senate", headers=user).json()["eligible"]
+    assert pc.get("/api/me/senate", headers=user).json()["eligible"]  # held an active membership when applying
 
     identity = pc.app.state.ctx.identity
     original_fetch = identity.fetch
@@ -243,3 +243,22 @@ def test_split_roster_drives_program_eligibility_and_seating():
     identity.fetch = failed_roster
     assert pc.get("/api/agm/invitation", headers=user).status_code == 503
     assert pc.post("/api/admin/agm/verify", json={"full_name": "Ada Lovelace"}, headers=admin).status_code == 503
+
+
+def test_split_portal_finds_contacts_and_honorary_members_through_the_auth_service():
+    from core.permissions import PERM_AGM_RSVP
+    ac, pc, mail, astore, pstore = make()
+    register(ac, mail, "boss", "boss@x.ca", sn="9999999999", first="Bo", last="Ss")
+    admin = login(ac, mail, "boss")
+    register(ac, mail, "ada", "ada@x.ca")
+    user = login(ac, mail, "ada")
+    activate(ac, admin, user)
+    identity = pc.app.state.ctx.identity
+    uid = ac.get("/api/me", headers=user).json()["user"]["uuid"]
+    assert identity.find_contact(email="ada@x.ca").uuid == uid
+    assert identity.find_contact(student_number="123-456-7890").uuid == uid
+    assert identity.find_contact(student_number="1234567899") is None and identity.find_contact() is None
+    account = identity.account(uid)
+    assert not pc.app.state.ctx.has_permission(account, PERM_AGM_RSVP)
+    assert ac.put(f"/api/admin/members/{uid}/honorary", json={"reason": "Past president"}, headers=admin).status_code == 200
+    assert pc.app.state.ctx.has_permission(account, PERM_AGM_RSVP)  # the portal sees the grant through the auth service

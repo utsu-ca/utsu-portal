@@ -5,6 +5,7 @@ import re
 from collections.abc import Iterable
 
 from .contracts import PluginManifest
+from .role_catalogue import MEMBER_ROLES
 
 _OAUTH_SCOPE_TOKEN = re.compile(r"[\x21\x23-\x5B\x5D-\x7E]+\Z")
 
@@ -13,6 +14,19 @@ PERM_FORMS_MANAGE = "utsu:forms:manage"
 PERM_AUDIT_READ = "utsu:audit:read"
 PERM_PAYMENTS_MANAGE = "utsu:payments:orders:manage"
 PERM_PROFILE_FINANCE = "utsu:profile:financial:manage"
+PERM_FEES_MANAGE = "utsu:fees:manage"
+PERM_FEES_REFUNDS = "utsu:fees:refunds:manage"
+PERM_FEES_LEVY = "utsu:fees:levy:view"
+PERM_CLUB_MEMBERS_MANAGE = "utsu:clubs:members:manage"
+PERM_CLUB_VOTE = "utsu:clubs:vote"
+PERM_CLUB_DISCUSS = "utsu:clubs:discuss"
+PERM_CLUB_BALLOTS_MANAGE = "utsu:clubs:ballots:manage"
+PERM_AGM_RSVP = "utsu:agm:rsvp"
+PERM_AGM_ONLINE = "utsu:agm:online:attend"
+PERM_SENATE_APPLY = "utsu:senate:apply"
+PERM_SAP_APPLY = "utsu:sap:apply"
+PERM_DISCUSSION_PARTICIPATE = "utsu:discussion:participate"
+PERM_VOTING_VOTE = "utsu:voting:vote"
 PERM_AGM_CHECKIN = "utsu:agm:checkin:manage"
 PERM_AGM_REGISTRATIONS = "utsu:agm:registrations:manage"
 PERM_AGM_ID_REVIEW = "utsu:agm:identity:review"
@@ -60,6 +74,9 @@ def role_permissions_for(manifests: Iterable[PluginManifest]) -> dict[str, froze
     owners = {role: "core" for role in grants}
     for manifest in manifests:
         for role, scopes in manifest.role_permissions:
+            if role in MEMBER_ROLES:  # every program may grant its own permissions to a membership role
+                grants[role] = grants.get(role, frozenset()) | frozenset(scopes)
+                continue
             if role in owners:
                 raise RuntimeError(f"role permissions for {role} are declared by both {owners[role]} and {manifest.id}")
             grants[role] = frozenset(scopes)
